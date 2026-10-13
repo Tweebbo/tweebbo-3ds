@@ -1,0 +1,10 @@
+# Installs the CIA (APP=/work/out/tweebbo.cia), accepts the in-game update and restarts.
+wait 6
+click 743 473
+wait 6
+key Return 100
+wait 45
+shot 01-update-offer
+key a 100
+wait 30
+shot 02-update-installed

@@ -1,0 +1,60 @@
+// Avatar animations really change the drawn parts:
+// talking (mouth), blinking, waving, dancing, walking, holding and sipping, sitting, swimming.
+#include "../source/avatar.h"
+#include <assert.h>
+#include <stdio.h>
+#include <string.h>
+
+static char trace[4096];
+static int ops;
+static void rec(int page, int sx, int sy, int sw, int sh, float x, float y) {
+  char b[64];
+  snprintf(b, sizeof b, "%d:%d,%d,%d,%d@%.0f,%.0f;", page, sx, sy, sw, sh, x, y);
+  strncat(trace, b, sizeof trace - strlen(trace) - 1);
+  ops++;
+}
+void gfx_sprite(int page, int sx, int sy, int sw, int sh, float x, float y, float s, bool f, u32 c) { (void)s; (void)f; (void)c; rec(page, sx, sy, sw, sh, x, y); }
+void gfx_sprite_xy(int page, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool f, u32 c) { (void)kx; (void)ky; (void)f; (void)c; rec(page, sx, sy, sw, sh, x, y); }
+void gfx_sprite_solid(int page, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool f, u32 c) { (void)kx; (void)ky; (void)f; (void)c; rec(page, sx, sy, sw, sh, x, y); }
+void dbg_log(const char *fmt, ...) { (void)fmt; }
+
+static const char *draw(Pose pose, int frame, int expr, int drink, bool sip) {
+  static char out[8][4096];
+  static int k;
+  trace[0] = 0; ops = 0;
+  avatar_draw(0x1234567ull, 2, pose, frame, expr, 2, drink, sip, 0, 0, 1, 255);
+  k = (k + 1) % 8;
+  snprintf(out[k], sizeof out[k], "%s", trace);
+  return out[k];
+}
+
+static void differs(const char *what, const char *a, const char *b) {
+  bool d = strcmp(a, b) != 0;
+  printf("  %-34s %s\n", what, d ? "changes" : "SAME");
+  assert(d);
+}
+
+int main(void) {
+  const char *std = draw(POSE_STD, 0, 0, 0, false);
+  assert(strlen(std) > 0);
+  differs("talk (mouth)", std, draw(POSE_STD, 1, EXPR_TALK, 0, false));
+  differs("blink", std, draw(POSE_STD, 0, EXPR_BLINK, 0, false));
+  differs("wave", draw(POSE_WAVE, 0, 0, 0, false), draw(POSE_WAVE, 1, 0, 0, false));
+  differs("wave vs standing", std, draw(POSE_WAVE, 0, 0, 0, false));
+  differs("dance frame 0 → 3", draw(POSE_DANCE, 0, 0, 0, false), draw(POSE_DANCE, 3, 0, 0, false));
+  differs("walk frame 0 → 2", draw(POSE_WALK, 0, 0, 0, false), draw(POSE_WALK, 2, 0, 0, false));
+  differs("hold drink (coffee)", std, draw(POSE_STD, 0, 0, 8, false));
+  differs("sip", draw(POSE_STD, 0, 0, 8, false), draw(POSE_STD, 0, 0, 8, true));
+  differs("sit", std, draw(POSE_SIT, 0, 0, 0, false));
+  // The cache returns exactly the same thing the second time.
+  const char *again = draw(POSE_DANCE, 3, 0, 0, false), *again2 = draw(POSE_DANCE, 3, 0, 0, false);
+  assert(!strcmp(again, again2));
+  trace[0] = 0;
+  avatar_draw_swim(0x1234567ull, 2, POSE_SWIM, 0, 0, 2, 0, 0, 1);
+  char s0[4096]; snprintf(s0, sizeof s0, "%s", trace);
+  trace[0] = 0;
+  avatar_draw_swim(0x1234567ull, 2, POSE_SWIM, 2, 0, 2, 0, 0, 1);
+  differs("swim frame 0 → 2", s0, trace);
+  printf("OK\n");
+  return 0;
+}

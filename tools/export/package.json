@@ -1,0 +1,12 @@
+{
+  "name": "tweebbo-3ds-export",
+  "private": true,
+  "type": "module",
+  "description": "Exports sprites from the Tweebbo web client for the 3DS edition",
+  "devDependencies": {
+    "playwright-core": "1.56.1",
+    "qrcode": "^1.5.4",
+    "typescript": "5.8.3",
+    "vite": "7.1.12"
+  }
+}

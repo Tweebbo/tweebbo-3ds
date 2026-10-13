@@ -1,0 +1,4 @@
+[{"look":{"skin":0,"hairStyle":2,"hairColor":2,"shirtColor":3,"shirtStyle":0,"pants":0,"shoes":0},"dir":2,"pose":"std","frame":0},
+ {"look":{"skin":1,"hairStyle":5,"hairColor":0,"shirtColor":8,"shirtStyle":1,"pants":1,"shoes":0},"dir":3,"pose":"wave","frame":1},
+ {"look":{"skin":2,"hairStyle":9,"hairColor":4,"shirtColor":12,"shirtStyle":2,"pants":3,"shoes":1},"dir":1,"pose":"std","frame":0,"drink":19},
+ {"look":{"skin":3,"hairStyle":12,"hairColor":6,"shirtColor":5,"shirtStyle":3,"pants":2,"shoes":2},"dir":2,"pose":"dance","frame":3}]

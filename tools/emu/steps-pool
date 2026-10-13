@@ -1,0 +1,10 @@
+# The Pool (room.txt = pool): overview, then tap the water on the minimap.
+wait 30
+shot 01-pool
+key q 100
+wait 2
+shot 02-overview
+key q 100
+click 708 636
+wait 20
+shot 03-swimming
