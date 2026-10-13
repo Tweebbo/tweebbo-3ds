@@ -711,11 +711,10 @@ static void panel_settings(u64 now) {
     update_check();
   sk_text(upd, x + 126, y + 3, 9.5f, us == UPD_FAILED ? SK_DANGER : SK_DIM, 0, w - 126);
   y += 24;
-  sk_paragraph("Circle Pad / D-Pad: walk · A: talk · X: wave · Y: dance\n"
-               "B: sit / close window · L/R: overview · START: exit\n"
-               "Building: Circle Pad moves, L/R rotates, A places, B cancels.",
-               x, y, w, 9.5f, SK_TEXT, 4);
-  sk_text("Tweebbo is in development and may be unstable. Thanks for testing!", x, IN_Y + IN_H - 26, 9.5f, SK_DANGER, 0, w);
+  y += sk_paragraph("Circle Pad / D-Pad: walk · A: talk or act · X: wave · Y: dance\n"
+                    "B: sit / close · L/R: overview, or rotate while building",
+                    x, y, w, 9.5f, SK_TEXT, 3) + 3;
+  sk_text("Tweebbo is in development and may be unstable. Thanks for testing!", x, y, 9.5f, SK_DANGER, 0, w);
   sk_text("Tweebbo for Nintendo 3DS v" APP_VERSION " · same world as tweebbo.lol", x, IN_Y + IN_H - 14, 9.5f, SK_DIM, 0, w);
 }
 
