@@ -69,7 +69,13 @@ static void check_thread(void *arg) {
   Mem m = {malloc(16384), 0, 16384};
   long total;
   char err[128];
-  int status = m.buf ? http_download(url, to_memory, &m, &total, err, sizeof err) : 0;
+  int status = 0;
+  // GitHub occasionally answers a redirect badly: retry a few times before giving up.
+  for (int attempt = 0; attempt < 3 && m.buf && status != 200 && status != 404; attempt++) {
+    if (attempt) svcSleepThread(1500000000LL);
+    m.len = 0;
+    status = http_download(url, to_memory, &m, &total, err, sizeof err);
+  }
   json_error_t jerr;
   json_t *j = status == 200 ? json_loads(m.buf, 0, &jerr) : NULL;
   free(m.buf);
@@ -200,12 +206,23 @@ static void install_thread(void *arg) {
     Result r = amInit();
     if (R_SUCCEEDED(r)) r = AM_StartCiaInstall(MEDIATYPE_SD, &s.cia);
     dbg_log("update: AM start 0x%08lX", (unsigned long)r);
-    if (R_SUCCEEDED(r)) {
+    for (int attempt = 0; attempt < 3 && R_SUCCEEDED(r) && !ok; attempt++) {
+      if (attempt) {
+        // Retry an interrupted download with a fresh install.
+        svcSleepThread(2000000000LL);
+        s.offset = 0; s.fill = 0; s.fail = 0;
+        err[0] = 0;
+        r = AM_StartCiaInstall(MEDIATYPE_SD, &s.cia);
+        dbg_log("update: retry %d, AM start 0x%08lX", attempt, (unsigned long)r);
+        if (R_FAILED(r)) break;
+      }
       ok = fetch(url, U.sha, &s, err, sizeof err);
-      r = ok ? AM_FinishCiaInstall(s.cia) : AM_CancelCIAInstall(s.cia);
-      dbg_log("update: AM %s 0x%08lX", ok ? "finish" : "cancel", (unsigned long)r);
-      if (ok && R_FAILED(r)) { ok = false; snprintf(err, sizeof err, "Install failed (0x%08lX).", (unsigned long)r); }
-    } else snprintf(err, sizeof err, "The console refused the install (0x%08lX).", (unsigned long)r);
+      Result fr = ok ? AM_FinishCiaInstall(s.cia) : AM_CancelCIAInstall(s.cia);
+      dbg_log("update: AM %s 0x%08lX", ok ? "finish" : "cancel", (unsigned long)fr);
+      if (ok && R_FAILED(fr)) { ok = false; snprintf(err, sizeof err, "Install failed (0x%08lX).", (unsigned long)fr); break; }
+      if (strstr(err, "damaged")) break;
+    }
+    if (R_FAILED(r)) snprintf(err, sizeof err, "The console refused the install (0x%08lX).", (unsigned long)r);
     amExit();
     if (!ok && strstr(err, "damaged") == NULL && strstr(err, "reach") == NULL) {
       // Fallback: save the CIA on the SD card to install it with FBI.

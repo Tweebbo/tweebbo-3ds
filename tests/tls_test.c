@@ -7,6 +7,7 @@
 #include <sys/time.h>
 u64 now_ms(void) { struct timeval tv; gettimeofday(&tv, NULL); return (u64)tv.tv_sec * 1000 + (u64)tv.tv_usec / 1000; }
 int rnd_range(int lo, int hi) { return hi <= lo ? lo : lo + rand() % (hi - lo); }
+void dbg_log(const char *fmt, ...) { (void)fmt; }
 int main(int argc, char **argv) {
   Endpoint ep;
   if (!endpoint_parse(argc > 1 ? argv[1] : "https://tweebbo.lol", &ep) || !conn_global_init((char[128]){0}, 128)) return 1;

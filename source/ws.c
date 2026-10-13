@@ -290,6 +290,12 @@ int http_download(const char *url, HttpSink sink, void *ctx, long *total, char *
     head[end - 1] = 0;
     int status = 0;
     sscanf((char *)head, "HTTP/1.%*d %d", &status);
+    if (status < 100 || status > 599) {
+      char first[80];
+      snprintf(first, sizeof first, "%.79s", (char *)head);
+      for (char *q = first; *q; q++) if (*q == '\r' || *q == '\n') *q = ' ';
+      dbg_log("http_download: unexpected response from %s: %s", ep.host, first);
+    }
     if (status >= 300 && status < 400) {
       char *loc = header((char *)head, "Location");
       if (!loc) { conn_close(c); free(head); snprintf(err, (size_t)err_cap, "Redirect without location."); return status; }

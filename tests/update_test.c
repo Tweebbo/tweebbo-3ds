@@ -3,12 +3,14 @@
 // Runs in ubuntu:24.04: make -C tests update
 #include "../source/ws.h"
 #include <mbedtls/sha256.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 u64 now_ms(void) { struct timeval tv; gettimeofday(&tv, NULL); return (u64)tv.tv_sec * 1000 + (u64)tv.tv_usec / 1000; }
 int rnd_range(int lo, int hi) { return hi <= lo ? lo : lo + rand() % (hi - lo); }
+void dbg_log(const char *fmt, ...) { va_list ap; va_start(ap, fmt); vprintf(fmt, ap); va_end(ap); printf("\n"); }
 
 typedef struct { char *buf; int len, cap; mbedtls_sha256_context sha; long bytes; } Sink;
 static bool to_mem(const u8 *d, int n, void *ctx) {
