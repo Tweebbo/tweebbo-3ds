@@ -21,7 +21,7 @@ void on_room(void) { rooms++; }
 void on_chat(u32 eid, const char *text) { chats++; snprintf(last_chat, sizeof last_chat, "%u:%s", eid, text); }
 void on_notice(const char *text) { snprintf(last_notice, sizeof last_notice, "%s", text); printf("  notice: %s\n", text); }
 void on_transfer(const char *slug, const char *arrival) { transfers++; net_goto(slug, arrival); }
-void on_alert(const char *json) { printf("  alerta: %s\n", json); }
+void on_alert(const char *json) { printf("  alert: %s\n", json); }
 void on_social_changed(void) {}
 void on_name_changed(u32 eid) { (void)eid; }
 void on_item(u32 id) { (void)id; }
@@ -60,6 +60,9 @@ static bool pump_until(bool (*cond)(void), int ms) {
 }
 static bool in_room(void) { return W.in_room && world_ent(W.me); }
 static bool got_chat(void) { return strstr(last_chat, "hello from the 3DS") != NULL; }
+static bool paused(void) { return net_state() == NET_REPLACED; }
+static bool back_online(void) { return net_state() == NET_ONLINE && in_room(); }
+static void ignore(const u8 *data, int len, void *ctx) { (void)data; (void)len; (void)ctx; }
 
 int main(int argc, char **argv) {
   server = argc > 1 ? argv[1] : "ws://127.0.0.1:8092";
@@ -105,6 +108,34 @@ int main(int argc, char **argv) {
   net_goto("lobby", "");
   assert(pump_until(in_room, 20000));
   assert(W.guest_id == guest);
+
+  // Another client with the same character takes over (a browser tab after "Save /
+  // restore character"). The console must pause instead of evicting it back forever.
+  Ws other;
+  char err[128];
+  assert(ws_connect(&other, &ep, "/ws/lobby", 15000, err, sizeof err));
+  Writer w;
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0);
+  assert(ws_send(&other, w.buf, w.len));
+  assert(pump_until(paused, 10000) && "the console was not told it was replaced");
+  for (u64 stop = now_ms() + 4000; now_ms() < stop;) {
+    net_update(now_ms());
+    assert(ws_poll(&other, 20, ignore, NULL) && "the console evicted the other client");
+    assert(net_state() == NET_REPLACED);
+  }
+  printf("takeover: console paused, other client kept the character\n");
+  // "Play here" takes the character back; now the other client is released.
+  net_resume();
+  assert(pump_until(back_online, 20000));
+  assert(W.guest_id == guest);
+  bool released = false;
+  for (u64 stop = now_ms() + 10000; now_ms() < stop && !released;) {
+    net_update(now_ms());
+    released = !ws_poll(&other, 20, ignore, NULL);
+  }
+  ws_close(&other);
+  assert(released);
+  printf("play here: console back online, other client released\n");
   net_stop();
   printf("OK\n");
   return 0;

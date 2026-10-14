@@ -673,7 +673,7 @@ static void panel_settings(u64 now) {
   float x = IN_X + 6, y = IN_Y + 4, w = IN_W - 12;
   const char *server = net_server();
   NetState st = net_state();
-  const char *state = st == NET_ONLINE ? "Online" : st == NET_OFFLINE ? "Offline practice" : st == NET_CONNECTING ? "Connecting…" : "Reconnecting…";
+  const char *state = st == NET_ONLINE ? "Online" : st == NET_OFFLINE ? "Offline practice" : st == NET_CONNECTING ? "Connecting…" : st == NET_REPLACED ? "Paused" : "Reconnecting…";
   char line[200];
   snprintf(line, sizeof line, "Server: %s", !strcmp(server, "offline") ? "none (offline)" : server);
   sk_text(line, x, y, 10.5f, SK_TEXT, 0, w);
@@ -735,7 +735,7 @@ static void header(void) {
   sk_sprite("credits_icon@14", x - 16, 2, 1);
   NetState st = net_state();
   if (st == NET_ONLINE) snprintf(buf, sizeof buf, "%d online", W.online);
-  else snprintf(buf, sizeof buf, "%s", st == NET_OFFLINE ? "OFFLINE PRACTICE (bots)" : st == NET_CONNECTING ? "connecting…" : "reconnecting…");
+  else snprintf(buf, sizeof buf, "%s", st == NET_OFFLINE ? "OFFLINE PRACTICE (bots)" : st == NET_CONNECTING ? "connecting…" : st == NET_REPLACED ? "paused" : "reconnecting…");
   x -= 24 + text_width(buf, 10);
   text_draw(buf, x, 3, 10, sk_rgb(st == NET_ONLINE ? 0xd9f2dc : 0xffd34d), 0);
   // Classic messenger head (mes_smallbuddy_head) for connected players.
@@ -911,6 +911,10 @@ bool ui_input(u32 down, u32 held, u64 now) {
     K.up = down & KEY_DUP; K.dn = down & KEY_DDOWN; K.left = down & KEY_DLEFT; K.right = down & KEY_DRIGHT;
     K.a = down & KEY_A; K.b = down & KEY_B; K.x = down & KEY_X; K.y = down & KEY_Y;
   }
+  if (net_state() == NET_REPLACED) {
+    if (down & KEY_A) net_resume();
+    return true;
+  }
   if (!W.in_room) return true;
   if (U.alert || U.confirm || blocking_update) return true;
   if (build_input(down, held, now)) return true;
@@ -943,6 +947,15 @@ bool ui_input(u32 down, u32 held, u64 now) {
 void ui_draw(u64 now) {
   fill_rect(0, 0, BOT_W, BOT_H, sk_rgb(0x111111));
   friends_poll(now);
+  if (net_state() == NET_REPLACED) {
+    // Same character on another device: wait until the player takes it back.
+    header();
+    sk_window(20, 60, BOT_W - 40, 90, "Tweebbo");
+    sk_content(25, 79, BOT_W - 50, 66);
+    sk_paragraph("Tweebbo is open on another device or browser.", 34, 92, BOT_W - 68, 11, SK_TEXT, 3);
+    if (sk_button(BOT_W / 2 - 60, 160, 120, "Play here (A)", true)) net_resume();
+    return;
+  }
   if (!W.in_room) {
     header();
     sk_window(20, 60, BOT_W - 40, 90, "Tweebbo");

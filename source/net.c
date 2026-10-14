@@ -89,6 +89,8 @@ static struct {
   HttpJob http[MAX_HTTP];
   int next_http;
   bool token_saved;
+  // Another tab or device took over this character: do not reconnect until net_resume().
+  bool replaced;
 } N;
 
 static void set_state(NetState s, const char *text) {
@@ -115,6 +117,7 @@ static void token_key(char *key, int cap) { snprintf(key, (size_t)cap, "token-%s
 static void deliver(const u8 *data, int len, void *ctx) {
   (void)ctx;
   lock(&N.mu);
+  if (len > 0 && data[0] == S_REPLACED) N.replaced = true;
   q_push(&N.in, data, len);
   unlock(&N.mu);
 }
@@ -126,10 +129,24 @@ static bool changed(u32 gen) {
   return c;
 }
 
+static bool is_replaced(void) {
+  lock(&N.mu);
+  bool r = N.replaced;
+  unlock(&N.mu);
+  return r;
+}
+
 static void net_thread(void *arg) {
   (void)arg;
   int failures = 0;
   while (!N.quit) {
+    if (is_replaced()) {
+      // Reconnecting now would evict the other session, which would evict us again.
+      set_state(NET_REPLACED, "Tweebbo is open on another device or browser.");
+      while (is_replaced() && !N.quit) sleep_ms(50);
+      failures = 0;
+      continue;
+    }
     lock(&N.mu);
     u32 gen = N.want_gen;
     char path[96], token[80], arrival[80];
@@ -182,8 +199,10 @@ static void net_thread(void *arg) {
       unlock(&N.mu);
       if (welcomed) failures = 0;
       if (now_ms() - since > RENEW_MS) break;
+      if (is_replaced()) break;
     }
     ws_close(&ws);
+    if (is_replaced()) continue;
     if (!changed(gen) && !(alive && welcomed)) {
       failures++;
       set_state(NET_RETRYING, welcomed ? "Connection lost. Reconnecting…" : "The server closed the connection.");
@@ -250,6 +269,7 @@ void net_start(u64 now) {
     endpoint_parse(N.server, &N.ep);
   }
   N.offline = false;
+  N.replaced = false;
   char key[128];
   token_key(key, sizeof key);
   if (!store_load(key, N.token, sizeof N.token)) N.token[0] = 0;
@@ -341,6 +361,7 @@ const char *net_token(void) { return N.token; }
 void net_goto(const char *slug, const char *arrival) {
   if (N.offline) return;
   lock(&N.mu);
+  N.replaced = false;
   snprintf(N.slug, sizeof N.slug, "%s", slug);
   snprintf(N.arrival, sizeof N.arrival, "%s", arrival ? arrival : "");
   N.want_gen++;
@@ -356,6 +377,7 @@ void net_goto(const char *slug, const char *arrival) {
 void net_use_token(const char *token) {
   if (N.offline) return;
   lock(&N.mu);
+  N.replaced = false;
   snprintf(N.token, sizeof N.token, "%s", token);
   N.want_gen++;
   q_clear(&N.in);
@@ -432,3 +454,10 @@ void send_rotate(u32 id) { SEND(w_begin(&w, C_ROTATE); w_var(&w, id)); }
 void send_redeem(u32 id) { SEND(w_begin(&w, C_REDEEM); w_var(&w, id)); }
 void send_drink(u32 item, int drink) { SEND(w_begin(&w, C_DRINK); w_var(&w, item); w_u8(&w, (u32)drink)); }
 void send_pet(const char *json) { SEND(w_begin(&w, C_PET); w_str(&w, json)); }
+
+void net_resume(void) {
+  lock(&N.mu);
+  N.replaced = false;
+  N.want_gen++;
+  unlock(&N.mu);
+}

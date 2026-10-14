@@ -16,7 +16,8 @@
 #endif
 #define DEFAULT_ROOM "lobby"
 
-typedef enum { NET_OFFLINE, NET_CONNECTING, NET_ONLINE, NET_RETRYING } NetState;
+/** NET_REPLACED: the same character connected elsewhere; waits for net_resume(). */
+typedef enum { NET_OFFLINE, NET_CONNECTING, NET_ONLINE, NET_RETRYING, NET_REPLACED } NetState;
 
 void net_start(u64 now);
 void net_stop(void);
@@ -46,6 +47,8 @@ bool net_http_result(int id, HttpResult *out);
 const char *net_token(void);
 /** Switches to another character ("Save / restore character" code) and reconnects. */
 void net_use_token(const char *token);
+/** Takes the character back after NET_REPLACED ("Play here"). */
+void net_resume(void);
 
 // Storage implemented by the application (SD card on the console, files in the tests).
 bool store_load(const char *key, char *out, int cap);

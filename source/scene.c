@@ -84,7 +84,10 @@ void scene_mark_destination(int x, int y, u64 now) {
 static void draw_prompt(void);
 
 void scene_room_changed(u64 now) {
-  memset(V.chat, 0, sizeof V.chat);
+  // A connection renewal sends ROOM again: only clear the bubbles when the room changes.
+  static char last_slug[sizeof W.slug];
+  if (strcmp(last_slug, W.slug)) memset(V.chat, 0, sizeof V.chat);
+  snprintf(last_slug, sizeof last_slug, "%s", W.slug);
   // Park and pool: their own layers. Everything else: classic background or exported floor.
   V.scene = gfx_scene(W.model);
   V.bg = V.scene ? NULL : gfx_room(W.model);
