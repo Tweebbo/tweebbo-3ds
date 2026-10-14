@@ -240,7 +240,13 @@ void world_handle(const u8 *data, int len) {
       if (!r.err) on_transfer(public_slug(slug), arrival);
       break;
     }
-    case S_HOTEL_ALERT: r_str(&r, text, sizeof text); if (!r.err) on_alert(text); break;
+    case S_HOTEL_ALERT: {
+      // Alerts allow 1000 characters (up to ~4 KB of escaped UTF-8 JSON).
+      static char alert[4096];
+      r_str(&r, alert, sizeof alert);
+      if (!r.err) on_alert(alert);
+      break;
+    }
     case S_SOCIAL_CHANGED: on_social_changed(); break;
     case S_PETS: set_json(&W.pets_json, &r); break;
     case S_PET_INVENTORY: set_json(&W.pet_inv_json, &r); break;

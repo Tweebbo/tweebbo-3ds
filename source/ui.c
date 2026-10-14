@@ -48,9 +48,9 @@ static struct {
   // Minimap
   float mm_tile, mm_ox, mm_oy;
   // Hotel alerts (queue)
-  char alert_title[96], alert_text[400];
+  struct { char title[96], text[3200]; int id; } alerts[4];
+  int alert_n;
   bool alert;
-  int alert_id;
   int seen_alerts[32];
   int seen_n;
   // Modal confirmation
@@ -155,10 +155,13 @@ void ui_alert(const char *text) {
   const char *title = json_string_value(json_object_get(j, "title")), *msg = json_string_value(json_object_get(j, "message"));
   bool seen = false;
   for (int i = 0; i < U.seen_n; i++) seen |= U.seen_alerts[i] == id;
-  if (title && msg && !seen && !U.alert) {
-    snprintf(U.alert_title, sizeof U.alert_title, "%s", title);
-    snprintf(U.alert_text, sizeof U.alert_text, "%s", msg);
-    U.alert_id = id;
+  for (int i = 0; i < U.alert_n; i++) seen |= U.alerts[i].id == id;
+  // Queued like the web: each alert stays until the player presses OK.
+  if (title && msg && !seen && U.alert_n < COUNT(U.alerts)) {
+    snprintf(U.alerts[U.alert_n].title, sizeof U.alerts[0].title, "%s", title);
+    snprintf(U.alerts[U.alert_n].text, sizeof U.alerts[0].text, "%s", msg);
+    U.alerts[U.alert_n].id = id;
+    U.alert_n++;
     U.alert = true;
   }
   json_decref(j);
@@ -846,12 +849,20 @@ static void modal(void) {
   fill_rect(0, 0, BOT_W, BOT_H, sk_rgba(0x000000, 120));
   float w = 270, h = 118, x = (BOT_W - w) / 2, y = 56;
   if (U.alert) {
-    bool close = sk_window(x, y, w, h, U.alert_title);
-    sk_content(x + 5, y + TITLE_H + 2, w - 10, h - TITLE_H - 7);
-    sk_paragraph(U.alert_text, x + 11, y + TITLE_H + 6, w - 22, 10.5f, SK_TEXT, 5);
-    if (close || sk_button(x + w / 2 - 40, y + h - 28, 80, "OK", true) || K.a || K.b) {
-      if (U.seen_n < COUNT(U.seen_alerts)) U.seen_alerts[U.seen_n++] = U.alert_id;
-      U.alert = false;
+    // Hotel alert: nearly the whole screen, so long messages fit.
+    float aw = 300, ah = 200, ax = (BOT_W - aw) / 2, ay = 20;
+    char title[120];
+    if (U.alert_n > 1) snprintf(title, sizeof title, "%s (1/%d)", U.alerts[0].title, U.alert_n);
+    else snprintf(title, sizeof title, "%s", U.alerts[0].title);
+    bool close = sk_window(ax, ay, aw, ah, title);
+    sk_content(ax + 5, ay + TITLE_H + 2, aw - 10, ah - TITLE_H - 7);
+    sk_paragraph(U.alerts[0].text, ax + 11, ay + TITLE_H + 6, aw - 22, 10.5f, SK_TEXT, 11);
+    if (close || sk_button(ax + aw / 2 - 40, ay + ah - 28, 80, "OK", true) || K.a || K.b) {
+      if (U.seen_n == COUNT(U.seen_alerts)) { memmove(U.seen_alerts, U.seen_alerts + 1, sizeof(int) * (COUNT(U.seen_alerts) - 1)); U.seen_n--; }
+      U.seen_alerts[U.seen_n++] = U.alerts[0].id;
+      memmove(&U.alerts[0], &U.alerts[1], sizeof(U.alerts[0]) * (size_t)(COUNT(U.alerts) - 1));
+      U.alert_n--;
+      U.alert = U.alert_n > 0;
     }
     return;
   }
