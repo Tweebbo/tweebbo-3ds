@@ -9,6 +9,8 @@ typedef struct {
   int skin, hair_style, hair_color, shirt_color, shirt_style, pants, shoes, pants_style, shoe_style, face_style;
 } Look;
 
+#define AV_FRANK (1ull << 62)
+#define AV_FOUNDER (1ull << 63)
 #define SPRITE_W 64
 #define SPRITE_H 112
 #define ANCHOR_X 32

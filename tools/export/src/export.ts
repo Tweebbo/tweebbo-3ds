@@ -1,7 +1,7 @@
 // Export page: uses the same drawing code as the web client
 // (a snapshot of the web client sources) to get identical sprites.
 import { loadModels, people, poolPeople, spriteImage } from '@web/models';
-import { catalogue, ensureFurniture } from '@web/catalogue';
+import { catalogue, ensureFurniture, furniAnim } from '@web/catalogue';
 import { furniLayers, furniFrame, FURNI_OX, FURNI_OY } from '@web/furni';
 import { Renderer } from '@web/renderer';
 import { State } from '@web/state';
@@ -29,6 +29,7 @@ declare global {
   interface Window {
     exportPeople(prefix: string): Promise<unknown[]>;
     exportFurni(defs: number[]): Promise<unknown[]>;
+    furnitureTimelines(): Record<string, number[]>;
     furniIds(): Promise<number[]>;
     exportFloors(models: { key: string; rows: string[]; door: [number, number] }[]): Promise<unknown[]>;
     exportSwimming(): Promise<unknown[]>;
@@ -57,9 +58,10 @@ window.furniIds = async () => {
   return Object.values(catalogue.definitions).filter((d) => d.asset).map((d) => d.id).sort((a, b) => a - b);
 };
 
-// Maximum exported states (100-state scoreboards repeat digits).
-const MAX_STATES = 12;
+const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
 
+const timelines: Record<string, number[]> = {};
+window.furnitureTimelines = () => timelines;
 window.exportFurni = async (defs) => {
   await loadModels();
   const out = [];
@@ -70,11 +72,36 @@ window.exportFurni = async (defs) => {
     for (const rot of def.rotations?.length ? def.rotations : [0, 1, 2, 3]) {
       // States the server uses even if the catalogue does not count them: dice (face 1–6, 7 = rolling)
       // and teleporters (1 open, 2 travelling).
-      const states = def.kind === 4 || id === 7 ? 8 : def.flags.includes('teleporter') ? 3 : Math.min(MAX_STATES, Math.max(1, def.states));
+      const states = def.kind === 4 || id === 7 ? 8 : def.flags.includes('teleporter') ? 3 : Math.max(1, def.states);
       for (let state = 0; state < states; state++) {
        // Frames of animated furniture (furniFrame): holograms, teleporting, dice, lamp.
-       const frames = new Set<number>();
-       for (let t = 0; t < 6400; t += 10) frames.add(furniFrame(id, state, t));
+       const frames = new Set<number>([0]);
+       const first = furniFrame(id, state, 0);
+       if (first >= 1000) {
+         const sequence = furniAnim[def.asset.bank]?.states[String(state)];
+         let period = 1;
+         for (const layer of Object.values(sequence ?? {})) {
+           const n = layer.d * layer.f.length;
+           period = Math.min(4096, period / gcd(period, n) * n);
+         }
+         const aliases: number[] = [], unique = new Map<string, number>();
+         for (let tick = 0; tick < period; tick++) {
+           const signature = Object.entries(sequence ?? {}).map(([layer, seq]) => {
+             const step = Math.floor(tick / seq.d);
+             let index = step % seq.f.length;
+             if (seq.r) {
+               let h = (step * 2654435761 + layer.charCodeAt(0) * 40503) >>> 0;
+               h = (h ^ (h >>> 15)) >>> 0; h = Math.imul(h, 2246822519) >>> 0; h = (h ^ (h >>> 13)) >>> 0;
+               index = h % seq.f.length;
+             }
+             return `${layer}:${seq.f[index]}`;
+           }).join('/');
+           let canonical = unique.get(signature);
+           if (canonical === undefined) { canonical = 1000 + tick; unique.set(signature, canonical); frames.add(canonical); }
+           aliases.push(canonical);
+         }
+         timelines[`${id}/${state}`] = aliases;
+       } else for (let t = 0; t < 6400; t += 10) frames.add(furniFrame(id, state, t));
        for (const frame of [...frames].sort((a, b) => a - b)) {
         const layers = furniLayers(id, rot, state, frame);
         let parts = (layers.parts ?? []).map((p) => ({

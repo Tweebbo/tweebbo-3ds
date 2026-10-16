@@ -1,0 +1,6 @@
+# Debug LAN update: an older build finds the page's latest.json (serve out/debug/share on 127.0.0.1:8097).
+wait 40
+shot 70-update-available
+key a
+wait 60
+shot 71-update-done

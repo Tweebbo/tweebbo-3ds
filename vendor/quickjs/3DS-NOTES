@@ -1,0 +1,4 @@
+Source origin and archive SHA-256 are recorded in ORIGIN; see LICENSE for the MIT license.
+Local portability changes: disable OS-thread Atomics on __3DS__; use the custom
+allocator supplied by the Snow Storm host rather than an unavailable malloc_usable_size.
+No quickjs-libc module, file access, process execution or network APIs are exposed.

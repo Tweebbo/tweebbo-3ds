@@ -9,12 +9,15 @@ Output:
 build.sh converts every PNG in build/gfx into romfs/gfx/*.t3x with tex3ds.
 """
 import hashlib
+import math
+import struct
+import io
 import json
 import re
 import sys
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'build/export'
@@ -22,16 +25,23 @@ GFX = ROOT / 'build/gfx'
 GEN = ROOT / 'source/gen'
 PAGE = 1024
 GAP = 1
+GENERATED_PNGS = set()
+def save_png(image, path):
+    GENERATED_PNGS.add(path.resolve())
+    data = io.BytesIO(); image.save(data, format='PNG'); raw = data.getvalue()
+    if not path.exists() or path.read_bytes() != raw: path.write_bytes(raw)
+
 
 # Rooms included in the offline mode: public model key.
 ROOMS = ['newbie_lobby']
 # Private room backgrounds that are packed (classic models).
 # Classic icons the interface draws scaled down (name, maximum side in pixels).
 SMALL_ICONS = [('building_icon', 24), ('brochure_icon', 24), ('hand_icon', 26), ('help_icon', 24), ('mes_lite_icon', 24),
-               ('credits_icon', 14), ('mes_smallbuddy_head', 13), ('building_icon', 18)]
+               ('credits_icon', 14), ('mes_smallbuddy_head', 13), ('building_icon', 18),
+               ('door_password', 18)]
 # Public rooms with their own layers.
 SCENES = ['park_a', 'pool_a']
-CLASSIC = ['model_a', 'model_b', 'model_c', 'model_d', 'model_e', 'model_f']
+CLASSIC = ['model_a', 'model_b', 'model_c', 'model_d', 'model_e', 'model_f', 'casino_hall', 'lobby_hall']
 # Catalogue flag bits used by the simulation and the renderer.
 FLAG_BITS = ['can_sit_on_top', 'can_lay_on_top', 'can_stack_on_top', 'teleporter', 'gate', 'solid', 'redeemable']
 
@@ -90,7 +100,7 @@ def pack_def(images):
         if not best or width * height < best[0] * best[1]:
             best = (width, height, rects)
     if not best:
-        raise SystemExit('furniture too large for a 1024x1024 texture')
+        return None, None
     width, height, rects = best
     canvas = Image.new('RGBA', (width, height))
     for im, (x, y, _, _) in zip(images, rects):
@@ -107,8 +117,6 @@ def c_str(s):
 def main():
     GFX.mkdir(parents=True, exist_ok=True)
     GEN.mkdir(parents=True, exist_ok=True)
-    for old in GFX.glob('*.png'):
-        old.unlink()
     # Two groups: grey parts (tinted on the GPU) on LA8 pages at half the memory, the rest in RGBA8.
     color_packer, gray_packer = Packer(), Packer()
 
@@ -116,7 +124,7 @@ def main():
         def add(self, img):
             img = img.convert('RGBA')
             px = [q for q in img.get_flattened_data() if q[3]] if hasattr(img, 'get_flattened_data') else [q for q in img.getdata() if q[3]]
-            gray = all(abs(q[0] - q[1]) < 3 and abs(q[1] - q[2]) < 3 for q in px)
+            gray = all(q[0] == q[1] == q[2] for q in px)
             r = (gray_packer if gray else color_packer).add(img)
             return ('g' if gray else 'c',) + r
     packer = Dual()
@@ -165,17 +173,61 @@ def main():
             for xx, yy in seen:
                 po[xx, yy] = (255, 255, 255, 0)
             page.paste(out, pet_rects[n])
-        page.save(GFX / f'pets_{pi}.png')
+        save_png(page, GFX / f'pets_{pi}.png')
 
     # --- avatars: parts sorted by name (binary search in C) ---
     people = json.loads((SRC / 'people.json').read_text())
+    extra_images = {}
+    for folder, prefix in [('wardrobe-extras', 'x'), ('frank', 'f')]:
+        atlas = json.loads((SRC / 'data' / folder / 'parts.json').read_text())
+        source_pages = [Image.open(SRC / 'data' / folder / f).convert('RGBA') for f in atlas['pages']]
+        for name, sp in atlas['sprites'].items():
+            if not name.startswith('h_'):
+                continue
+            img = source_pages[sp['page']].crop((sp['x'], sp['y'], sp['x'] + sp['w'], sp['y'] + sp['h']))
+            variants = []
+            if prefix == 'x':
+                # Split tintable pixels from fixed colours; GPU multiplication must not recolour details.
+                tint, fixed = Image.new('RGBA', img.size), Image.new('RGBA', img.size)
+                a, b, src = tint.load(), fixed.load(), img.load()
+                for yy in range(img.height):
+                    for xx in range(img.width):
+                        q = src[xx, yy]
+                        if max(q[:3]) - min(q[:3]) <= 12: a[xx, yy] = q
+                        else: b[xx, yy] = q
+                variants = [('x' + name[1:], tint), ('z' + name[1:], fixed)]
+            else:
+                part = name.split('_')[2]
+                for tag, color in [('f', 0x9a9a9a if part == 'fa' else 0xb3202a), ('o', 0x14434c)]:
+                    if tag == 'o' and part != 'cc': continue
+                    out = img.copy(); px = out.load()
+                    for yy in range(img.height):
+                        for xx in range(img.width):
+                            q = px[xx, yy]
+                            if q[3] and max(q[:3]) - min(q[:3]) <= 24:
+                                px[xx, yy] = tuple(round(q[k] * ((color >> (16 - k * 8)) & 255) / 255) for k in range(3)) + (q[3],)
+                    if tag == 'o' and '_lay_' not in name and int(name.split('_')[-2]) in (1, 2, 3):
+                        from PIL import ImageDraw
+                        draw = ImageDraw.Draw(out); cx, cy = round(img.width*.55), round(img.height*.32)
+                        for dx, dy, ww, hh in [(-3,0,1,1),(-4,1,1,1),(-3,2,1,1),(0,0,1,3),(2,0,1,1),(3,1,1,1),(2,2,1,1)]:
+                            draw.rectangle((cx+dx,cy+dy,cx+dx+ww-1,cy+dy+hh-1), fill='#ebc96b')
+                        ky=round(img.height*.76)
+                        for dx,dy,ww,hh in [(-2,0,2,2),(-1,2,1,4),(0,4,2,1)]:
+                            draw.rectangle((cx+dx,ky+dy,cx+dx+ww-1,ky+dy+hh-1),fill='#ebc96b')
+                    variants.append((tag + name[1:], out))
+            for key, img in variants:
+                bounds = img.getbbox()
+                if not bounds: continue
+                img = img.crop(bounds)
+                people.append({'name': key, 'w': img.width, 'h': img.height, 'reg': [sp['reg'][0] - bounds[0], sp['reg'][1] - bounds[1]]})
+                extra_images[key] = img
     people.sort(key=lambda s: s['name'].encode())
     # Sorting by height packs the shelves better.
     order = sorted(range(len(people)), key=lambda i: -people[i]['h'])
     rects = {}
     for i in order:
         s = people[i]
-        rects[i] = packer.add(Image.open(SRC / 'people' / f"{s['name']}.png"))
+        rects[i] = packer.add(extra_images[s['name']] if s['name'] in extra_images else Image.open(SRC / 'people' / f"{s['name']}.png"))
 
     # --- furniture: one texture per definition (romfs:/furni/d<id>.t3x), loaded on demand ---
     catalogue = json.loads((SRC / 'data/models/catalogue.json').read_text())
@@ -183,9 +235,8 @@ def main():
     furni.sort(key=lambda v: (v['def'], v['rot'], v['state'], v.get('frame', 0)))
     FURNI = GFX / 'furni'
     FURNI.mkdir(parents=True, exist_ok=True)
-    for old in FURNI.glob('*.png'):
-        old.unlink()
     icons = {}
+    textures = []
     by_def = {}
     for v in furni:
         by_def.setdefault(v['def'], []).append(v)
@@ -205,10 +256,24 @@ def main():
         icon_file = SRC / 'data/icons' / (asset.get('icon') or '-')
         icon = add(Image.open(icon_file)) if asset.get('icon') and icon_file.exists() else None
         canvas, def_rects = pack_def(images)
-        canvas.save(FURNI / f'd{def_id}.png')
+        if canvas is not None:
+            canvases = [canvas]
+            def_rects = [(0,) + r for r in def_rects]
+        else:
+            pk = Packer()
+            def_rects = [None] * len(images)
+            for i in sorted(range(len(images)), key=lambda i: -images[i].height):
+                def_rects[i] = pk.add(images[i])
+            canvases = pk.pages
+            used = pk.y + pk.shelf
+            canvases[-1] = canvases[-1].crop((0, 0, PAGE, max(8, 1 << (used - 1).bit_length())))
+            print(f'Furniture {def_id}: {len(canvases)} texture pages (original resolution)')
+        for page, canvas in enumerate(canvases):
+            save_png(canvas, FURNI / f'd{def_id}_{page}.png')
+            textures.append((def_id, page, canvas.width * canvas.height * 4))
         for v in variants:
             for p in v['parts']:
-                p['rect'] = (0,) + def_rects[p['img']]
+                p['rect'] = def_rects[p['img']]
         if icon is not None:
             icons[def_id] = def_rects[icon]
 
@@ -237,15 +302,51 @@ def main():
         img = Image.open(f).convert('RGBA')
         k = min(box / img.width, box / img.height, 1)
         size = (max(1, round(img.width * k)), max(1, round(img.height * k)))
-        small = img.convert('RGBa').resize(size, Image.LANCZOS).convert('RGBA') if k < 1 else img
+        # Area averaging: nearest-neighbour at ~1/2 scale drops whole rows and columns (the
+        # navigator icon lost its blue fill and text lines). BOX keeps every source pixel's share.
+        small = img.resize(size, Image.Resampling.BOX) if k < 1 else img
         key = f'{n}@{box}'
         classic_ui[key] = {'reg': [0, 0]}
         ui_names.append(key)
         ui_rects[key] = packer.add(small)
+    for badge in ['VIP', 'ADM']:
+        name = 'badge-' + badge
+        classic_ui[name] = {'reg': [0, 0]}
+        ui_names.append(name)
+        ui_rects[name] = packer.add(Image.open(SRC / 'data/badges' / f'{badge}.gif').convert('RGBA'))
+    maintenance = Image.open(SRC / 'data/status/frank-maintenance.gif').convert('RGBA')
+    classic_ui['frank-maintenance'] = {'reg': [0, 0]}
+    ui_names.append('frank-maintenance')
+    ui_rects['frank-maintenance'] = packer.add(maintenance)
+    for path in sorted((SRC / 'data/casino').rglob('*.png')):
+        if not any(p in path.parts for p in ('cards', 'video', 'slots')):
+            continue
+        name = 'casino-' + path.relative_to(SRC / 'data/casino').with_suffix('').as_posix().replace('/', '-')
+        classic_ui[name] = {'reg': [0, 0]}
+        ui_names.append(name)
+        ui_rects[name] = packer.add(Image.open(path).convert('RGBA'))
+    casino_icon = SRC / 'data/casino/icon.png'
+    if casino_icon.exists():
+        classic_ui['casino-icon'] = {'reg': [0, 0]}
+        ui_names.append('casino-icon')
+        ui_rects['casino-icon'] = packer.add(Image.open(casino_icon).convert('RGBA'))
+    # The web's Games toolbar icon (duels.ts gamesIcon): a snowball behind a chess pawn, drawn the same way.
+    games = Image.new('RGBA', (30, 30))
+    g = ImageDraw.Draw(games)
+    disc = lambda x, y, r, c: g.ellipse((x - r, y - r, x + r, y + r), fill=c)
+    disc(20, 11, 9.5, '#1d2a33'); disc(20, 11, 8.5, '#d9e8f4'); disc(18.5, 9, 5.5, '#ffffff'); disc(23, 15, 3, '#a9c6dc')
+    for grow, color in ((1, '#111111'), (0, '#3c3f4a')):
+        disc(9, 12, 4 + grow, color)
+        g.rectangle((5 - grow, 16 - grow, 13 + grow - 1, 19 + grow - 1), fill=color)
+        g.polygon([(6 - grow, 19), (12 + grow, 19), (15 + grow, 25), (3 - grow, 25)], fill=color)
+        g.rectangle((2 - grow, 25 - grow, 16 + grow - 1, 28 + grow - 1), fill=color)
+    for box in ((7, 10, 8, 12), (6, 20, 7, 23), (4, 26, 7, 26)):
+        g.rectangle(box, fill='#7a7f90')
+    classic_ui['games-icon'] = {'reg': [0, 0]}
+    ui_names.append('games-icon')
+    ui_rects['games-icon'] = packer.add(games)
     ui_names.sort(key=lambda n: n.encode())
 
-    for old in GFX.glob('atlas*.png'):
-        old.unlink()
     page_files = []
     for group, pk in (('c', color_packer), ('g', gray_packer)):
         for i, page in enumerate(pk.pages):
@@ -254,7 +355,7 @@ def main():
                 used = pk.y + pk.shelf
                 page = page.crop((0, 0, PAGE, max(8, 1 << (used - 1).bit_length())))
             name = f'atlas{i}' if group == 'c' else f'atlasg{i}'
-            page.save(GFX / f'{name}.png')
+            save_png(page, GFX / f'{name}.png')
             page_files.append(name)
     n_color = len(color_packer.pages)
 
@@ -271,12 +372,38 @@ def main():
     for name in CLASSIC:
         room = classic['rooms'][name]
         img = Image.open(SRC / 'data/classic' / room['file']).convert('RGBA')
-        tw = 1 << (img.width - 1).bit_length()
-        th = 1 << (img.height - 1).bit_length()
-        canvas = Image.new('RGBA', (max(tw, 8), max(th, 8)))
-        canvas.paste(img, (0, 0))
-        canvas.save(GFX / f'room_{name}.png')
-        backgrounds.append((name, room, img.size))
+        # Trim transparent margins on the right/bottom (offsets stay relative to the origin) and use
+        # 1024x512 pages: a 1024x1024 RGBA8 page needs 4 MB of linear memory in one block.
+        box = img.getbbox() or (0, 0, 1, 1)
+        img = img.crop((0, 0, box[2], box[3]))
+        tiles = []
+        for ty in range(0, img.height, 512):
+            for tx in range(0, img.width, 1024):
+                cut = img.crop((tx, ty, min(tx + 1024, img.width), min(ty + 512, img.height)))
+                if not cut.getbbox(): continue
+                canvas = Image.new('RGBA', (max(8, 1 << (cut.width - 1).bit_length()), max(8, 1 << (cut.height - 1).bit_length())))
+                canvas.paste(cut, (0, 0))
+                file = f'room_{name}_{len(tiles)}'
+                save_png(canvas, GFX / f'{file}.png')
+                tiles.append((file, tx, ty, cut.width, cut.height))
+        backgrounds.append((name, room, img.size, tiles))
+
+    spaces = json.loads((SRC / 'data/spaces/index.json').read_text())
+    spaces_dir = ROOT / 'romfs/spaces'
+    spaces_dir.mkdir(parents=True, exist_ok=True)
+    for model in CLASSIC:
+        mask = Image.open(SRC / 'data/spaces' / f'{model}.mask.png').convert('RGBA')
+        values = [(q[0], q[1]) for q in mask.getdata()]
+        encoded = bytearray(struct.pack('<HH', *mask.size))
+        i = 0
+        while i < len(values):
+            j = i + 1
+            while j < len(values) and j - i < 65535 and values[j] == values[i]: j += 1
+            encoded.extend(struct.pack('<HBB', j - i, *values[i])); i = j
+        (spaces_dir / f'{model}.mask').write_bytes(encoded)
+    for texture in spaces['textures']:
+        image = Image.open(SRC / 'data/spaces' / f'tex_{texture}.png').convert('RGB')
+        (spaces_dir / f'{texture}.rgb').write_bytes(image.tobytes())
 
     wardrobe = json.loads((SRC / 'data/wardrobe-data.json').read_text())
     anims = json.loads((SRC / 'data/models/people.json').read_text())['animations']
@@ -314,6 +441,29 @@ def main():
     w('')
 
     parts = []
+    w('const FurniTexture furni_textures[] = {')
+    for def_id, page, size in textures:
+        w(f'  {{{def_id}, {page}, {size}}},')
+    w('};')
+    w(f'const int furni_texture_count = {len(textures)};')
+    animations = json.loads((SRC / 'data/models/furni-anim.json').read_text())
+    timelines = json.loads((SRC / 'furni-timelines.json').read_text())
+    anim_rows = []
+    for definition in sorted(catalogue['definitions'].values(), key=lambda d: d['id']):
+        bank = (definition.get('asset') or {}).get('bank')
+        anim = animations.get(bank)
+        if not anim or definition['id'] <= 8: continue
+        for state, seq in sorted(anim['states'].items(), key=lambda pair: int(pair[0])):
+            key = f"{definition['id']}/{state}"
+            if key not in timelines: continue
+            frames = timelines[key]
+            name = f"furni_time_{definition['id']}_{state}"
+            w(f'static const u16 {name}[] = {{' + ','.join(map(str, frames)) + '};')
+            anim_rows.append((definition['id'], int(state), anim['tick'], len(frames), name))
+    w('const FurniAnimation furni_animations[] = {')
+    for row in anim_rows: w('  {' + ', '.join(map(str, row)) + '},')
+    w('};')
+    w(f'const int furni_animation_count = {len(anim_rows)};')
     w('static const FurniPart furni_parts[] = {')
     first = []
     for v in furni:
@@ -348,10 +498,12 @@ def main():
         for r in d.get('rotations') or [0, 1, 2, 3]:
             rots |= 1 << r
         drink = (d.get('drinks') or [0])[0]
-        ix, iy, iw, ih = icons.get(d['id'], (0, 0, 0, 0))
+        ip, ix, iy, iw, ih = icons.get(d['id'], (0, 0, 0, 0, 0))
         tex = 1 if d['id'] in by_def else 0
         drinks = ','.join(str(x) for x in (d.get('drinks') or []))
-        w(f"  {{{d['id']}, {d['kind']}, {d['width']}, {d['height']}, {d['seatHeight']}, {d['states']}, {bits}, {rots}, {drink}, {c_str(d['name'])}, {tex}, {ix}, {iy}, {iw}, {ih}, {c_str(drinks)}, {c_str(d.get('description') or '')}}},")
+        games = ['slot', 'roulette', 'blackjack', 'crash', 'poker', 'videopoker']
+        casino = next((i + 1 for i, name in enumerate(games) if 'casino_' + name in d['flags']), 0)
+        w(f"  {{{d['id']}, {d['kind']}, {d['width']}, {d['height']}, {d['seatHeight']}, {d['states']}, {bits}, {rots}, {drink}, {c_str(d['name'])}, {tex}, {ix}, {iy}, {iw}, {ih}, {c_str(drinks)}, {c_str(d.get('description') or '')}, {ip}, {casino}}},")
     w('};')
     w(f'const int furni_def_count = {len(defs)};')
     w('')
@@ -462,8 +614,8 @@ def main():
             continue
         canvas = Image.new('RGBA', (max(tw, 8), max(th, 8)))
         canvas.paste(img, (0, 0))
-        canvas.save(GFX / f"room_{f['key']}.png")
-        backgrounds.append((f['key'], {'x': f['x'], 'y': f['y'], 'door': f['door'], 'rows': f['rows']}, img.size))
+        save_png(canvas, GFX / f"room_{f['key']}.png")
+        backgrounds.append((f['key'], {'x': f['x'], 'y': f['y'], 'door': f['door'], 'rows': f['rows']}, img.size, [(f"room_{f['key']}", 0, 0, img.width, img.height)]))
 
     # Layered public rooms (park and pool): background, depth masks and animations.
     scenes = []
@@ -486,13 +638,29 @@ def main():
             if i == len(sp.pages) - 1:
                 used = sp.y + sp.shelf
                 page = page.crop((0, 0, PAGE, max(8, 1 << (used - 1).bit_length())))
-            page.save(GFX / f'scene_{key}_{i}.png')
+            save_png(page, GFX / f'scene_{key}_{i}.png')
         scenes.append((key, r, len(sp.pages), sprites))
 
+    choices = []
+    for kind, key in [(1, 'walls'), (2, 'floors')]:
+        for id, (color, texture) in spaces[key].items():
+            tw, th = spaces['textures'][texture]
+            choices.append((kind, id, color, texture, tw, th))
+    w('const FinishChoice finish_choices[] = {')
+    for kind, id, color, texture, tw, th in choices:
+        w(f'  {{{kind}, {c_str(id)}, 0x{color[1:]}, {c_str(texture)}, {tw}, {th}}},')
+    w('};')
+    w(f'const int finish_choice_count = {len(choices)};')
+    w(f'const int finish_price = {spaces["price"]};')
+    for name, room, size, tiles in backgrounds:
+        w(f'static const RoomTile room_tiles_{name}[] = {{')
+        for file, x, y, tw, th in tiles:
+            w(f'  {{{c_str(file)}, {x}, {y}, {tw}, {th}}},')
+        w('};')
     w(f'const RoomBackground room_backgrounds[{len(backgrounds)}] = {{')
-    for name, room, (iw, ih) in backgrounds:
+    for name, room, (iw, ih), tiles in backgrounds:
         rows = '\\n'.join(room['rows'])
-        w(f"  {{{c_str(name)}, \"room_{name}\", {room['x']}, {room['y']}, {iw}, {ih}, {room['door'][0]}, {room['door'][1]}, \"{rows}\"}},")
+        w(f"  {{{c_str(name)}, \"room_{name}\", {room['x']}, {room['y']}, {iw}, {ih}, {room['door'][0]}, {room['door'][1]}, \"{rows}\", {len(tiles)}, room_tiles_{name}}},")
     w('};')
     w(f'const int room_background_count = {len(backgrounds)};')
     w('')
@@ -528,11 +696,13 @@ def main():
     w('};')
     w(f'const int room_model_count = {len(rooms)};')
 
+    for old in GFX.rglob('*.png'):
+        if old.resolve() not in GENERATED_PNGS and not old.name.startswith('font'): old.unlink()
     (GEN / 'assets.c').write_text('\n'.join(out) + '\n')
     src = json.loads((SRC / 'source.json').read_text())
     print(f"atlas pages: {n_color} RGBA8 + {len(gray_packer.pages)} LA8, unique sprites: {len(color_packer.seen) + len(gray_packer.seen)}, "
           f"avatar parts: {len(people)}, furniture variants: {len(furni)}, definitions: {len(defs)}")
-    print(f"origen: {src['web']} ({src['exportedAt']})")
+    print(f"source: {src['web']} ({src['exportedAt']})")
 
 
 if __name__ == '__main__':

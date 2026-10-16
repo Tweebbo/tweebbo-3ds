@@ -5,5 +5,5 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 STEPS_FILE=${1:-tools/emu/steps-online}
 rm -f build/shots/*.png
-timeout 600 podman run --rm ${NET:+--network $NET} -e STEPS=/work/$STEPS_FILE -e APP="${APP:-/work/out/tweebbo.3dsx}" -v "$PWD":/work:Z -v "$PWD/build/emu":/emu:Z tweebbo-3ds-emu /work/tools/emu/session.sh
-podman run --rm -v "$PWD/build/emu":/emu:Z tweebbo-3ds-emu bash -c 'grep -E "Critical|Exception Type" /emu/home/.local/share/azahar-emu/log/azahar_log.txt | head -5' || true
+timeout 600 podman run --rm ${NET:+--network $NET} -e STEPS=/work/$STEPS_FILE -e APP="${APP:-/work/out/tweebbo.3dsx}" -v "$PWD":/work:z -v "$PWD/build/emu":/emu:z tweebbo-3ds-emu /work/tools/emu/session.sh
+podman run --rm -v "$PWD/build/emu":/emu:z tweebbo-3ds-emu bash -c 'grep -E "Critical|Exception Type" /emu/home/.local/share/azahar-emu/log/azahar_log.txt | head -5' || true

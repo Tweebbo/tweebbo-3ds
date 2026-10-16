@@ -2,7 +2,14 @@ SRC := ../source
 CFLAGS := -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wno-format-truncation -I$(SRC)
 OBJS := $(SRC)/proto.c $(SRC)/path.c $(SRC)/sim.c $(SRC)/world.c $(SRC)/catalog.c $(SRC)/gen/assets.c
 
-all: host_test door_test anim_test
+all: host_test door_test anim_test protocol_test
+
+QJS := ../vendor/quickjs
+snow_host: snow_host.c $(QJS)/quickjs.c $(QJS)/libregexp.c $(QJS)/libunicode.c $(QJS)/cutils.c $(QJS)/dtoa.c
+	cc -std=gnu11 -O2 -D_GNU_SOURCE -DCONFIG_VERSION='"2026-06-04"' -I$(QJS) -o $@ $^ -lm -lpthread
+snow: snow_host
+	node snow-determinism.mjs
+.PHONY: snow
 
 door_test: door_test.c $(OBJS)
 	cc $(CFLAGS) -o $@ $^ -lm
@@ -50,3 +57,14 @@ update:
 	  cc -std=gnu11 -O1 -I../source -o /tmp/update_test update_test.c ../source/ws.c ../source/conn.c ../source/certs.c -lmbedtls -lmbedx509 -lmbedcrypto && \
 	  for i in 1 2 3 4 5 6; do /tmp/update_test | head -2; done'
 .PHONY: update
+
+protocol_test: protocol_test.c $(SRC)/world.c $(SRC)/proto.c $(SRC)/catalog.c $(SRC)/gen/assets.c
+	cc $(CFLAGS) -o $@ $^ -lm
+	./protocol_test
+
+transport_test: transport_test.c $(NET_OBJS)
+	cc $(CFLAGS) -DNO_TLS -pthread -o $@ $^ -lm
+
+transport: transport_test
+	node transport-fixture.mjs
+.PHONY: transport

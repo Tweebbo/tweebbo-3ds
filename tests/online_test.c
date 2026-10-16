@@ -22,6 +22,8 @@ void on_chat(u32 eid, const char *text) { chats++; snprintf(last_chat, sizeof la
 void on_notice(const char *text) { snprintf(last_notice, sizeof last_notice, "%s", text); printf("  notice: %s\n", text); }
 void on_transfer(const char *slug, const char *arrival) { transfers++; net_goto(slug, arrival); }
 void on_alert(const char *json) { printf("  alert: %s\n", json); }
+void on_casino(const char *json) { (void)json; }
+void on_snow(const u8 *data,int len) { (void)data;(void)len; }
 void on_social_changed(void) {}
 void on_name_changed(u32 eid) { (void)eid; }
 void on_item(u32 id) { (void)id; }
@@ -64,6 +66,57 @@ static bool paused(void) { return net_state() == NET_REPLACED; }
 static bool back_online(void) { return net_state() == NET_ONLINE && in_room(); }
 static void ignore(const u8 *data, int len, void *ctx) { (void)data; (void)len; (void)ctx; }
 
+static u32 browser_id, browser_invite;
+static Duel browser_game;
+static void browser_receive(const u8 *data, int len, void *ctx) {
+  (void)ctx;
+  Reader r; r_init(&r, data, len);
+  int type = r_u8(&r);
+  if (type == S_WELCOME) browser_id = (u32)r_var(&r);
+  if (type != S_GAME) return;
+  int op = r_u8(&r);
+  if (op == 1) browser_invite = (u32)r_var(&r);
+  if (op != 2) return;
+  Duel keep = W.duel; u32 revision = W.game_rev;
+  world_handle(data, len); browser_game = W.duel;
+  W.duel = keep; W.game_rev = revision;
+}
+
+static void browser_pump(Ws *ws, int ms) {
+  for (u64 end = now_ms() + ms; now_ms() < end;) {
+    assert(ws_poll(ws, 10, browser_receive, NULL)); net_update(now_ms());
+  }
+}
+
+static void crossplay_games(Endpoint *ep) {
+  Ws peer; Writer w; char err[128];
+  assert(ws_connect(&peer, ep, "/ws/lobby", 15000, err, sizeof err));
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 1); /* browser build marker */
+  assert(ws_send(&peer, w.buf, w.len)); browser_pump(&peer, 1500);
+  assert(browser_id && world_ent(browser_id));
+  assert(!(world_ent(browser_id)->flags & FLAG_3DS));
+  for (int kind = 1; kind <= 3; kind++) {
+    browser_invite = 0;
+    send_game(1, browser_id, kind, 0, 0); browser_pump(&peer, 1000);
+    assert(browser_invite == W.me);
+    w_begin(&w, C_GAME); w_u8(&w, 2); w_var(&w, W.me); w_u8(&w, 1);
+    assert(ws_send(&peer, w.buf, w.len)); browser_pump(&peer, 1000);
+    assert(W.duel.id && W.duel.kind == kind && W.duel.move_count > 0);
+    assert(!memcmp(W.duel.board, browser_game.board, 64));
+    assert(W.duel.players[W.duel.turn] == W.me);
+    send_game(3, W.duel.id, W.duel.moves[0][0], W.duel.moves[0][1], 5); browser_pump(&peer, 1000);
+    assert(W.duel.turn == 1 && !memcmp(W.duel.board, browser_game.board, 64));
+    w_begin(&w, C_GAME); w_u8(&w, 3); w_var(&w, browser_game.id);
+    w_u8(&w, browser_game.moves[0][0]); w_u8(&w, browser_game.moves[0][1]); w_u8(&w, 5);
+    assert(ws_send(&peer, w.buf, w.len)); browser_pump(&peer, 1000);
+    assert(W.duel.turn == 0 && !memcmp(W.duel.board, browser_game.board, 64));
+    send_game(4, W.duel.id, 0, 0, 0); browser_pump(&peer, 1000);
+    assert(W.duel.result == 2 && browser_game.result == 2);
+  }
+  ws_close(&peer);
+  puts("native/browser crossplay: Tic-tac-toe, Connect Four and Chess moves and resignation passed");
+}
+
 int main(int argc, char **argv) {
   server = argc > 1 ? argv[1] : "ws://127.0.0.1:8092";
   if (!mkdtemp(store_dir)) return 1;
@@ -80,7 +133,8 @@ int main(int argc, char **argv) {
   char key[160];
   Endpoint ep;
   endpoint_parse(server, &ep);
-  snprintf(key, sizeof key, "token-%s", ep.host);
+  if (ep.port == 80 || ep.port == 443) snprintf(key, sizeof key, "token-%s", ep.host);
+  else snprintf(key, sizeof key, "token-%s-%d", ep.host, ep.port);
   assert(store_load(key, token, sizeof token) && token[0]);
   printf("token saved per server: yes (%zu characters)\n", strlen(token));
 
@@ -109,13 +163,15 @@ int main(int argc, char **argv) {
   assert(pump_until(in_room, 20000));
   assert(W.guest_id == guest);
 
+  crossplay_games(&ep);
+
   // Another client with the same character takes over (a browser tab after "Save /
   // restore character"). The console must pause instead of evicting it back forever.
   Ws other;
   char err[128];
   assert(ws_connect(&other, &ep, "/ws/lobby", 15000, err, sizeof err));
   Writer w;
-  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0);
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 1); /* browser build marker */
   assert(ws_send(&other, w.buf, w.len));
   assert(pump_until(paused, 10000) && "the console was not told it was replaced");
   for (u64 stop = now_ms() + 4000; now_ms() < stop;) {

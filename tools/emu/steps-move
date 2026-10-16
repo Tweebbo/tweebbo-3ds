@@ -1,0 +1,14 @@
+# One-time character move (Me > Move…) against a local server (NET=host).
+wait 30
+# Dismiss the update prompt (when the build is older than the latest release).
+click 560 653
+wait 1
+click 503 712
+wait 2
+shot 01-me
+click 757 674
+wait 2
+shot 02-move
+click 640 579
+wait 4
+shot 03-code

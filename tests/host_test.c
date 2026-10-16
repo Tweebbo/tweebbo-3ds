@@ -22,6 +22,8 @@ void on_notice(const char *text) { notices++; printf("  notice: %s\n", text); }
 void sim_deliver(const u8 *data, int len) { world_handle(data, len); }
 void on_transfer(const char *slug, const char *arrival) { (void)slug; (void)arrival; }
 void on_alert(const char *json) { (void)json; }
+void on_casino(const char *json) { (void)json; }
+void on_snow(const u8 *data,int len) { (void)data;(void)len; }
 void on_social_changed(void) {}
 void on_name_changed(u32 eid) { (void)eid; }
 void on_item(u32 id) { (void)id; }
@@ -56,7 +58,7 @@ static void animated_furniture_changes(void) {
     else if (d->flags & DEF_TELEPORTER) state = 2;
     if (state == 255) continue;
     // Two different moments must give different frames and graphics.
-    u8 f0 = furni_frame(d->id, state, 0), f1 = furni_frame(d->id, state, d->flags & DEF_HOLO ? 500 : 180);
+    u16 f0 = furni_frame(d->id, state, 0), f1 = furni_frame(d->id, state, d->flags & DEF_HOLO ? 500 : 180);
     const FurniVariant *a = variant_frame(d->id, 0, state, f0), *b = variant_frame(d->id, 0, state, f1);
     bool changes = f0 != f1 && a && b && a != b;
     printf("  animated %u %-26s frames %u→%u %s\n", d->id, d->name, f0, f1, changes ? "changes" : "SAME");
@@ -74,14 +76,14 @@ int main(void) {
   Writer w;
   w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); send_msg(&w);
   assert(rooms == 1 && W.in_room && W.me);
-  assert(W.w == 12 && W.h == 16 && W.door_x == 0 && W.door_y == 5);
+  assert(W.w == 18 && W.h == 17 && W.door_x == 0 && W.door_y == 7);
   printf("room %s (%s) %dx%d, me=%u %s, furniture=", W.title, W.model, W.w, W.h, W.me, W.name);
   int items = 0; for (int i = 0; i < MAX_ITEMS; i++) items += W.items[i].used; printf("%d\n", items);
-  assert(items == 18);
+  assert(items == 53);
 
   run(3000);
   Ent *me = world_ent(W.me);
-  assert(me && me->x == 2 && me->y == 5);
+  assert(me && me->x == 2 && me->y == 7);
   printf("arrival: (%d,%d)\n", me->x, me->y);
 
   // Walk to a sofa: the avatar sits facing its rotation.

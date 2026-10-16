@@ -1,0 +1,25 @@
+# An isolated test account with Founder, VIP and Staff already assigned.
+wait 30
+shot 09-founder-room
+click 503 712
+wait 2
+click 660 628
+wait 3
+shot 10-founder-profile
+click 560 638
+wait 3
+shot 11-anonymous
+click 560 638
+wait 3
+click 695 638
+wait 3
+shot 12-presence-off
+click 695 638
+wait 3
+click 503 712
+click 735 588
+wait 2
+shot 13-founder-dance
+click 777 712
+wait 2
+shot 14-debug-help

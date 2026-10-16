@@ -16,6 +16,17 @@ bool sk_hit(float x, float y, float w, float h) {
   return T.released && T.x >= x && T.y >= y && T.x < x + w && T.y < y + h && T.x0 >= x && T.y0 >= y && T.x0 < x + w && T.y0 < y + h;
 }
 
+void utf8_copy(char *dst, size_t cap, const char *src) {
+  if (!cap) return;
+  size_t n = src ? strlen(src) : 0;
+  if (n >= cap) {
+    n = cap - 1;
+    while (n > 0 && ((u8)src[n] & 0xC0) == 0x80) n--;
+  }
+  if (n) memcpy(dst, src, n);
+  dst[n] = 0;
+}
+
 bool sk_click(float x, float y, float w, float h) { return sk_hit(x, y, w, h); }
 
 static bool pressed_on(float x, float y, float w, float h) {
@@ -56,13 +67,14 @@ bool sk_sprite(const char *name, float x, float y, float scale) {
   return true;
 }
 
-bool sk_window(float x, float y, float w, float h, const char *title) {
+static bool window(float x, float y, float w, float h, const char *title, bool closable) {
   // Steel-blue frame with a rounded black border, like window.* on the web.
   fill_round(x, y, w, h, 6, sk_rgb(SK_INK));
   fill_round(x + 1, y + 1, w - 2, h - 2, 5, sk_rgb(SK_WINDOW));
   bool close = false;
   if (title) {
     sk_text(title, x + w / 2, y + 3, 11, SK_WHITE, 1, w - 40);
+    if (!closable) return false;
     float cx = x + w - 17, cy = y + 3;
     close = sk_hit(cx - 6, cy - 4, 25, 21);
     if (!sk_sprite(pressed_on(cx - 6, cy - 4, 25, 21) ? "button.close.down" : "button.close.up", cx, cy, 1))
@@ -71,13 +83,16 @@ bool sk_window(float x, float y, float w, float h, const char *title) {
   return close;
 }
 
+bool sk_window(float x, float y, float w, float h, const char *title) { return window(x, y, w, h, title, true); }
+void sk_status_window(float x, float y, float w, float h, const char *title) { window(x, y, w, h, title, false); }
+
 void sk_content(float x, float y, float w, float h) {
   fill_round(x, y, w, h, 4, sk_rgba(0x000000, 60));
   fill_round(x, y, w - 1, h - 1, 4, sk_rgb(SK_CONTENT));
 }
 
 static float label_size(const char *label, float w, float size) {
-  while (size > 8 && text_width(label, size) > w - 10) size -= 0.5f;
+  while (size > 10 && text_width(label, size) > w - 10) size -= 0.5f;
   return size;
 }
 
@@ -88,7 +103,7 @@ bool sk_button(float x, float y, float w, const char *label, bool enabled) {
   fill_round(x + 1, y + 1, w - 2, h - 2, (h - 2) / 2, sk_rgb(down ? 0xd8d8d8 : SK_WHITE));
   if (!down) fill_rect(x + 5, y + h - 5, w - 10, 2, sk_rgb(0xdedede));
   float size = label_size(label, w, 10.5f);
-  text_draw(label, x + w / 2, y + (h - size * 1.25f) / 2 + 1, size, sk_rgb(enabled ? SK_TEXT : 0x9a9a9a), 1);
+  sk_text(label, x + w / 2, y + (h - size) / 2 - 3, size, enabled ? SK_TEXT : 0x9a9a9a, 1, w - 8);
   return enabled && sk_hit(x, y, w, h);
 }
 
@@ -99,9 +114,7 @@ bool sk_button_big(float x, float y, float w, const char *label, bool enabled) {
   fill_round(x + 2, y + 2, w - 4, h - 4, 6, sk_rgb(down ? 0xd0d0d0 : SK_WHITE));
   if (!down) fill_rect(x + 6, y + h - 7, w - 12, 3, sk_rgb(0xe2e2e2));
   float size = label_size(label, w, 11.5f);
-  float tw = text_draw(label, x + w / 2, y + (h - size * 1.25f) / 2 + 1, size, sk_rgb(enabled ? SK_TEXT : 0x9a9a9a), 1);
-  // Fake bold (the system font has none).
-  if (enabled) text_draw(label, x + w / 2 + 0.6f, y + (h - size * 1.25f) / 2 + 1, size, sk_rgb(SK_TEXT), 1);
+  float tw = sk_text(label, x + w / 2, y + (h - size) / 2 - 3, size, enabled ? SK_TEXT : 0x9a9a9a, 1, w - 8);
   (void)tw;
   return enabled && sk_hit(x, y, w, h);
 }
@@ -127,47 +140,60 @@ bool sk_tab(float x, float y, float w, float h, const char *label, bool on) {
   fill_round(x, y, w, h + 4, 4, sk_rgb(0x7f7f7f));
   fill_round(x + 1, y + 1, w - 2, h + 2, 3, sk_rgb(on ? 0xf5f5ef : 0xd6d6cf));
   float size = label_size(label, w, 10.5f);
-  text_draw(label, x + w / 2, y + (h - size * 1.25f) / 2 + 1, size, sk_rgb(SK_TEXT), 1);
-  if (on) text_draw(label, x + w / 2 + 0.6f, y + (h - size * 1.25f) / 2 + 1, size, sk_rgb(SK_TEXT), 1);
+  text_draw(label, x + w / 2, y + (h - size) / 2 - 3, size, sk_rgb(SK_TEXT), 1);
   return sk_hit(x, y, w, h);
 }
 
 float sk_text(const char *s, float x, float y, float size, u32 rgb, int align, float max_w) {
   char buf[256];
-  snprintf(buf, sizeof buf, "%s", s ? s : "");
+  utf8_copy(buf, sizeof buf, s);
   if (max_w > 0) text_fit(buf, size, max_w);
   return text_draw(buf, x, y, size, sk_rgb(rgb), align);
 }
 
-float sk_paragraph(const char *s, float x, float y, float w, float size, u32 rgb, int max_lines) {
+static int paragraph(const char *s, int offset, float x, float y, float w, float size, u32 rgb, int max_lines, int *lines) {
   char line[256];
-  float line_h = size * 1.3f, used = 0;
-  int lines = 0;
-  const char *p = s;
-  while (*p && lines < max_lines) {
-    // Word by word until the width is full; honours line breaks.
+  int length = (int)strlen(s);
+  if (offset < 0) offset = 0;
+  if (offset > length) offset = length;
+  const char *p = s + offset;
+  *lines = 0;
+  while (*p && *lines < max_lines) {
     int n = 0, last_space = -1;
-    while (p[n] && p[n] != '\n' && n < (int)sizeof line - 1) {
-      line[n] = p[n];
-      line[n + 1] = 0;
+    while (p[n] && p[n] != '\n') {
+      int next = n + 1;
+      while (p[next] && ((u8)p[next] & 0xc0) == 0x80) next++;
+      if (next >= (int)sizeof line) break;
+      memcpy(line, p, (size_t)next); line[next] = 0;
       if (text_width(line, size) > w) break;
       if (p[n] == ' ') last_space = n;
-      n++;
+      n = next;
     }
     int take = n;
     if (p[n] && p[n] != '\n' && last_space > 0) take = last_space;
-    if (take == 0 && p[0] && p[0] != '\n') take = 1;
-    memcpy(line, p, (size_t)take);
-    line[take] = 0;
-    if (lines == max_lines - 1 && p[take] && p[take] != '\n') text_fit(line, size, w);
-    text_draw(line, x, y + used, size, sk_rgb(rgb), 0);
-    used += line_h;
-    lines++;
+    if (!take && *p != '\n') {
+      take = 1;
+      while (p[take] && ((u8)p[take] & 0xc0) == 0x80) take++;
+    }
+    memcpy(line, p, (size_t)take); line[take] = 0;
+    text_draw(line, x, y + *lines * ceilf(size * 1.3f), size, sk_rgb(rgb), 0);
+    (*lines)++;
     p += take;
     while (*p == ' ') p++;
     if (*p == '\n') p++;
   }
-  return used;
+  return (int)(p - s);
+}
+
+int sk_paragraph_page(const char *s, int offset, float x, float y, float w, float size, u32 rgb, int max_lines) {
+  int lines;
+  return paragraph(s, offset, x, y, w, size, rgb, max_lines, &lines);
+}
+
+float sk_paragraph(const char *s, float x, float y, float w, float size, u32 rgb, int max_lines) {
+  int lines;
+  paragraph(s, 0, x, y, w, size, rgb, max_lines, &lines);
+  return lines * ceilf(size * 1.3f);
 }
 
 // ---------------------------------------------------------------- lists

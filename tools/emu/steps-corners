@@ -1,0 +1,20 @@
+# Isolated local server. Games and Casino corner tools on the room map.
+wait 30
+shot 60-corners
+click 502 520
+wait 4
+shot 61-games
+key s
+wait 1
+wait 3
+click 778 520
+wait 8
+shot 62-casino
+click 778 520
+wait 4
+shot 63-casino-again
+# Back to the lobby for the next session.
+click 549 712
+wait 3
+click 766 590
+wait 6

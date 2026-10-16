@@ -14,6 +14,12 @@ typedef enum { UPD_IDLE, UPD_CHECKING, UPD_LATEST, UPD_AVAILABLE, UPD_DOWNLOADIN
 void update_check(void);
 UpdateState update_state(void);
 const char *update_version(void);
+/** The running version as compared by the updater (debug builds add their build number). */
+const char *update_current(void);
+/** Background check that never shows a checking state or a transient error. */
+void update_check_quiet(void);
+/** Increases whenever a different update is found (re-shows a dismissed offer). */
+int update_offer(void);
 const char *update_notes(void);
 const char *update_error(void);
 /** 0–1 while downloading. */

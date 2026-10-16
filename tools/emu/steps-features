@@ -1,0 +1,28 @@
+# Touch keyboard, Games hub, catalogue preview (Azahar: m = START).
+wait 30
+key a
+wait 2
+click 528 612
+wait 1
+click 496 646
+wait 1
+click 656 646
+wait 1
+key x
+wait 1
+shot 91-osk-typed
+click 775 697
+wait 2
+shot 92-chat-sent
+click 502 520
+wait 3
+shot 93-games
+key s
+wait 1
+click 594 712
+wait 3
+click 790 580
+wait 2
+click 500 580
+wait 2
+shot 94-shop

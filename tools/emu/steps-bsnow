@@ -1,0 +1,22 @@
+# B inside Snow Storm and the Casino.
+wait 30
+click 502 520
+wait 3
+key x
+wait 4
+click 640 674
+wait 10
+key s
+wait 1
+shot 100-snow-b
+key a
+wait 3
+shot 101-snow-left
+wait 3
+shot 102-snow-left2
+key s
+wait 2
+shot 103-after-b
+key s
+wait 2
+shot 104-after-b2

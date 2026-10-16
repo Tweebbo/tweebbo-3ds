@@ -3,7 +3,7 @@
 #pragma once
 #include "common.h"
 
-#define MAX_ENTS 64
+#define MAX_ENTS 128
 #define MAX_ITEMS 512
 #define MAX_SIDE 64
 #define NAME_CAP 24
@@ -31,6 +31,13 @@ typedef struct {
 } Item;
 
 typedef struct { u32 id; u16 def; } InvItem;
+typedef struct {
+  u32 id, players[2];
+  u8 kind, turn, result, reason, last[2], check, board[64];
+  u16 move_count;
+  u8 moves[256][2];
+} Duel;
+typedef struct { u32 from; u8 kind; } GameInvite;
 
 typedef struct {
   u32 me, guest_id, credits, owner;
@@ -39,7 +46,13 @@ typedef struct {
   /** Incremented on every inventory change (to refresh the interface). */
   u32 inv_rev;
   /** PETS and PET_INVENTORY JSON as received (parsed by the interface). */
-  char *pets_json, *pet_inv_json;
+  char *pets_json, *pet_inv_json, *owners_json;
+  u32 owners_rev;
+  char wall[9], floor[9];
+  u32 finish_rev;
+  Duel duel;
+  GameInvite invites[8];
+  u32 game_rev;
   u32 pets_rev;
   int online;
   char name[NAME_CAP], token[80];
@@ -77,6 +90,8 @@ void on_chat(u32 eid, const char *text);
 void on_notice(const char *text);
 void on_transfer(const char *slug, const char *arrival);
 void on_alert(const char *json);
+void on_casino(const char *json);
+void on_snow(const u8 *data, int len);
 void on_social_changed(void);
 void on_name_changed(u32 eid);
 /** ITEM_ADD / ITEM_UPDATE (confirmation of placing or moving). */

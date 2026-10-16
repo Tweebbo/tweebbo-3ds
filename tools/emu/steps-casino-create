@@ -1,0 +1,45 @@
+# Casino, then create a room (crash regression). Isolated local server, New 3DS model. Never display the character access code.
+wait 30
+click 549 712
+wait 4
+shot 40-casino-nav
+click 766 590
+wait 8
+shot 41-casino-room
+click 645 545
+wait 4
+shot 42-casino-walk
+click 700 555
+wait 5
+shot 43-casino-machine
+# A sits on the slot chair, A again plays the machine (Azahar keys: a=A, s=B, z=X, h=D-pad right).
+key a
+wait 3
+key a
+wait 3
+shot 44-casino-slot
+key a
+wait 3
+shot 45-casino-spin
+key h
+wait 1
+shot 46-casino-next-game
+key s
+wait 2
+shot 47-casino-closed
+click 549 712
+wait 4
+key z
+wait 2
+click 640 574
+wait 3
+type ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn
+wait 1
+key Return
+wait 3
+click 715 672
+wait 8
+shot 54-created
+click 549 712
+wait 4
+shot 55-nav

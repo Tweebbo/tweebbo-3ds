@@ -10,6 +10,7 @@
 #include "net.h"
 #include "ui_int.h"
 #include "world.h"
+#include "osk.h"
 
 #define MAX_CONTACTS 64
 #define MAX_MESSAGES 100
@@ -166,6 +167,28 @@ static Contact *find(Contact *list, int n, u32 id) {
   return NULL;
 }
 
+static void search_done(const char *q, void *ctx) {
+  (void)ctx;
+  snprintf(S.query, sizeof S.query, "%s", q);
+  char esc[160], path[200];
+  int o = 0;
+  for (const char *p = q; *p && o < (int)sizeof esc - 4; p++) {
+    unsigned char ch = (unsigned char)*p;
+    if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') esc[o++] = (char)ch;
+    else o += snprintf(esc + o, sizeof esc - (size_t)o, "%%%02X", ch);
+  }
+  esc[o] = 0;
+  snprintf(path, sizeof path, "/api/social?q=%s", esc);
+  S.search_job = net_http("GET", path, NULL, true);
+  snprintf(S.status, sizeof S.status, "Searching…");
+}
+
+static void message_done(const char *text, void *ctx) {
+  (void)ctx;
+  friends_act("message", S.peer, text);
+  S.next_poll = now_ms() + 400;
+}
+
 static void conversation(u64 now) {
   Contact *c = find(S.friends, S.nf, S.peer);
   if (!c) { S.peer = 0; return; }
@@ -195,11 +218,8 @@ static void conversation(u64 now) {
   if (!S.nm) sk_text(S.msg_job ? "Loading…" : "No messages yet.", BOT_W / 2, ly + 30, 10, SK_DIM, 1, 0);
   if (sk_field(IN_X + 2, IN_Y + IN_H - 21, IN_W - 62, "", "Write a message…") || sk_button(IN_X + IN_W - 56, IN_Y + IN_H - 21, 54, "Send", true) ||
       K.a) {
-    char text[512];
-    if (ui_keyboard("Message", NULL, text, sizeof text, 500, false)) {
-      friends_act("message", S.peer, text);
-      S.next_poll = now + 400;
-    }
+    // The touch keyboard keeps the hotel running while you write.
+    osk_open("Message", NULL, 500, message_done, NULL);
   }
   static u64 refreshed;
   if (now - refreshed > 3000) { refreshed = now; load_messages(); }
@@ -227,21 +247,7 @@ void friends_draw(u64 now) {
   const float row = 24;
   if (S.view == 2) {
     if (sk_field(IN_X + 4, ly, IN_W - 72, S.query, "Player name") || sk_button(IN_X + IN_W - 64, ly, 60, "Search", true) || K.x) {
-      char q[48];
-      if (ui_keyboard("Search for a player", S.query, q, sizeof q, 40, false)) {
-        snprintf(S.query, sizeof S.query, "%s", q);
-        char esc[160], path[200];
-        int o = 0;
-        for (const char *p = q; *p && o < (int)sizeof esc - 4; p++) {
-          unsigned char ch = (unsigned char)*p;
-          if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') esc[o++] = (char)ch;
-          else o += snprintf(esc + o, sizeof esc - (size_t)o, "%%%02X", ch);
-        }
-        esc[o] = 0;
-        snprintf(path, sizeof path, "/api/social?q=%s", esc);
-        S.search_job = net_http("GET", path, NULL, true);
-        snprintf(S.status, sizeof S.status, "Searching…");
-      }
+      osk_open("Search for a player", S.query, 40, search_done, NULL);
     }
     ly += 22; lh -= 22;
   }

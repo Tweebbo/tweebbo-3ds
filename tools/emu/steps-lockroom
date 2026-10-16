@@ -1,0 +1,41 @@
+# Create a password room with the touch keyboard, enter it, then My Rooms.
+wait 30
+click 549 712
+wait 4
+key z
+wait 2
+click 640 571
+wait 2
+click 592 612
+wait 1
+click 560 646
+wait 1
+click 688 612
+wait 1
+click 528 646
+wait 1
+click 775 697
+wait 2
+shot 120-name
+key x
+wait 2
+click 496 646
+wait 1
+click 528 646
+wait 1
+click 560 646
+wait 1
+click 592 646
+wait 1
+shot 121-secret
+click 775 697
+wait 2
+shot 122-locked
+key a
+wait 8
+shot 123-in-room
+click 549 712
+wait 4
+click 740 537
+wait 4
+shot 124-myrooms

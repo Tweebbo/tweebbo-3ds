@@ -18,6 +18,8 @@ typedef enum {
   P_ITEM,     /* selected furniture */
   P_ENT,      /* another character */
   P_PETS,     /* pets */
+  P_MOVE,     /* one-time move of the character to another device */
+  P_GAME, P_PROFILE, P_CASINO, P_SNOW, P_GAMES,
   P_COUNT
 } Panel;
 
@@ -50,7 +52,6 @@ void ui_select_item(u32 id);
 void ui_select_ent(u32 eid);
 
 /** System keyboard. Returns true when accepted. */
-bool ui_keyboard(const char *hint, const char *initial, char *out, int cap, int max_len, bool multiline);
 /** Modal confirmation dialog (drawn on top). */
 void ui_confirm(const char *text, const char *yes, void (*fn)(void *), void *ctx);
 
@@ -80,3 +81,21 @@ void build_tap_tile(int x, int y);
 /** The server confirmed (ITEM_ADD/UPDATE) or rejected (NOTICE) the placement. */
 void build_result(u32 item_id);
 void build_notice(void);
+
+void spaces_reset(bool restore);
+
+void games_draw(u64 now);
+/** Games hub: Snow Storm and one-on-one challenges with people in the room. */
+void games_hub_draw(u64 now);
+void hand_select_def(u16 def);
+
+void games_poll(void);
+void games_challenge(u32 target);
+
+void profile_open(u32 guest);
+void profile_draw(u64 now);
+
+void casino_poll(u64 now);
+void casino_draw(u64 now);
+void casino_close(bool notify);
+void casino_notice(void);

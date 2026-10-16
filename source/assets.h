@@ -5,12 +5,18 @@
 typedef struct { const char *name; u8 page; u16 x, y, w, h; s16 rx, ry; } PeopleSprite;
 /** Classic interface graphic (client/public/classic), sorted by name. */
 typedef PeopleSprite UiSprite;
-/** `page`: furniture texture (always 0 of its definition). */
+/** `page`: furniture page belonging to its definition. */
 typedef struct { u8 page; u16 x, y, w, h; s16 ox, oy; float depth; u8 alpha; u8 flags; } FurniPart;
 enum { PART_SHADOW = 1, PART_ADD = 2 };
-typedef struct { u16 def; u8 rot, state, frame, count; const FurniPart *parts; } FurniVariant;
+typedef struct { u16 def; u8 rot, state; u16 frame, count; const FurniPart *parts; } FurniVariant;
 /** `tex`: has its own texture in romfs:/furni/d<id>.t3x; `icon_*`: catalogue icon inside it. */
-typedef struct { u16 id; u8 kind, w, h; u16 seat; u8 states, flags, rotations, drink; const char *name; u8 tex; u16 icon_x, icon_y, icon_w, icon_h; const char *drinks, *desc; } FurniDef;
+typedef struct { u16 id; u8 kind, w, h; u16 seat; u8 states, flags, rotations, drink; const char *name; u8 tex; u16 icon_x, icon_y, icon_w, icon_h; const char *drinks, *desc; u8 icon_page, casino; } FurniDef;
+typedef struct { u16 def; u8 page; u32 bytes; } FurniTexture;
+extern const FurniTexture furni_textures[];
+extern const int furni_texture_count;
+typedef struct { u16 def, state, tick, period; const u16 *frames; } FurniAnimation;
+extern const FurniAnimation furni_animations[];
+extern const int furni_animation_count;
 typedef struct { u8 id; const char *name; } DrinkName;
 typedef struct { const char *name; u8 breeds, color_count; u32 colors[40]; } PetKind;
 typedef struct { const char *id, *name, *layout, *body; } CatPage;
@@ -18,10 +24,14 @@ typedef struct { const char *id, *name, *layout, *body; } CatPage;
 typedef struct { u16 id, def; u16 amount; u8 available; u32 price; const char *name, *desc, *pages; } CatOffer;
 enum { DEF_SIT = 1, DEF_LAY = 2, DEF_STACK = 4, DEF_TELEPORTER = 8, DEF_GATE = 16, DEF_SOLID = 32, DEF_REDEEM = 64, DEF_HOLO = 128 };
 enum { KIND_BLOCK, KIND_SIT, KIND_FLOOR, KIND_TOGGLE, KIND_DICE, KIND_WALL };
-typedef struct { const char *label, *parts; char sex; } WardrobeEntry;
+typedef struct { const char *label, *parts; char sex; const char *layers; } WardrobeEntry;
 typedef struct { u8 index; const char *part; u8 n; const char *act[16]; s8 frm[16], offx[16], offy[16], offd[16]; } DanceTrack;
 typedef struct { u8 drink; const char *model; } DrinkModel;
-typedef struct { const char *model, *file; s16 x, y; u16 w, h; u8 door_x, door_y; const char *rows; } RoomBackground;
+typedef struct { const char *file; u16 x, y, w, h; } RoomTile;
+typedef struct { const char *model, *file; s16 x, y; u16 w, h; u8 door_x, door_y; const char *rows; u8 tile_count; const RoomTile *tiles; } RoomBackground;
+typedef struct { u8 kind; const char *id; u32 color; const char *texture; u16 w, h; } FinishChoice;
+extern const FinishChoice finish_choices[];
+extern const int finish_choice_count, finish_price;
 /** Public room layer: region (page,sx,sy,w,h) drawn at (x,y) with size (dw,dh). */
 typedef struct { u8 page; u16 sx, sy, w, h; s16 x, y; u16 dw, dh; float depth; u8 alpha, frames, frame, background; } SceneSprite;
 /** Layered public room (romfs:/gfx/scene_<model>_<page>.t3x). `water`: water height or -1. */
@@ -79,3 +89,7 @@ extern const PeopleSprite swim_sprites[];
 extern const int swim_sprite_count;
 extern const RoomModel room_models[];
 extern const int room_model_count;
+
+typedef struct { u8 size; u16 code, x, y, w, h; s8 left, top, advance; } FontGlyph;
+extern const FontGlyph font_glyphs[];
+extern const int font_glyph_count;

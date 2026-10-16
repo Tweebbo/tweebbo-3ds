@@ -1,0 +1,3 @@
+# Debug LAN update: the newest build must not offer an update.
+wait 45
+shot 72-latest

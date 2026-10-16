@@ -1,0 +1,19 @@
+# Catalogue preview on a furniture page, then the create-room door option.
+wait 30
+click 594 712
+wait 3
+click 718 642
+wait 3
+shot 110-shop-candy
+key h
+wait 1
+key h
+wait 1
+shot 111-shop-third
+key s
+wait 1
+click 549 712
+wait 3
+key z
+wait 2
+shot 112-create-door

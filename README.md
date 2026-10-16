@@ -4,6 +4,8 @@ Native Nintendo 3DS client for [Tweebbo](https://tweebbo.lol) (C + libctru + cit
 
 > Tweebbo is in development and may be unstable.
 
+The current working tree includes an **unpublished local debug build** for the October 2026 hotel. Start with [the debug installation and test guide](docs/DEBUG.md). The public downloads below are separate releases.
+
 ![Building with the buttons](docs/visual/build-mode.png)
 ![Crossplay: the web sees the 3DS player](docs/visual/crossplay-web.png)
 
@@ -20,7 +22,7 @@ A console with custom firmware (Luma3DS) is required. `tweebbo.3dsx` works from 
 ## Features
 
 - **Online**: WebSocket over TLS (mbedTLS, embedded root certificates) on its own thread, with exponential reconnection, renewal before Vercel's 270 s limit and session recovery. HELLO carries platform byte `1` (Nintendo 3DS): the web shows a small pixel-art handheld over the player and their profile reads "This person is connected through a Nintendo 3DS system". The 3DS shows it over other console players too.
-- **The same features as the web**:
+- **Shared hotel features**:
   - *Navigator*: All / Public / My Rooms with occupancy, *Go*, refresh every 15 s and **Create a room**.
   - *Catalogue*: every page and offer of the catalogue, icons, prices and purchase confirmation.
   - *Hand*: grouped inventory and **place in room**.
@@ -31,6 +33,12 @@ A console with custom firmware (Luma3DS) is required. `tweebbo.3dsx` works from 
   - *Pets*: adopt (species, coat, color and name), place, commands and status; pets are drawn and walk in the room.
   - Rooms: the lobby, private rooms, Classic Park with its animated fountain and The Pool with swimming.
   - Chat bubbles, chat history, ignore list, hotel alerts and server notices.
+  - *Games*: Snow Storm (the original SnowWar, in sync with web players, with bots, lobbies and practice; the nearest rival is targeted automatically and you can tap a rival to choose) and one-on-one Tic-tac-toe, Connect Four and Chess challenges with anyone in the room.
+  - *Casino*: five slot machines, roulette, blackjack, Casino Hold'em, Video Poker and Crash, with the original cards and symbols. Bets and payouts are decided by the hotel.
+  - Password rooms: create a room with a password, lock or open your rooms from My Rooms, and enter locked rooms by typing the password.
+  - Walls and floors, the expanded furniture and clothing, VIP/Staff badges and the new lobby.
+  - A touch keyboard for chat, names and passwords: the hotel keeps moving on the top screen while you type.
+  - Catalogue preview: the selected item is shown large on the top screen, with its price.
 - **"Press A" (3DS only)**: next to a dispenser, seat, bed, dice, switch, gate or teleporter (or facing another player) the top screen shows "Ⓐ Get a drink · Mochamaster", "Ⓐ Sit", "Ⓐ Roll the dice"… and A does it. With nothing nearby, A talks.
 - **In-game updates**: when entering the hotel the game reads `latest.json` from the latest GitHub release. If there is a newer version it offers **Update now**, downloads the CIA (or the `.3dsx` when launched from the Homebrew Launcher), checks its SHA-256 and installs it through AM without FBI, then asks to restart. If the console refuses to install, the CIA is saved to `SD:/cias/` to install with FBI. Also available in *Help → Check for updates*.
 - **Offline practice**: a local simulation of the lobby with bots, only when chosen in *Help → Offline*.
@@ -48,7 +56,7 @@ A console with custom firmware (Luma3DS) is required. `tweebbo.3dsx` works from 
 | SELECT | Next window | Next window | — |
 | START | Quit | Quit | Quit |
 
-Touch screen: bottom bar (Me, Navigator, Catalogue, Hand, Friends, Chat, Help), lists that scroll by dragging, and the minimap (tap to walk, sit or select people and furniture).
+Touch screen: bottom bar (Me, Navigator, Catalogue, Hand, Friends, Chat, Help), the Games and Casino buttons in the top corners of the map, lists that scroll by dragging, and the minimap (tap to walk, sit or select people and furniture).
 
 ## Saved progress
 
@@ -56,13 +64,13 @@ Everything done on the console (credits, inventory, rooms, looks, name, friends,
 
 ## Performance and compatibility
 
-Tested on real hardware. Runs on Old 3DS, Old 2DS, New 3DS and New 2DS XL; in Old 3DS memory mode 26 MB of linear memory stay free after loading the graphics, with a 16 MB budget for furniture.
+The released client has been tested on real hardware. **The current expanded debug build still needs physical-console validation**, starting with New 3DS / New 3DS XL / New 2DS XL. It keeps the original-model code path. Emulator results are not hardware performance measurements.
 
-- Grey avatar parts are stored as LA8 (half the memory) and only the interface graphics in use are packed: the atlas takes about 3.3 MB.
+- Exactly grey avatar parts use LA8; colored parts use RGBA8. Both preserve source pixels. Five avatar/interface pages plus the native-sized glyph atlas replace the older asset set.
 - Caches for parsed text and avatar compositions avoid hundreds of lookups per frame, which matters most on the 268 MHz Old 3DS CPU.
 - Furniture loads per room with an LRU cache; backgrounds, scenes and pets are freed when leaving.
 - New 3DS runs in 804 MHz mode.
-- `sdmc:/3ds/Tweebbo/log.txt` records the console model, free memory, texture failures, updates and, every 30 s, the average frame time.
+- `sdmc:/3ds/Tweebbo/log.txt` records the console model, free memory, texture failures, updates and, every 30 s, the average frame time. Debug logs live in `sdmc:/3ds/Tweebbo-debug/`.
 
 ## Server
 
@@ -77,22 +85,25 @@ Requirements: Podman, Node 22, Python 3 with Pillow, Google Chrome (for the grap
 ./build.sh brand    # redraws the HOME Menu icon, banner and banner sound with the game's avatars
 ./build.sh          # converts textures (tex3ds, compressed) and builds out/tweebbo.3dsx
 ./build.sh cia      # also packs out/tweebbo.cia (version from VERSION)
+TWEEBBO_SERVER=ws://192.168.1.20:8092 ./build.sh debug # separate local-only CIA and 3DSX
 NOTES="…" ./build.sh release   # publishes the GitHub release (CIA, 3DSX, latest.json, QR code)
 make -C tests                  # simulation, protocol, state, every furniture graphic and animations
 make -C tests online           # real online client against ws://127.0.0.1:8092 (creates a guest)
 make -C tests tls              # TLS with mbedTLS 2.28 against https://tweebbo.lol/healthz
 ```
 
-When changing `TWEEBBO_SERVER`, touch `source/net.c` and `source/ui.c` (make does not track compiler options). `./build.sh release` refuses to publish a CIA that points to a local server.
+The build configuration stamp tracks the server, profile and version and rebuilds objects when they change. `./build.sh release` refuses to publish a CIA that points to a local server. Debug artifacts use a separate output directory, object directory, title ID and SD directory; public updates are disabled.
 
 ### Graphics shared with the web
 
-`tools/export/run.mjs` copies a snapshot of the web client and runs its own drawing code in headless Chrome: avatar parts, swimming bodies, all 890 catalogue furniture items (every rotation, state and animation frame), the floors of rooms without an original background (`Renderer.buildFloor`), plus the catalogue, public rooms, pets and classic interface data. `tools/pack.py` converts it for the console:
+`tools/export/run.mjs` copies a snapshot of the web client and runs its own drawing code in headless Chrome: avatar parts, swimming bodies, catalogue furniture (every rotation, state and distinct animation frame), the floors of rooms without an original background (`Renderer.buildFloor`), plus the catalogue, public rooms, pets and classic interface data. The October 15 snapshot contains 1,906 furniture definitions with graphics and 32,064 variants. `tools/pack.py` converts it for the console:
 
 - Avatar and classic interface atlas (`romfs:/gfx/atlas*.t3x`, RGBA8 and LA8 pages).
-- One texture per furniture item (`romfs:/furni/d<id>.t3x`), loaded on demand with an LRU cache sized to the free linear memory.
+- Furniture textures (`romfs:/furni/d<id>.t3x`, with extra pages for large definitions), loaded on demand with an LRU cache sized to free linear memory. Eviction preserves textures queued in the current frame.
 - Room backgrounds, layered park and pool scenes, and one texture per pet breed palette.
 - C tables: catalogue and offers, wardrobe, dances, drinks, pets and rooms.
+- Original wall/floor patterns and lossless room masks, applied once when a finish changes.
+- A Noto Sans glyph atlas at integer sizes 10–16 for the lower screen. Its font license is included in `assets/fonts/`.
 
 ## Emulator tests
 

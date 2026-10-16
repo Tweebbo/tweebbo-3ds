@@ -1,0 +1,10 @@
+# PREVIEW=capacity node tests/transport-fixture.mjs on port 18094.
+wait 30
+shot 22-over-capacity
+click 621 670
+wait 1
+click 722 670
+wait 1
+click 680 698
+wait 2
+shot 23-capacity-cooldown

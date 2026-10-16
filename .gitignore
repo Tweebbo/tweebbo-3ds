@@ -11,3 +11,9 @@ tests/anim_test
 tests/tls_test
 source/gen/
 tests/update_test
+
+obj-debug/
+tests/protocol_test
+tests/transport_test
+tests/snow_host
+__pycache__/

@@ -11,12 +11,20 @@ void gfx_sprite(int page, int sx, int sy, int sw, int sh, float x, float y, floa
 void gfx_furni(u16 def, const FurniPart *part, float x, float y, float scale, u32 color);
 /** Catalogue icon of a furniture item, centered on (cx, cy) and shrunk to fit `box`. */
 void gfx_furni_icon(u16 def, float cx, float cy, float box);
+/** Catalogue icon at a whole-number zoom (top-screen preview). */
+void gfx_furni_icon_scaled(u16 def, float cx, float cy, float k);
 /** Preloads a furniture texture (when entering a room). */
 void gfx_furni_preload(u16 def);
 /** Pet part with its breed palette; `solid` paints it a single color (shadow). */
 void gfx_pet(int palette, const PetPart *p, float x, float y, float scale, bool flip, u32 color, bool solid);
 /** Call once per frame: frees old textures when over budget. */
 void gfx_frame(void);
+/** Call after FrameBegin, before drawing either screen. */
+void gfx_suspend_room(void);
+bool gfx_snow_load(void);
+void gfx_snow_free(void);
+void gfx_snow_sprite(unsigned id, float x, float y, float kx, float ky, u32 color,
+                     float left, float top, float right, float bottom);
 void gfx_filter(bool linear);
 void gfx_additive(bool on);
 /** Pre-rendered background of a classic room; NULL if not packed. */

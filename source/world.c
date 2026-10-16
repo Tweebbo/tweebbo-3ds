@@ -28,7 +28,7 @@ const char *public_slug(const char *slug) {
 }
 
 bool public_model(const char *model) {
-  return !strcmp(model, "newbie_lobby") || !strcmp(model, "park_a") || !strcmp(model, "pool_a");
+  return !strcmp(model, "newbie_lobby") || !strcmp(model, "park_a") || !strcmp(model, "pool_a") || !strcmp(model, "casino");
 }
 
 bool world_can_decorate(void) { return W.owner && W.owner == W.guest_id && !public_model(W.model); }
@@ -181,6 +181,10 @@ void world_handle(const u8 *data, int len) {
         Ent e; read_ent(&r, &e);
         if (i < MAX_ENTS) W.ents[i++] = e;
       }
+      W.wall[0] = W.floor[0] = 0;
+      memset(W.invites, 0, sizeof W.invites);
+      memset(&W.duel, 0, sizeof W.duel);
+      W.game_rev++;
       W.in_room = true;
       on_room();
       break;
@@ -242,7 +246,7 @@ void world_handle(const u8 *data, int len) {
     }
     case S_HOTEL_ALERT: {
       // Alerts allow 1000 characters (up to ~4 KB of escaped UTF-8 JSON).
-      static char alert[4096];
+      static char alert[8192];
       r_str(&r, alert, sizeof alert);
       if (!r.err) on_alert(alert);
       break;
@@ -250,6 +254,46 @@ void world_handle(const u8 *data, int len) {
     case S_SOCIAL_CHANGED: on_social_changed(); break;
     case S_PETS: set_json(&W.pets_json, &r); break;
     case S_PET_INVENTORY: set_json(&W.pet_inv_json, &r); break;
+    case S_GAME: {
+      u8 op = r_u8(&r);
+      if (op == 1 || op == 4) {
+        u32 from = (u32)r_var(&r); u8 kind = op == 1 ? r_u8(&r) : 0;
+        if (r.err || (op == 1 && (kind < 1 || kind > 3))) break;
+        int slot = -1;
+        for (int i = 0; i < 8; i++) if (W.invites[i].from == from) { slot = i; break; }
+        if (slot < 0 && op == 1) for (int i = 0; i < 8; i++) if (!W.invites[i].from) { slot = i; break; }
+        if (slot >= 0) W.invites[slot] = (GameInvite){op == 1 ? from : 0, kind};
+      } else if (op == 2) {
+        Duel game = {0};
+        game.id = (u32)r_var(&r); game.kind = r_u8(&r);
+        game.players[0] = (u32)r_var(&r); game.players[1] = (u32)r_var(&r);
+        game.turn = r_u8(&r); game.result = r_u8(&r); game.reason = r_u8(&r);
+        game.last[0] = r_u8(&r); game.last[1] = r_u8(&r); game.check = r_u8(&r);
+        u64 n = r_var(&r);
+        if (game.kind < 1 || game.kind > 3 || game.turn > 1 || game.result > 3 || n != (game.kind == 1 ? 9u : game.kind == 2 ? 42u : 64u)) break;
+        for (unsigned i = 0; i < n; i++) game.board[i] = r_u8(&r);
+        u64 moves = r_var(&r);
+        if (moves > 256) break;
+        game.move_count = (u16)moves;
+        for (unsigned i = 0; i < moves; i++) { game.moves[i][0] = r_u8(&r); game.moves[i][1] = r_u8(&r); }
+        if (r.err) break;
+        W.duel = game;
+      } else break;
+      W.game_rev++;
+      break;
+    }
+    case S_OWNER_IDENTITY: set_json(&W.owners_json, &r); W.owners_rev++; break;
+    case S_CASINO: {
+      char *event = NULL; set_json(&event, &r);
+      if (event) { on_casino(event); free(event); }
+      break;
+    }
+    case S_SNOW: on_snow(r.b+r.p,r.len-r.p); break;
+    case S_FINISH:
+      r_str(&r, W.wall, sizeof W.wall);
+      r_str(&r, W.floor, sizeof W.floor);
+      W.finish_rev++;
+      break;
     case S_ONLINE: W.online = (int)r_var(&r); break;
     case S_ITEM_ADD:
     case S_ITEM_UPDATE: { Item it; read_item(&r, &it); if (!r.err) { put_item(&it); on_item(it.id); } break; }

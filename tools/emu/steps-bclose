@@ -1,0 +1,46 @@
+# Opens each window and closes it with B (Azahar s = B).
+wait 30
+click 503 712
+wait 2
+shot 80-me
+key s
+wait 1
+shot 81-me-b
+click 549 712
+wait 3
+key s
+wait 1
+shot 82-nav-b
+click 594 712
+wait 2
+key s
+wait 1
+shot 83-shop-b
+click 640 712
+wait 2
+key s
+wait 1
+shot 84-hand-b
+click 686 712
+wait 2
+key s
+wait 1
+shot 85-friends-b
+click 731 712
+wait 2
+key s
+wait 1
+shot 86-chat-b
+click 777 712
+wait 2
+key s
+wait 1
+shot 87-help-b
+click 502 520
+wait 4
+key s
+wait 2
+shot 88-games-b
+key s
+wait 2
+shot 89-after-sit

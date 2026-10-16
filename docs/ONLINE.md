@@ -17,8 +17,11 @@ The same code builds on the PC: `make -C tests online` (no TLS, local server) an
 
 ## Identity
 
-- HELLO = `u16 version, str token, str arrival, u8 platform` with `platform = 1`. Without a token the server creates a guest and returns it in WELCOME; it is saved in `sdmc:/3ds/Tweebbo/token-<host>.txt` (one per server).
+- HELLO = `u16 version, str token, str arrival, u8 platform, str password, u8 capabilities` with `platform = 1`. Trailing password and capabilities are optional for older clients. The current native client advertises `6`: structured status/identity messages (`2`) and board games (`4`). The server preserves the console bit while checking capabilities.
+- Without a token the server creates a guest and returns it in WELCOME. Normal builds store it in `sdmc:/3ds/Tweebbo/token-<host>.txt`; debug uses `Tweebbo-debug/`. Nonstandard ports are part of the filename, preventing identities from mixing between local test hotels. Passwords remain in memory only.
 - *Me → Save / restore character*: "Show code" reveals the private code (hidden by default); "Use a code" checks it with `POST /api/identity` and, after confirming the name, reconnects as that character. The code is never logged.
+- *Me → Move…*: one-time move of the character to another device (web `POST /api/transfer`, `GET /api/transfer`, `POST /api/transfer/claim`). "Get a transfer code" shows an 8-character code valid for 10 minutes and waits for the other device; "Enter a code from another device" checks the code, asks for confirmation and reconnects with the new access code. Each character moves only once.
+- Looks are packed in at most 42 bits (bits 37–41 hold the high bits of the later hair, bottoms and shoes of the web wardrobe; `look_decode` reads them and items the console does not have fall back to the first one).
 
 ## Platform flag (server and web)
 
@@ -28,6 +31,16 @@ The same code builds on the PC: `make -C tests online` (no TLS, local server) an
 
 ## Known limits
 
+- Casino game windows and Snow Storm still need native clients. The Casino room and furniture render, but the server deliberately rejects these game sessions on consoles. Do not remove those guards or advertise full feature parity until the implementations and crossplay tests exist.
+
 - The system font lacks some characters: titles with emoji or some non-Latin scripts show "?".
 - Sharing on X / Twitter is web-only.
 - Furniture loads per room within a budget computed at start; on Old 3DS the least recently used textures are freed in heavily decorated rooms.
+
+## Local debug connection states
+
+Only WELCOME marks the connection online. A notice or an alert cannot do so. Locked rooms wait for a password or a return to the lobby. Capacity messages retain the server retry delay (30–3,600 seconds); only a room-capacity refusal offers an immediate lobby fallback. Moderation refusals and session takeover pause reconnection until the player acts.
+
+Incoming/outgoing queues are bounded. Overflow requests a fresh room snapshot instead of silently losing deltas. This does not replace server-side admission limits or a real hardware load test.
+
+`make -C tests transport` checks connection states against a local WebSocket fixture. `make -C tests online SERVER=ws://127.0.0.1:18093` also exercises native/browser board-game messages against an isolated hotel. Never use production or a live local player database for test fixtures.

@@ -9,13 +9,44 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 IMAGE=docker.io/devkitpro/devkitarm:latest
+BUILD_PROFILE=release
+TARGET=out/tweebbo
+RSF=cia/tweebbo.rsf
+APP_NAME=Tweebbo
+if [ "${1:-}" = debug ]; then
+  : "${TWEEBBO_SERVER:?Set TWEEBBO_SERVER to your local hotel, e.g. ws://192.168.1.20:8092}"
+  python3 - <<'CHECK'
+import ipaddress, os, urllib.parse
+u = urllib.parse.urlparse(os.environ['TWEEBBO_SERVER'])
+try:
+    host = ipaddress.ip_address(u.hostname)
+    ranges = ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '169.254.0.0/16')
+    valid = u.scheme == 'ws' and any(host in ipaddress.ip_network(net) for net in ranges)
+except ValueError:
+    valid = False
+if not valid or u.username or u.password or u.path not in ('', '/') or u.query or u.fragment:
+    raise SystemExit('Debug builds require a private LAN IP or loopback ws:// address.')
+CHECK
+  BUILD_PROFILE=debug
+  TARGET=out/debug/tweebbo-debug
+  # Debug builds are numbered: consoles on the LAN update when tools/debug-page.py publishes a higher number.
+  mkdir -p build romfs
+  DEBUG_BUILD=$(( $(cat build/debug-build 2>/dev/null || echo 0) + 1 ))
+  echo "$DEBUG_BUILD" > build/debug-build
+  echo "$DEBUG_BUILD" > romfs/debug-build.txt
+  # The number lives in romfs: repack even when no code changed.
+  rm -f "$TARGET.3dsx" "$TARGET.smdh"
+  RSF=cia/tweebbo-debug.rsf
+  APP_NAME='Tweebbo Debug'
+fi
 
-run() { podman run --rm -e TWEEBBO_SERVER="${TWEEBBO_SERVER:-}" -v "$PWD":/work:Z -w /work "$IMAGE" bash -c "$*"; }
+[ "$BUILD_PROFILE" = debug ] || rm -f romfs/debug-build.txt
+run() { podman run --rm -e BUILD_PROFILE="$BUILD_PROFILE" -e TWEEBBO_SERVER="${TWEEBBO_SERVER:-}" -v "$PWD":/work:z -w /work "$IMAGE" bash -c "$*"; }
 # makerom needs glibc 2.38 or newer.
-run_cia() { podman run --rm -v "$PWD":/work:Z -w /work docker.io/library/ubuntu:24.04 bash -c "$*"; }
+run_cia() { podman run --rm -v "$PWD":/work:z -w /work docker.io/library/ubuntu:24.04 bash -c "$*"; }
 
 case "${1:-}" in
-  cia) ;;
+  cia|debug) ;;
   release)
     # Consoles read releases/latest/download/latest.json and update themselves.
     REPO=Tweebbo/tweebbo-3ds
@@ -23,7 +54,7 @@ case "${1:-}" in
     VERSION=$(cat VERSION)
     TAG=v$VERSION
     [ -f out/tweebbo.cia ] && [ -f out/tweebbo.3dsx ] || { echo "Build first with ./build.sh cia"; exit 1; }
-    if strings out/tweebbo.elf | grep -q '^ws://[0-9A-Za-z]'; then echo "This CIA points to a local server: build it without TWEEBBO_SERVER"; exit 1; fi
+    if strings out/tweebbo.elf | grep -E 'TWEEBBO_LOCAL_DEBUG|^ws://[0-9A-Za-z]' >/dev/null; then echo "This CIA points to a local server: build it without TWEEBBO_SERVER"; exit 1; fi
     REL=build/release
     rm -rf $REL && mkdir -p $REL
     cp out/tweebbo.cia out/tweebbo.3dsx $REL/
@@ -66,14 +97,18 @@ PY
 esac
 
 [ -f source/gen/assets.c ] || { echo "source/gen/assets.c is missing: run ./build.sh export"; exit 1; }
+python3 tools/pack-font.py
+python3 tools/pack-snow.py
+node tools/export/snow.mjs
 mkdir -p romfs/gfx romfs/furni
+# Remove textures no longer present in the generated manifest.
+for file in romfs/gfx/*.t3x; do [ -e "build/gfx/$(basename "$file" .t3x).png" ] || rm -f "$file"; done
+for file in romfs/furni/*.t3x; do [ -e "build/gfx/furni/$(basename "$file" .t3x).png" ] || rm -f "$file"; done
 # Textures are LZ-compressed: there are hundreds and they load on demand.
-run 'rm -f romfs/gfx/atlas*.t3x.stale; for f in build/gfx/*.png; do n=$(basename "$f" .png); fmt=rgba8888; case $n in atlasg*) fmt=la8;; esac; [ romfs/gfx/$n.t3x -nt "$f" ] || tex3ds -f $fmt -z auto -o romfs/gfx/$n.t3x "$f"; done && \
-     for f in build/gfx/furni/*.png; do n=$(basename "$f" .png); [ romfs/furni/$n.t3x -nt "$f" ] || tex3ds -f rgba8888 -z auto -o romfs/furni/$n.t3x "$f"; done && \
-     make -j"$(nproc)"'
-ls -la out/tweebbo.3dsx
+run 'bash tools/convert-textures.sh && make -j"$(nproc)"'
+ls -la "$TARGET.3dsx"
 
-if [ "${1:-}" = cia ]; then
+if [ "${1:-}" = cia ] || [ "${1:-}" = debug ]; then
   TOOLS=build/ctrtools
   if [ ! -x $TOOLS/makerom/makerom ] || [ ! -x $TOOLS/bannertool/linux-x86_64/bannertool ]; then
     mkdir -p $TOOLS/dl
@@ -85,10 +120,10 @@ if [ "${1:-}" = cia ]; then
   fi
   VERSION=$(cat VERSION)
   IFS=. read -r MAJOR MINOR MICRO <<< "$VERSION"
-  run_cia "$TOOLS/bannertool/linux-x86_64/bannertool makebanner -i assets/banner.png -a assets/banner.wav -o out/tweebbo.bnr >/dev/null && \
-       $TOOLS/bannertool/linux-x86_64/bannertool makesmdh -s Tweebbo -l 'Tweebbo for 3DS v$VERSION' -p Tweebbo -i assets/icon.png -f visible,allow3d,recordusage -o out/tweebbo.icn >/dev/null && \
-       $TOOLS/makerom/makerom -f cia -o out/tweebbo.cia -elf out/tweebbo.elf -rsf cia/tweebbo.rsf \
-         -icon out/tweebbo.icn -banner out/tweebbo.bnr -exefslogo -target t -DAPP_ROMFS=romfs \
+  run_cia "$TOOLS/bannertool/linux-x86_64/bannertool makebanner -i assets/banner.png -a assets/banner.wav -o $TARGET.bnr >/dev/null && \
+       $TOOLS/bannertool/linux-x86_64/bannertool makesmdh -s '$APP_NAME' -l '$APP_NAME for 3DS v$VERSION' -p Tweebbo -i assets/icon.png -f visible,allow3d,recordusage -o $TARGET.icn >/dev/null && \
+       $TOOLS/makerom/makerom -f cia -o $TARGET.cia -elf $TARGET.elf -rsf $RSF \
+         -icon $TARGET.icn -banner $TARGET.bnr -exefslogo -target t -DAPP_ROMFS=romfs \
          -major $MAJOR -minor $MINOR -micro $MICRO"
-  ls -la out/tweebbo.cia
+  ls -la "$TARGET.cia"
 fi

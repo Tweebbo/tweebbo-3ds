@@ -1,0 +1,23 @@
+# Run tests/emulator-peer.mjs against the isolated hotel before this tour.
+wait 32
+shot 15-game-invitation
+click 708 636
+wait 3
+shot 16-chess
+click 510 645
+wait 1
+shot 17-legal-moves
+click 510 626
+wait 3
+shot 18-crossplay-move
+key s
+wait 1
+shot 19-resign-confirmation
+key s
+wait 1
+shot 20-resign-cancelled
+key s
+wait 1
+click 697 644
+wait 3
+shot 21-game-result

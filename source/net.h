@@ -17,7 +17,7 @@
 #define DEFAULT_ROOM "lobby"
 
 /** NET_REPLACED: the same character connected elsewhere; waits for net_resume(). */
-typedef enum { NET_OFFLINE, NET_CONNECTING, NET_ONLINE, NET_RETRYING, NET_REPLACED } NetState;
+typedef enum { NET_OFFLINE, NET_CONNECTING, NET_ONLINE, NET_RETRYING, NET_REPLACED, NET_LOCKED, NET_FULL, NET_DENIED } NetState;
 
 void net_start(u64 now);
 void net_stop(void);
@@ -32,6 +32,7 @@ const char *net_status(void);
 const char *net_server(void);
 /** Switches server ("offline" for the simulation) and saves it. Restarts the connection. */
 void net_set_server(const char *url);
+bool net_server_allowed(const char *url);
 /** Enters another room. `arrival` is the TRANSFER ticket (or ""). */
 void net_goto(const char *slug, const char *arrival);
 const char *net_room(void);
@@ -49,6 +50,9 @@ const char *net_token(void);
 void net_use_token(const char *token);
 /** Takes the character back after NET_REPLACED ("Play here"). */
 void net_resume(void);
+void net_unlock(const char *password);
+int net_retry_seconds(void);
+bool net_room_full(void);
 
 // Storage implemented by the application (SD card on the console, files in the tests).
 bool store_load(const char *key, char *out, int cap);
@@ -69,3 +73,8 @@ void send_rotate(u32 id);
 void send_redeem(u32 id);
 void send_drink(u32 item, int drink);
 void send_pet(const char *json);
+
+void send_decorate(int kind, const char *id);
+
+void send_game(int op, u32 a, int b, int c, int d);
+void send_casino(int op, int a, int b, int c);

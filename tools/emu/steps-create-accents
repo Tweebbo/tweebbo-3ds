@@ -1,0 +1,19 @@
+# Isolated local server. Creates a room with a 40-character name (crash regression).
+wait 30
+click 549 712
+wait 4
+key z
+wait 2
+click 640 574
+wait 3
+type ÁrbolÑandúCañónÉxitoMúsicaPingüinoAcción
+wait 1
+key Return
+wait 3
+shot 53-name
+click 715 672
+wait 6
+shot 54-created
+click 549 712
+wait 4
+shot 55-nav

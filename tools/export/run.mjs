@@ -106,14 +106,17 @@ try {
     process.stdout.write(`\rfurniture: ${Math.min(i + 40, defs.length)}/${defs.length}`);
   }
   process.stdout.write('\n');
+  await writeFile(join(outDir, 'furni-timelines.json'), JSON.stringify(await page.evaluate(() => window.furnitureTimelines())));
   await writeFile(join(outDir, 'furni.json'), JSON.stringify(furniMeta));
   console.log(`furniture: ${furniMeta.length} variants, ${n} layers`);
 
   // Shared data the packer converts for the console.
-  for (const f of ['models/pets.json', 'models/pets-0.png', 'models/catalogue.json', 'public-rooms/index.json', 'classic/index.json', 'models/people.json']) {
+  for (const f of ['models/furni-anim.json', 'models/pets.json', 'models/pets-0.png', 'models/catalogue.json', 'public-rooms/index.json', 'classic/index.json', 'models/people.json']) {
     await mkdir(join(outDir, 'data', f, '..'), { recursive: true });
     await cp(join(snapshot, 'public', f), join(outDir, 'data', f));
   }
+  for (const name of ['wardrobe-extras', 'frank', 'spaces', 'status', 'badges', 'casino'])
+    await cp(join(snapshot, 'public', name), join(outDir, 'data', name), { recursive: true });
   await cp(join(snapshot, 'public/classic'), join(outDir, 'data/classic'), { recursive: true });
   // Catalogue and inventory icons (the same PNGs the web uses).
   await mkdir(join(outDir, 'data/icons'), { recursive: true });

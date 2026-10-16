@@ -5,7 +5,8 @@
 #include "common.h"
 
 // Palette (0xRRGGBB) taken from the classic graphics and the web stylesheet.
-#define SK_WINDOW 0x6794a7
+// Darker classic blue keeps white 11 px titles readable on the lower LCD.
+#define SK_WINDOW 0x4f7486
 #define SK_CONTENT 0xefefef
 #define SK_INK 0x000000
 #define SK_TEXT 0x222222
@@ -37,6 +38,8 @@ typedef struct {
 extern Touch T;
 
 bool sk_hit(float x, float y, float w, float h);
+/** Copies src (NULL = empty) without cutting a UTF-8 character in half. */
+void utf8_copy(char *dst, size_t cap, const char *src);
 /** Like sk_hit but using the point where the touch started (for scrolling lists). */
 bool sk_click(float x, float y, float w, float h);
 
@@ -48,6 +51,8 @@ bool sk_sprite_tint(const char *name, float x, float y, u32 rgb);
 
 /** Window with a title and close button; returns true when close was pressed. */
 bool sk_window(float x, float y, float w, float h, const char *title);
+/** Status window whose explicit actions replace the close button. */
+void sk_status_window(float x, float y, float w, float h, const char *title);
 /** Light-grey content panel with rounded corners. */
 void sk_content(float x, float y, float w, float h);
 /** Capsule button (button.b). */
@@ -63,6 +68,7 @@ bool sk_tab(float x, float y, float w, float h, const char *label, bool on);
 /** Text cut with "…" to fit the width. */
 float sk_text(const char *s, float x, float y, float size, u32 rgb, int align, float max_w);
 /** Multi-line text within `w`; returns the height used. */
+int sk_paragraph_page(const char *s, int offset, float x, float y, float w, float size, u32 rgb, int max_lines);
 float sk_paragraph(const char *s, float x, float y, float w, float size, u32 rgb, int max_lines);
 
 /** List scrolled with the stylus (dragging) or the D-Pad. */

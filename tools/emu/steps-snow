@@ -1,0 +1,26 @@
+# Isolated local server, New 3DS model. Never display the character access code.
+wait 30
+click 503 712
+wait 2
+click 733 628
+wait 7
+shot 30-snow-lobby
+click 640 674
+wait 12
+shot 31-snow-practice
+key Right 600
+key Up 600
+key z
+wait 2
+key a
+wait 5
+shot 32-snow-play
+key q
+wait 2
+shot 33-snow-zoom
+key s
+wait 1
+shot 34-snow-leave
+click 710 635
+wait 5
+shot 35-snow-return

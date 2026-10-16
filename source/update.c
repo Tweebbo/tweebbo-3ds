@@ -9,7 +9,13 @@
 #include <strings.h>
 #include "net.h"
 
+#ifdef TWEEBBO_DEBUG
+// The debug title installs beside the public one and updates from the PC that serves it (port 8097).
+#define TITLE_ID 0x0004000007EBB100ULL
+#define DEBUG_DOWNLOADS_PORT 8097
+#else
 #define TITLE_ID 0x0004000007EBB000ULL
+#endif
 
 static struct {
   volatile UpdateState state;
@@ -35,6 +41,28 @@ int version_cmp(const char *a, const char *b) {
 
 UpdateState update_state(void) { return U.state; }
 const char *update_version(void) { return U.version; }
+
+#ifdef TWEEBBO_DEBUG
+static int debug_build(void) {
+  static int n = -1;
+  if (n < 0) {
+    FILE *f = fopen("romfs:/debug-build.txt", "r");
+    n = 0;
+    if (f) { if (fscanf(f, "%d", &n) != 1) n = 0; fclose(f); }
+  }
+  return n;
+}
+#endif
+
+const char *update_current(void) {
+#ifdef TWEEBBO_DEBUG
+  static char label[40];
+  snprintf(label, sizeof label, "%s.%d", APP_VERSION, debug_build());
+  return label;
+#else
+  return APP_VERSION;
+#endif
+}
 const char *update_notes(void) { return U.notes; }
 const char *update_error(void) { return U.error; }
 float update_progress(void) { return U.size > 0 ? (float)U.done / (float)U.size : 0; }
@@ -61,14 +89,37 @@ static bool to_memory(const u8 *data, int len, void *ctx) {
   return true;
 }
 
-static void check_thread(void *arg) {
-  (void)arg;
-  // Versions are published as GitHub releases; update-url.txt on the SD card can point elsewhere for testing.
+static void manifest_url(char *url, int cap) {
+#ifdef TWEEBBO_DEBUG
+  // ws://192.168.1.20:8092 -> http://192.168.1.20:8097/latest.json (the LAN download page).
+  char host[128] = "";
+  const char *s = net_server(), *start = strstr(s, "://");
+  start = start ? start + 3 : s;
+  size_t n = strcspn(start, ":/");
+  if (n >= sizeof host) n = sizeof host - 1;
+  memcpy(host, start, n); host[n] = 0;
+  snprintf(url, (size_t)cap, "http://%s:%d/latest.json", host, DEBUG_DOWNLOADS_PORT);
+#else
+  if (!store_load("update-url", url, cap) || !url[0]) snprintf(url, (size_t)cap, "%s", UPDATE_MANIFEST);
+#endif
+}
+
+static bool is_sha256(const char *s) {
+  if (strlen(s) != 64) return false;
+  for (; *s; s++) if (!strchr("0123456789abcdefABCDEF", *s)) return false;
+  return true;
+}
+
+static volatile int offers;
+
+/** Reads the manifest and decides LATEST / AVAILABLE / FAILED. Nothing is offered unless the
+ *  manifest is complete (URL, size, SHA-256) and newer than the running build. */
+static UpdateState read_manifest(void) {
   char url[300];
-  if (!store_load("update-url", url, sizeof url) || !url[0]) snprintf(url, sizeof url, "%s", UPDATE_MANIFEST);
+  manifest_url(url, sizeof url);
   Mem m = {malloc(16384), 0, 16384};
   long total;
-  char err[128];
+  char err[128] = "";
   int status = 0;
   // GitHub occasionally answers a redirect badly: retry a few times before giving up.
   for (int attempt = 0; attempt < 3 && m.buf && status != 200 && status != 404; attempt++) {
@@ -77,39 +128,72 @@ static void check_thread(void *arg) {
     status = http_download(url, to_memory, &m, &total, err, sizeof err);
   }
   json_error_t jerr;
-  json_t *j = status == 200 ? json_loads(m.buf, 0, &jerr) : NULL;
+  json_t *j = status == 200 && m.buf ? json_loads(m.buf, 0, &jerr) : NULL;
   free(m.buf);
   if (!j) {
     snprintf(U.error, sizeof U.error, "%s", status == 404 ? "No updates published yet." : err[0] ? err : "Could not read the update list.");
     dbg_log("update check %s: %d %s", url, status, U.error);
-    U.state = status == 404 ? UPD_LATEST : UPD_FAILED;
-    return;
+    return status == 404 ? UPD_LATEST : UPD_FAILED;
   }
-  snprintf(U.version, sizeof U.version, "%s", json_string_value(json_object_get(j, "version")) ?: "0");
-  snprintf(U.notes, sizeof U.notes, "%s", json_string_value(json_object_get(j, "notes")) ?: "");
-  snprintf(U.sha, sizeof U.sha, "%s", json_string_value(json_object_get(j, "sha256")) ?: "");
-  snprintf(U.tdsx_sha, sizeof U.tdsx_sha, "%s", json_string_value(json_object_get(j, "3dsx_sha256")) ?: "");
-  U.size = (long)json_integer_value(json_object_get(j, "size"));
-  const char *cia = json_string_value(json_object_get(j, "cia")), *tdsx = json_string_value(json_object_get(j, "3dsx"));
-  // Relative URLs are relative to the server.
-  char base[300];
-  base_url(base, sizeof base);
-  if (cia) snprintf(U.cia, sizeof U.cia, "%s%s", cia[0] == '/' ? base : "", cia);
-  if (tdsx) snprintf(U.tdsx, sizeof U.tdsx, "%s%s", tdsx[0] == '/' ? base : "", tdsx);
+  const char *version = json_string_value(json_object_get(j, "version")) ?: "0";
+  const char *sha = json_string_value(json_object_get(j, "sha256")) ?: "", *tdsx_sha = json_string_value(json_object_get(j, "3dsx_sha256")) ?: "";
+  const char *cia = json_string_value(json_object_get(j, "cia")) ?: "", *tdsx = json_string_value(json_object_get(j, "3dsx")) ?: "";
+  long size = (long)json_integer_value(json_object_get(j, "size"));
+#ifdef TWEEBBO_DEBUG
+  int latest = (int)json_integer_value(json_object_get(j, "build")), running = debug_build();
+  // Without a readable build number the console cannot tell old from new: never offer in a loop.
+  bool newer = running > 0 && latest > running;
+  dbg_log("update check: running %s, latest build %d", update_current(), latest);
+#else
+  bool newer = version_cmp(version, APP_VERSION) > 0;
+  dbg_log("update check: running %s, latest %s", APP_VERSION, version);
+#endif
+  bool homebrew = U.launch[0] != 0;
+  bool complete = homebrew ? tdsx[0] && is_sha256(tdsx_sha) : cia[0] && is_sha256(sha) && size > 0;
+  UpdateState state = !newer ? UPD_LATEST : complete ? UPD_AVAILABLE : UPD_FAILED;
+  if (newer && !complete) {
+    snprintf(U.error, sizeof U.error, "The update list is incomplete. Try again in a minute.");
+    dbg_log("update check: incomplete manifest for %s", version);
+  }
+  if (newer) {
+    if (strcmp(U.version, version) || strcmp(U.sha, sha)) offers++;
+    snprintf(U.version, sizeof U.version, "%s", version);
+    snprintf(U.notes, sizeof U.notes, "%s", json_string_value(json_object_get(j, "notes")) ?: "");
+    snprintf(U.sha, sizeof U.sha, "%s", sha);
+    snprintf(U.tdsx_sha, sizeof U.tdsx_sha, "%s", tdsx_sha);
+    U.size = size;
+    // Relative URLs are relative to the server.
+    char base[300];
+    base_url(base, sizeof base);
+    snprintf(U.cia, sizeof U.cia, "%s%s", cia[0] == '/' ? base : "", cia);
+    snprintf(U.tdsx, sizeof U.tdsx, "%s%s", tdsx[0] == '/' ? base : "", tdsx);
+  } else U.version[0] = 0;
   json_decref(j);
-  dbg_log("update check: running %s, latest %s", APP_VERSION, U.version);
-  U.state = version_cmp(U.version, APP_VERSION) > 0 ? UPD_AVAILABLE : UPD_LATEST;
+  return state;
 }
 
-void update_check(void) {
-  if (U.state == UPD_CHECKING || U.state == UPD_DOWNLOADING) return;
+int update_offer(void) { return offers; }
+
+static void check_thread(void *arg) {
+  bool quiet = arg != NULL;
+  UpdateState st = read_manifest();
+  // A background check that fails keeps the previous answer instead of showing an error.
+  if (quiet && st == UPD_FAILED) { U.state = U.version[0] ? UPD_AVAILABLE : UPD_LATEST; return; }
+  U.state = st;
+}
+
+static void start_check(bool quiet) {
+  if (U.state == UPD_CHECKING || U.state == UPD_DOWNLOADING || U.state == UPD_INSTALLED) return;
   if (U.thread) { threadJoin(U.thread, U64_MAX); threadFree(U.thread); U.thread = NULL; }
-  U.state = UPD_CHECKING;
-  U.error[0] = 0;
+  if (!quiet) { U.state = UPD_CHECKING; U.error[0] = 0; }
   s32 prio = 0x30;
   svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-  U.thread = threadCreate(check_thread, NULL, 32 * 1024, prio + 1, -2, false);
+  U.thread = threadCreate(check_thread, quiet ? (void *)1 : NULL, 32 * 1024, prio + 1, -2, false);
 }
+
+void update_check(void) { start_check(false); }
+/** Background check: the state only changes when the answer changes (no flashing dialogs). */
+void update_check_quiet(void) { start_check(true); }
 
 // ---------------------------------------------------------------- installation
 
@@ -183,6 +267,14 @@ static bool fetch(const char *url, const char *want, Sink *s, char *err, int cap
 
 static void install_thread(void *arg) {
   (void)arg;
+  // Re-read the manifest first: a build published after the offer must not be checked
+  // against the old SHA-256 (it would look damaged).
+  UpdateState fresh = read_manifest();
+  if (fresh != UPD_AVAILABLE) {
+    if (fresh == UPD_LATEST) { U.state = UPD_LATEST; return; }
+    U.state = UPD_FAILED;
+    return;
+  }
   bool homebrew = U.launch[0] != 0;
   const char *url = homebrew ? U.tdsx : U.cia;
   char err[160] = "";
@@ -220,7 +312,8 @@ static void install_thread(void *arg) {
       Result fr = ok ? AM_FinishCiaInstall(s.cia) : AM_CancelCIAInstall(s.cia);
       dbg_log("update: AM %s 0x%08lX", ok ? "finish" : "cancel", (unsigned long)fr);
       if (ok && R_FAILED(fr)) { ok = false; snprintf(err, sizeof err, "Install failed (0x%08lX).", (unsigned long)fr); break; }
-      if (strstr(err, "damaged")) break;
+      // A build published during the download fails the checksum: re-read the list once and retry.
+      if (strstr(err, "damaged") && (attempt > 0 || read_manifest() != UPD_AVAILABLE)) break;
     }
     if (R_FAILED(r)) snprintf(err, sizeof err, "The console refused the install (0x%08lX).", (unsigned long)r);
     amExit();

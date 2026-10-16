@@ -45,21 +45,23 @@ static void join(ThreadHandle t) { if (t) { pthread_join(*t, NULL); free(t); } }
 #define MAX_HTTP 8
 
 typedef struct Msg { struct Msg *next; int len; u8 data[]; } Msg;
-typedef struct { Msg *head, *tail; int count; } Queue;
+typedef struct { Msg *head, *tail; int count; size_t bytes; } Queue;
 
-static void q_push(Queue *q, const u8 *data, int len) {
+static bool q_push(Queue *q, const u8 *data, int len) {
+  if (len <= 0 || q->count >= 512 || (size_t)len + q->bytes > 1024u * 1024) return false;
   Msg *m = malloc(sizeof *m + (size_t)len);
-  if (!m) return;
+  if (!m) return false;
   m->next = NULL; m->len = len;
   memcpy(m->data, data, (size_t)len);
   if (q->tail) q->tail->next = m; else q->head = m;
   q->tail = m;
-  q->count++;
+  q->count++; q->bytes += (size_t)len;
+  return true;
 }
 
 static Msg *q_pop(Queue *q) {
   Msg *m = q->head;
-  if (m) { q->head = m->next; if (!q->head) q->tail = NULL; q->count--; }
+  if (m) { q->head = m->next; if (!q->head) q->tail = NULL; q->count--; q->bytes -= (size_t)m->len; }
   return m;
 }
 
@@ -81,7 +83,11 @@ static struct {
   char server[128];
   Endpoint ep;
   // Protected by mu:
-  char slug[64], arrival[80], token[80];
+  char slug[64], arrival[80], token[80], password[65];
+  bool welcomed;
+  NetState blocked;
+  bool room_full;
+  u64 retry_at;
   u32 want_gen;
   NetState state;
   char status[128];
@@ -110,7 +116,10 @@ static void report_error(const char *err) {
   store_save("last-error", line);
 }
 
-static void token_key(char *key, int cap) { snprintf(key, (size_t)cap, "token-%s", N.ep.host); }
+static void token_key(char *key, int cap) {
+  if (N.ep.port == 80 || N.ep.port == 443) snprintf(key, (size_t)cap, "token-%s", N.ep.host);
+  else snprintf(key, (size_t)cap, "token-%s-%d", N.ep.host, N.ep.port);
+}
 
 // ---------------------------------------------------------------- network thread
 
@@ -118,7 +127,30 @@ static void deliver(const u8 *data, int len, void *ctx) {
   (void)ctx;
   lock(&N.mu);
   if (len > 0 && data[0] == S_REPLACED) N.replaced = true;
-  q_push(&N.in, data, len);
+  if (len > 0 && data[0] == S_WELCOME) N.welcomed = true;
+  if (len > 0 && data[0] == S_LOCKED) {
+    N.blocked = NET_LOCKED;
+    snprintf(N.status, sizeof N.status, "%s", len > 1 && data[1] == 2 ? "Incorrect password. Try again." : "Enter the room password to continue.");
+  }
+  if (len > 0 && data[0] == S_CAPACITY) {
+    Reader r; r_init(&r, data, len); r_u8(&r);
+    u8 scope = r_u8(&r); u64 seconds = r_var(&r);
+    if (!r.err) {
+      if (seconds < 30) seconds = 30;
+      if (seconds > 3600) seconds = 3600;
+      N.blocked = NET_FULL; N.room_full = scope == 2; N.retry_at = now_ms() + seconds * 1000;
+      snprintf(N.status, sizeof N.status, "%s", scope == 2 ? "This room is full. Please choose another room." : "Tweebbo is at capacity. Please try again shortly.");
+    }
+  }
+  if (len > 0 && data[0] == S_MODERATION) {
+    Reader r; r_init(&r, data, len); r_u8(&r);
+    r_str(&r, N.status, sizeof N.status);
+    if (!r.err) N.blocked = NET_DENIED;
+  }
+  if (!q_push(&N.in, data, len)) {
+    q_clear(&N.in); N.want_gen++;
+    snprintf(N.status, sizeof N.status, "Refreshing room state…");
+  }
   unlock(&N.mu);
 }
 
@@ -136,10 +168,23 @@ static bool is_replaced(void) {
   return r;
 }
 
+static bool is_blocked(void) {
+  lock(&N.mu);
+  bool b = N.blocked != 0;
+  unlock(&N.mu);
+  return b;
+}
+
 static void net_thread(void *arg) {
   (void)arg;
   int failures = 0;
   while (!N.quit) {
+    if (is_blocked()) {
+      lock(&N.mu); N.state = N.blocked; unlock(&N.mu);
+      while (is_blocked() && !N.quit) sleep_ms(50);
+      failures = 0;
+      continue;
+    }
     if (is_replaced()) {
       // Reconnecting now would evict the other session, which would evict us again.
       set_state(NET_REPLACED, "Tweebbo is open on another device or browser.");
@@ -149,7 +194,9 @@ static void net_thread(void *arg) {
     }
     lock(&N.mu);
     u32 gen = N.want_gen;
-    char path[96], token[80], arrival[80];
+    char path[96], token[80], arrival[80], password[65];
+    N.welcomed = false;
+    snprintf(password, sizeof password, "%s", N.password);
     snprintf(path, sizeof path, "/ws/%s", N.slug);
     snprintf(token, sizeof token, "%s", N.token);
     snprintf(arrival, sizeof arrival, "%s", N.arrival);
@@ -168,7 +215,7 @@ static void net_thread(void *arg) {
       continue;
     }
     Writer w;
-    w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, arrival); w_u8(&w, PLATFORM_3DS);
+    w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, arrival); w_u8(&w, PLATFORM_3DS); w_str(&w, password); w_u8(&w, NATIVE_STATUS | NATIVE_GAMES | NATIVE_CASINO | NATIVE_SNOW);
     bool alive = ws_send(&ws, w.buf, w.len);
     lock(&N.mu);
     // The arrival ticket is only valid once.
@@ -179,7 +226,6 @@ static void net_thread(void *arg) {
     bool welcomed = false;
     while (alive && !changed(gen)) {
       lock(&N.mu);
-      int before = N.in.count;
       Msg *m;
       while (alive && (m = q_pop(&N.out))) {
         unlock(&N.mu);
@@ -191,7 +237,7 @@ static void net_thread(void *arg) {
       if (!alive) break;
       alive = ws_poll(&ws, 25, deliver, NULL);
       lock(&N.mu);
-      if (N.in.count > before && !welcomed) {
+      if (N.welcomed && !welcomed) {
         welcomed = true;
         N.state = NET_ONLINE;
         N.status[0] = 0;
@@ -199,10 +245,10 @@ static void net_thread(void *arg) {
       unlock(&N.mu);
       if (welcomed) failures = 0;
       if (now_ms() - since > RENEW_MS) break;
-      if (is_replaced()) break;
+      if (is_replaced() || is_blocked()) break;
     }
     ws_close(&ws);
-    if (is_replaced()) continue;
+    if (is_replaced() || is_blocked()) continue;
     if (!changed(gen) && !(alive && welcomed)) {
       failures++;
       set_state(NET_RETRYING, welcomed ? "Connection lost. Reconnecting…" : "The server closed the connection.");
@@ -262,6 +308,7 @@ void net_start(u64 now) {
   N.started = true;
   N.quit = false;
   if (!store_load("server", N.server, sizeof N.server) || !N.server[0]) snprintf(N.server, sizeof N.server, DEFAULT_SERVER);
+  if (!net_server_allowed(N.server)) snprintf(N.server, sizeof N.server, DEFAULT_SERVER);
   // Offline only when the player chose it: a network failure never silently switches to the simulation.
   if (!strcmp(N.server, "offline")) { start_offline(now); return; }
   if (!endpoint_parse(N.server, &N.ep)) {
@@ -270,12 +317,14 @@ void net_start(u64 now) {
   }
   N.offline = false;
   N.replaced = false;
+  N.blocked = 0;
   char key[128];
   token_key(key, sizeof key);
   if (!store_load(key, N.token, sizeof N.token)) N.token[0] = 0;
   N.token_saved = true;
   if (!store_load("room", N.slug, sizeof N.slug) || !N.slug[0]) snprintf(N.slug, sizeof N.slug, DEFAULT_ROOM);
   N.arrival[0] = 0;
+  N.password[0] = 0;
   N.want_gen++;
   N.state = NET_CONNECTING;
   snprintf(N.status, sizeof N.status, "Connecting…");
@@ -296,9 +345,22 @@ void net_stop(void) {
   for (int i = 0; i < MAX_HTTP; i++) { free(N.http[i].json); free(N.http[i].res.body); memset(&N.http[i], 0, sizeof N.http[i]); }
 }
 
+bool net_server_allowed(const char *url) {
+#ifdef TWEEBBO_DEBUG
+  if (!strcmp(url, "offline")) return true;
+  Endpoint ep; unsigned a, b, c, d; char extra;
+  if (!endpoint_parse(url, &ep) || ep.tls || sscanf(ep.host, "%u.%u.%u.%u%c", &a, &b, &c, &d, &extra) != 4 || a > 255 || b > 255 || c > 255 || d > 255) return false;
+  return a == 10 || a == 127 || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31) || (a == 169 && b == 254);
+#else
+  (void)url; return true;
+#endif
+}
+
 void net_set_server(const char *url) {
+  if (!net_server_allowed(url)) { on_notice("Debug builds connect to private LAN addresses only."); return; }
   net_stop();
   store_save("server", url);
+  free(W.pets_json); free(W.pet_inv_json); free(W.owners_json);
   memset(&W, 0, sizeof W);
   net_start(now_ms());
 }
@@ -306,7 +368,9 @@ void net_set_server(const char *url) {
 void net_send(const u8 *data, int len) {
   if (N.offline) { sim_receive(data, len); return; }
   lock(&N.mu);
-  if (N.state == NET_ONLINE) q_push(&N.out, data, len);
+  if (N.state == NET_ONLINE && !q_push(&N.out, data, len)) {
+    q_clear(&N.out); N.want_gen++;
+  }
   unlock(&N.mu);
 }
 
@@ -362,6 +426,8 @@ void net_goto(const char *slug, const char *arrival) {
   if (N.offline) return;
   lock(&N.mu);
   N.replaced = false;
+  N.blocked = 0;
+  N.password[0] = 0;
   snprintf(N.slug, sizeof N.slug, "%s", slug);
   snprintf(N.arrival, sizeof N.arrival, "%s", arrival ? arrival : "");
   N.want_gen++;
@@ -378,6 +444,7 @@ void net_use_token(const char *token) {
   if (N.offline) return;
   lock(&N.mu);
   N.replaced = false;
+  N.blocked = 0;
   snprintf(N.token, sizeof N.token, "%s", token);
   N.want_gen++;
   q_clear(&N.in);
@@ -457,7 +524,36 @@ void send_pet(const char *json) { SEND(w_begin(&w, C_PET); w_str(&w, json)); }
 
 void net_resume(void) {
   lock(&N.mu);
+  if (N.blocked == NET_FULL && now_ms() < N.retry_at) { unlock(&N.mu); return; }
   N.replaced = false;
+  N.blocked = 0;
   N.want_gen++;
   unlock(&N.mu);
 }
+
+void net_unlock(const char *password) {
+  lock(&N.mu);
+  snprintf(N.password, sizeof N.password, "%s", password);
+  N.blocked = 0; N.want_gen++; N.state = NET_CONNECTING;
+  unlock(&N.mu);
+}
+
+int net_retry_seconds(void) {
+  lock(&N.mu);
+  u64 now = now_ms();
+  int seconds = N.retry_at > now ? (int)((N.retry_at - now + 999) / 1000) : 0;
+  unlock(&N.mu);
+  return seconds;
+}
+
+bool net_room_full(void) {
+  lock(&N.mu);
+  bool full = N.blocked == NET_FULL && N.room_full;
+  unlock(&N.mu);
+  return full;
+}
+
+void send_decorate(int kind, const char *id) { SEND(w_begin(&w, C_DECORATE); w_u8(&w, kind); w_str(&w, id)); }
+
+void send_game(int op, u32 a, int b, int c, int d) { SEND(w_begin(&w, C_GAME); w_u8(&w, op); w_var(&w, a); w_u8(&w, b); w_u8(&w, c); w_u8(&w, d)); }
+void send_casino(int op, int a, int b, int c) { SEND(w_begin(&w, C_CASINO); w_u8(&w, op); w_u8(&w, a); w_u8(&w, b); w_u8(&w, c)); }

@@ -1,7 +1,9 @@
 #include "scene.h"
 #include "avatar.h"
+#include <jansson.h>
 #include "catalog.h"
 #include "gfx.h"
+#include "net.h"
 #include "pets.h"
 #include "proto.h"
 #include "world.h"
@@ -44,6 +46,9 @@ static struct {
   u32 selected;
 } V = {.zoom = 1};
 
+static json_t *owner_snapshot;
+static u32 owner_revision;
+
 static void iso(float x, float y, float *sx, float *sy) {
   *sx = (x - y) * HALF_W;
   *sy = (x + y) * HALF_H;
@@ -84,6 +89,7 @@ void scene_mark_destination(int x, int y, u64 now) {
 static void draw_prompt(void);
 
 void scene_room_changed(u64 now) {
+  owner_revision = W.owners_rev - 1;
   // A connection renewal sends ROOM again: only clear the bubbles when the room changes.
   static char last_slug[sizeof W.slug];
   if (strcmp(last_slug, W.slug)) memset(V.chat, 0, sizeof V.chat);
@@ -258,6 +264,34 @@ static void draw_item_part(const Item *it, const FurniPart *p) {
   if (add) gfx_additive(false);
 }
 
+static json_t *owner_identity(u32 guest) {
+  if (owner_revision != W.owners_rev) {
+    json_decref(owner_snapshot);
+    owner_snapshot = W.owners_json ? json_loads(W.owners_json, 0, NULL) : NULL;
+    owner_revision = W.owners_rev;
+  }
+  json_t *visible = json_object_get(owner_snapshot, "visible"), *entry;
+  size_t i;
+  json_array_foreach(visible, i, entry)
+    if ((u32)json_integer_value(json_object_get(entry, "guest")) == guest) return entry;
+  return NULL;
+}
+
+static u64 appearance(const Ent *e) {
+  return e->look | (owner_identity(e->guest) ? AV_FOUNDER : (e->flags & 128) ? AV_FRANK : 0);
+}
+
+static void founder_diamond(float x, float y, float width, u8 alpha) {
+  u32 gold = C2D_Color32(0xe9, 0xc4, 0x63, alpha);
+  float dx = width * V.zoom, dy = width * .48f * V.zoom;
+  C2D_DrawLine(x, y - dy, gold, x + dx, y, gold, 1, .5f);
+  C2D_DrawLine(x + dx, y, gold, x, y + dy, gold, 1, .5f);
+  C2D_DrawLine(x, y + dy, gold, x - dx, y, gold, 1, .5f);
+  C2D_DrawLine(x - dx, y, gold, x, y - dy, gold, 1, .5f);
+}
+
+u64 scene_look(u32 eid) { Ent *e = world_ent(eid); return e ? appearance(e) : 0; }
+
 static void draw_ent(const Ent *e, u64 now) {
   float px, py, sx, sy;
   ent_pos(e, now, &px, &py);
@@ -269,18 +303,31 @@ static void draw_ent(const Ent *e, u64 now) {
   if (swim) {
     bool talking = now < e->talk_until && (now / 140) % 2 == 0;
     bool blink = (now + e->id * 1777) % 5200 < 130;
-    avatar_draw_swim(e->look, body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0),
+    avatar_draw_swim(appearance(e), body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0),
                      head_dir(e, now, moving), scr_x(roundf(sx) - SWIM_ANCHOR_X), scr_y(roundf(sy + HALF_H) - p.anchor_y - p.lift), V.zoom);
     return;
   }
   if (p.pose != POSE_LAY)
     C2D_DrawEllipseSolid(scr_x(roundf(sx) - 14), scr_y(roundf(sy + HALF_H - h) - 7), 0.5f, 28 * V.zoom, 14 * V.zoom,
                          C2D_Color32(0, 0, 0, 64));
+  static u32 arrival_id[MAX_ENTS];
+  static u64 arrival_at[MAX_ENTS];
+  int slot = (int)(e - W.ents);
+  bool presence = json_is_true(json_object_get(owner_identity(e->guest), "presence"));
+  if (slot >= 0 && slot < MAX_ENTS && presence && p.pose != POSE_LAY) {
+    if (arrival_id[slot] != e->id) { arrival_id[slot] = e->id; arrival_at[slot] = now; }
+    u64 age = now - arrival_at[slot];
+    float cx = scr_x(sx), cy = scr_y(sy + HALF_H - h);
+    if (age < 1000) founder_diamond(cx, cy, 25 + 12 * age / 1000.f, (u8)(255 * (1000 - age) / 1000));
+    founder_diamond(cx, cy, 25, 255);
+    static const int corners[4][2] = {{0,-12},{25,0},{0,12},{-25,0}};
+    for (int i = 0; i < 4; i++) fill_rect(roundf(cx + corners[i][0] * V.zoom) - 1, roundf(cy + corners[i][1] * V.zoom) - 1, 3, 3, rgba(0xffe7a2, 255));
+  } else if (slot >= 0 && slot < MAX_ENTS) arrival_id[slot] = 0;
   bool talking = now < e->talk_until && (now / 140) % 2 == 0;
   bool blink = (now + e->id * 1777) % 5200 < 130;
   int drink = now < e->drink_until ? e->drink : 0;
   bool sip = !moving && (now + e->id * 177) % 6000 < 900;
-  avatar_draw(e->look, body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0),
+  avatar_draw(appearance(e), body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0),
               head_dir(e, now, moving), drink, sip,
               scr_x(roundf(sx) + p.dx - ANCHOR_X), scr_y(roundf(sy + HALF_H) + p.dy - p.anchor_y - p.lift), V.zoom, 255);
 }
@@ -406,8 +453,11 @@ void scene_chat(u32 eid, const char *text, u64 now) {
 }
 
 void scene_draw(u64 now) {
+  gfx_filter(V.overview);
   if (!W.in_room) {
-    text_draw("Loading…", TOP_W / 2, TOP_H / 2 - 8, 16, C2D_Color32(255, 255, 255, 255), 1);
+    NetState state = net_state();
+    const char *status = state == NET_FULL ? "Tweebbo is at capacity" : state == NET_LOCKED ? "This room is locked" : state == NET_DENIED ? "Connection paused" : "Loading…";
+    text_draw(status, TOP_W / 2, TOP_H / 2 - 8, 16, C2D_Color32(255, 255, 255, 255), 1);
     return;
   }
   camera(now);
@@ -426,7 +476,7 @@ void scene_draw(u64 now) {
     tile_cursor(V.dest_x, V.dest_y, C2D_Color32(255, 255, 255, 240));
   }
 
-  static Drawable list[1024];
+  static Drawable list[4096];
   int n = 0;
   for (int i = 0; i < MAX_ITEMS && n < COUNT(list); i++) {
     const Item *it = &W.items[i];
@@ -435,6 +485,10 @@ void scene_draw(u64 now) {
     if (!v) continue;
     for (int k = 0; k < v->count && n < COUNT(list); k++) {
       const FurniPart *p = &v->parts[k];
+      float sx, sy;
+      iso(it->x, it->y, &sx, &sy);
+      float left = scr_x(sx + p->ox), top = scr_y(sy + p->oy - it->z);
+      if (left >= TOP_W || top >= TOP_H || left + p->w * V.zoom <= 0 || top + p->h * V.zoom <= 0) continue;
       bool shadow = p->flags & PART_SHADOW;
       // Shadows are only cast from the floor or whole stacks.
       if (shadow && it->z % 32) continue;
@@ -511,13 +565,22 @@ void scene_draw(u64 now) {
       text_draw(e->name, x, y + 1, 11, C2D_Color32(255, 255, 255, 255), 1);
     }
     float raise = 0;
+    if (appearance(e) & AV_FOUNDER) {
+      PoseInfo p = pose_of(e, now, ent_moving(e, now));
+      float bx = scr_x(sx + p.dx), by = scr_y(sy + HALF_H + p.dy - p.anchor_y + 11 - p.lift);
+      float width = text_width("OWNER", 10) + 10;
+      fill_rect(bx - width / 2, by - 15, width, 15, rgba(0xdfb54d, 255));
+      fill_rect(bx - width / 2 + 1, by - 14, width - 2, 13, rgba(0x26373a, 255));
+      text_draw("OWNER", bx, by - 15, 10, rgba(0xffe3a0, 255), 1);
+      raise = 16;
+    }
     if (e->flags & FLAG_3DS) {
       // The same pixel-art handheld the web shows over 3DS players.
       PoseInfo p = pose_of(e, now, ent_moving(e, now));
       float k = V.zoom < 1 ? 1 : V.zoom;
       float bx = scr_x(sx + p.dx), by = scr_y(sy + HALF_H + p.dy - p.anchor_y + 16 - p.lift);
-      console_badge(bx - 6 * k, by - 13 * k, k);
-      raise = 13 * k + 2;
+      console_badge(bx - 6 * k, by - 13 * k - raise, k);
+      raise += 13 * k + 2;
     }
     if (e->id == W.me && now - V.joined_at < 7000) {
       float ax = scr_x(sx), ay = scr_y(sy + HALF_H - ANCHOR_Y + 22 - ent_height(e, now)) + sinf(now / 150.0f) * 3 - raise;

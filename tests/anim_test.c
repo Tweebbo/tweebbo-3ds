@@ -7,6 +7,7 @@
 
 static char trace[4096];
 static int ops;
+static u64 test_look = 0x1234567ull;
 static void rec(int page, int sx, int sy, int sw, int sh, float x, float y) {
   char b[64];
   snprintf(b, sizeof b, "%d:%d,%d,%d,%d@%.0f,%.0f;", page, sx, sy, sw, sh, x, y);
@@ -22,7 +23,7 @@ static const char *draw(Pose pose, int frame, int expr, int drink, bool sip) {
   static char out[8][4096];
   static int k;
   trace[0] = 0; ops = 0;
-  avatar_draw(0x1234567ull, 2, pose, frame, expr, 2, drink, sip, 0, 0, 1, 255);
+  avatar_draw(test_look, 2, pose, frame, expr, 2, drink, sip, 0, 0, 1, 255);
   k = (k + 1) % 8;
   snprintf(out[k], sizeof out[k], "%s", trace);
   return out[k];
@@ -55,6 +56,18 @@ int main(void) {
   trace[0] = 0;
   avatar_draw_swim(0x1234567ull, 2, POSE_SWIM, 2, 0, 2, 0, 0, 1);
   differs("swim frame 0 → 2", s0, trace);
+  test_look |= AV_FOUNDER;
+  std = draw(POSE_STD, 0, 0, 0, false);
+  differs("founder talk", std, draw(POSE_STD, 1, EXPR_TALK, 0, false));
+  differs("founder walk", draw(POSE_WALK, 0, 0, 0, false), draw(POSE_WALK, 2, 0, 0, false));
+  differs("founder dance", draw(POSE_DANCE, 0, 0, 0, false), draw(POSE_DANCE, 3, 0, 0, false));
+  differs("founder wave", draw(POSE_WAVE, 0, 0, 0, false), draw(POSE_WAVE, 1, 0, 0, false));
+  differs("founder sip", draw(POSE_STD, 0, 0, 8, false), draw(POSE_STD, 0, 0, 8, true));
+  Look later = look_decode(0x1234567ull); later.hair_style = 64;
+  test_look = look_encode(&later);
+  std = draw(POSE_STD, 0, 0, 0, false);
+  assert(ops > 0);
+  differs("later wardrobe walking", draw(POSE_WALK, 0, 0, 0, false), draw(POSE_WALK, 2, 0, 0, false));
   printf("OK\n");
   return 0;
 }

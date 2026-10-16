@@ -13,18 +13,20 @@ const u32 PANTS[8] = {0x2e3b5e, 0x1f1f22, 0x6d4f39, 0x80898c, 0x3e6b48, 0x9a3030
 const u32 SHOES[4] = {0x1e1e1e, 0x6b3e26, 0xededed, 0xb5372b};
 
 Look look_decode(u64 n) {
-  u32 lo = (u32)n;
+  // Bits 32-41 (web client/src/avatar.ts): face + 1, then the high bits of the later hair (1),
+  // bottoms (2) and shoes (2). Items this console does not have fall back to the first one.
+  u32 lo = (u32)n, hi = (u32)(n >> 32);
   Look l = {
     .skin = lo & 3,
-    .hair_style = (int)(((lo >> 2) & 7) | (((lo >> 19) & 7) << 3)),
+    .hair_style = (int)(((lo >> 2) & 7) | (((lo >> 19) & 7) << 3) | (((hi >> 5) & 1) << 6)),
     .hair_color = (lo >> 5) & 7,
     .shirt_color = (lo >> 8) & 15,
     .shirt_style = (int)(((lo >> 12) & 3) | (((lo >> 22) & 31) << 2)),
     .pants = (lo >> 14) & 7,
     .shoes = (lo >> 17) & 3,
-    .pants_style = (lo >> 27) & 7,
-    .shoe_style = (lo >> 30) & 3,
-    .face_style = (n >> 32) ? (int)(n >> 32) - 1 : 0,
+    .pants_style = (int)(((lo >> 27) & 7) | (((hi >> 6) & 3) << 3)),
+    .shoe_style = (int)(((lo >> 30) & 3) | (((hi >> 8) & 3) << 2)),
+    .face_style = (hi & 31) ? (int)(hi & 31) - 1 : 0,
   };
   return l;
 }
@@ -32,20 +34,22 @@ Look look_decode(u64 n) {
 u64 look_encode(const Look *l) {
   u32 base = (u32)l->skin | (u32)(l->hair_style & 7) << 2 | (u32)l->hair_color << 5 | (u32)l->shirt_color << 8 |
              (u32)(l->shirt_style & 3) << 12 | (u32)l->pants << 14 | (u32)l->shoes << 17 |
-             (u32)(l->hair_style >> 3) << 19 | (u32)(l->shirt_style >> 2) << 22 | (u32)l->pants_style << 27 |
-             (u32)l->shoe_style << 30;
-  return base + ((u64)l->face_style + 1) * ((u64)1 << 32);
+             (u32)((l->hair_style >> 3) & 7) << 19 | (u32)(l->shirt_style >> 2) << 22 | (u32)(l->pants_style & 7) << 27 |
+             (u32)(l->shoe_style & 3) << 30;
+  u64 hi = (u64)(l->face_style + 1) | (u64)((l->hair_style >> 6) & 1) << 5 | (u64)((l->pants_style >> 3) & 3) << 6 |
+           (u64)((l->shoe_style >> 2) & 3) << 8;
+  return base + (hi << 32);
 }
 
 u32 look_shirt_rgb(u64 look) { return SHIRT[look_decode(look).shirt_color]; }
 
 // Parts in the order of the internal indices.
-enum { LH, LS, BD, SH, LG, CH, HD, FC, EY, HR, RH, RS, RI, PARTS };
-static const char *PART[PARTS] = {"lh", "ls", "bd", "sh", "lg", "ch", "hd", "fc", "ey", "hr", "rh", "rs", "ri"};
+enum { LH, LS, BD, SH, LG, CH, HD, FC, EY, HR, RH, RS, RI, CP, CC, WA, CA, LC, RC, FA, EA, HRB, HA, HE, PARTS };
+static const char *PART[PARTS] = {"lh", "ls", "bd", "sh", "lg", "ch", "hd", "fc", "ey", "hr", "rh", "rs", "ri", "cp", "cc", "wa", "ca", "lc", "rc", "fa", "ea", "hrb", "ha", "he"};
 static const s8 FLIP[8] = {0, 1, 2, 3, 2, 1, 0, 7};
 
 static int part_index(const char *code) {
-  for (int i = 0; i < PARTS; i++) if (code[0] == PART[i][0] && code[1] == PART[i][1]) return i;
+  for (int i = 0; i < PARTS; i++) if (!strncmp(code, PART[i], strlen(PART[i])) && (code[strlen(PART[i])] == ':' || !code[strlen(PART[i])])) return i;
   return -1;
 }
 
@@ -101,8 +105,8 @@ void avatar_draw_head(u64 look, int dir, float x, float y, float scale) {
 // Composition cache: resolving part names (snprintf + search) for every avatar on every
 // frame is costly on Old 3DS/2DS. The resolved part list is kept per state combination.
 typedef struct { const PeopleSprite *s; s16 px, py; u32 color; } AvatarOp;
-typedef struct { u64 look; s16 dir, pose, frame, expr, head, drink, sip, head_only; u32 used; u8 n; AvatarOp ops[16]; } AvatarEntry;
-#define AV_CACHE 96
+typedef struct { u64 look; s16 dir, pose, frame, expr, head, drink, sip, head_only; u32 used; u8 n; AvatarOp ops[64]; } AvatarEntry;
+#define AV_CACHE 256
 static AvatarEntry av_cache[AV_CACHE];
 static u32 av_clock;
 static AvatarOp *rec_ops;
@@ -110,8 +114,20 @@ static int rec_n;
 
 static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, int drink, bool sip);
 
+static u64 resolved_look(u64 look) {
+  if (look & AV_FOUNDER) {
+    Look owner = {.skin=0,.face_style=0,.hair_style=12,.hair_color=5,.shirt_style=1,.shirt_color=0,.pants=1};
+    look = look_encode(&owner) | AV_FOUNDER;
+  } else if (look & AV_FRANK) {
+    Look frank = {.skin=0,.face_style=0,.hair_style=0,.hair_color=6,.shirt_style=4,.shirt_color=2,.pants=5};
+    look = look_encode(&frank) | AV_FRANK;
+  }
+  return look;
+}
+
 void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, int drink, bool sip,
                  float x, float y, float scale, u8 alpha) {
+  look = resolved_look(look);
   AvatarEntry *e = NULL, *victim = &av_cache[0];
   for (int i = 0; i < AV_CACHE; i++) {
     AvatarEntry *c = &av_cache[i];
@@ -138,8 +154,27 @@ void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir
   }
 }
 
+static const PeopleSprite *pose_sprite(char prefix, const char *action, int part, const char *model, int d, int f, bool lay) {
+  char name[64];
+  snprintf(name, sizeof name, "%c_%s_%s_%s_%d_%d", prefix, action, PART[part], model, d, f);
+  const PeopleSprite *s = find_sprite(name);
+  if (!s) { snprintf(name, sizeof name, "%c_%s_%s_%s_%d_0", prefix, action, PART[part], model, d); s = find_sprite(name); }
+  if (!s) { snprintf(name, sizeof name, "%c_%s_%s_%s_%d_0", prefix, lay ? "lay" : "std", PART[part], model, d); s = find_sprite(name); }
+  return s;
+}
+
+static void record_part(const PeopleSprite *s, int ox, int oy, Pose pose, bool mirrored, u32 color) {
+  if (!s || rec_n >= 64) return;
+  bool lay = pose == POSE_LAY;
+  int px = -s->rx + ox + (lay ? 30 : 0);
+  int py = (lay ? 50 : ANCHOR_Y - 2) - s->ry + oy + (pose == POSE_FLOOR ? 18 : 0);
+  if (mirrored) px = (lay ? 89 : SPRITE_W) - px - s->w;
+  rec_ops[rec_n++] = (AvatarOp){s, (s16)px, (s16)py, color};
+}
+
 static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, int drink, bool sip) {
   Look L = look_decode(look);
+  bool founder = (look & AV_FOUNDER) != 0, frank = !founder && (look & AV_FRANK) != 0;
   bool lay = pose == POSE_LAY;
   int direction = lay ? (dir == 0 ? 4 : 2) : dir & 7;
   bool mirrored = direction >= 4 && direction <= 6;
@@ -151,6 +186,26 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
   apply(models, &wardrobe_tops[L.shirt_style < wardrobe_tops_count ? L.shirt_style : 0]);
   apply(models, &wardrobe_bottoms[L.pants_style < wardrobe_bottoms_count ? L.pants_style : 0]);
   apply(models, &wardrobe_shoes[L.shoe_style < wardrobe_shoes_count ? L.shoe_style : 0]);
+  struct { int part, tint; char model[8]; } layers[48];
+  int layer_n = 0;
+  const WardrobeEntry *entries[] = {
+    &wardrobe_faces[face], &wardrobe_hair[L.hair_style < wardrobe_hair_count ? L.hair_style : 0],
+    &wardrobe_tops[L.shirt_style < wardrobe_tops_count ? L.shirt_style : 0],
+    &wardrobe_bottoms[L.pants_style < wardrobe_bottoms_count ? L.pants_style : 0],
+    &wardrobe_shoes[L.shoe_style < wardrobe_shoes_count ? L.shoe_style : 0]
+  };
+  for (int i = 0; i < 5; i++) {
+    const char *p = entries[i]->layers;
+    while (p && *p && layer_n < 48) {
+      char part[4], model[8]; int tint, used = 0;
+      if (sscanf(p, "%3[^:]:%7[^:]:%d%n", part, model, &tint, &used) != 3 || used <= 0) break;
+      layers[layer_n].part = part_index(part); layers[layer_n].tint = tint;
+      snprintf(layers[layer_n++].model, 8, "%s", model);
+      p += used; while (*p == ' ') p++;
+    }
+  }
+  if (founder || frank) snprintf(models[CC], 8, "2016");
+  if (frank) { models[HR][0] = 0; snprintf(models[FA], 8, "4"); snprintf(models[HA], 8, "2207"); }
   if (drink && !lay) snprintf(models[RI], 8, "%s", drink_model(drink));
 
   u32 colors[PARTS];
@@ -161,6 +216,13 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
   colors[LG] = PANTS[L.pants];
   colors[SH] = SHOES[L.shoes];
 
+  colors[HRB] = colors[FA] = HAIR[L.hair_color];
+  colors[CP] = colors[CC] = colors[WA] = colors[CA] = colors[LC] = colors[RC] = colors[EA] = colors[HA] = colors[HE] = SHIRT[L.shirt_color];
+  if (founder) {
+    colors[BD] = colors[HD] = colors[FC] = colors[LH] = colors[RH] = 0xffe1cc;
+    colors[HR] = 0x22283e; colors[CH] = 0xf4ecda; colors[LS] = colors[RS] = 0x14434c;
+    colors[LG] = 0x303036; colors[SH] = 0x1b2026;
+  }
   int order[PARTS + 1], n = 0;
   static const int base[] = {LH, LS, BD, SH, LG, CH, HD, FC, EY, HR, RH, RS};
   static const int back[] = {LH, LS, RH, RS, BD, SH, LG, CH, HD, FC, EY, HR};
@@ -168,7 +230,14 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
   const int *src = direction == 7 ? back : direction == 3 ? side : base;
   for (int i = 0; i < 12; i++) {
     if (models[RI][0] && src[i] == RH) order[n++] = RI;
+    if (src[i] == HR) order[n++] = HRB;
     order[n++] = src[i];
+    if (src[i] == CH) { order[n++] = CP; order[n++] = CC; order[n++] = WA; order[n++] = CA; }
+    if (src[i] == LS) order[n++] = LC;
+    if (src[i] == RS) order[n++] = RC;
+    if (src[i] == FC) order[n++] = FA;
+    if (src[i] == EY) order[n++] = EA;
+    if (src[i] == HR) { order[n++] = HA; order[n++] = HE; }
   }
   bool seated = pose == POSE_SIT || pose == POSE_FLOOR;
   if (seated && FLIP[direction] != 0) {
@@ -177,11 +246,9 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
     if (a >= 0 && b >= 0) { int t = order[a]; order[a] = order[b]; order[b] = t; }
   }
 
-  int canvas_w = lay ? 89 : SPRITE_W;
   for (int k = 0; k < n; k++) {
     int part = order[k];
-    if (!models[part][0]) continue;
-    bool head = part == HD || part == FC || part == EY || part == HR;
+    bool head = part == HD || part == FC || part == EY || part == HR || part == HRB || part == HA || part == HE || part == EA || part == FA;
     if (head_only && !head) continue;
     int d = FLIP[head && !lay ? head_dir & 7 : direction];
     const char *action = lay ? "lay" : seated ? "sit" : pose == POSE_WALK ? "wlk" : "std";
@@ -189,7 +256,7 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
     int off_x = 0, off_y = 0;
     if (pose == POSE_WAVE && (part == LH || part == LS)) { action = "wav"; f = frame & 1; }
     if (pose == POSE_DANCE) {
-      const DanceTrack *t = dance_track(part);
+      const DanceTrack *t = dance_track(founder && part == CC ? CH : part);
       if (t && t->n) {
         int i = frame % t->n;
         action = t->act[i]; f = t->frm[i]; off_x = t->offx[i]; off_y = t->offy[i];
@@ -200,18 +267,16 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
     if (!lay && (expr & EXPR_BLINK) && part == EY) { action = "eyb"; f = 0; }
     if (drink && !lay && (part == RI || part == RH || part == RS)) { action = sip ? "drk" : "crr"; f = 0; }
 
-    char name[48];
-    const PeopleSprite *s;
-    snprintf(name, sizeof name, "h_%s_%s_%s_%d_%d", action, PART[part], models[part], d, f);
-    s = find_sprite(name);
-    if (!s) { snprintf(name, sizeof name, "h_%s_%s_%s_%d_0", action, PART[part], models[part], d); s = find_sprite(name); }
-    if (!s) { snprintf(name, sizeof name, "h_%s_%s_%s_%d_0", lay ? "lay" : "std", PART[part], models[part], d); s = find_sprite(name); }
-    if (!s) continue;
-    int px = -s->rx + off_x + (lay ? 30 : 0);
-    int py = (lay ? 50 : ANCHOR_Y - 2) - s->ry + off_y + (pose == POSE_FLOOR ? 18 : 0);
-    // On the mirrored canvas the part covers [W - px - w, W - px].
-    if (mirrored) px = canvas_w - px - s->w;
-    if (rec_n < 16) rec_ops[rec_n++] = (AvatarOp){s, (s16)px, (s16)py, colors[part]};
+    for (int j = 0; j < layer_n; j++) if (layers[j].part == part) {
+      const PeopleSprite *tint = pose_sprite('x', action, part, layers[j].model, d, f, lay);
+      const PeopleSprite *fixed = pose_sprite('z', action, part, layers[j].model, d, f, lay);
+      record_part(tint, off_x, off_y, pose, mirrored, layers[j].tint == 1 ? colors[part] : 0xffffff);
+      record_part(fixed, off_x, off_y, pose, mirrored, 0xffffff);
+    }
+    if (!models[part][0]) continue;
+    char prefix = founder && part == CC ? 'o' : frank && (part == CC || part == FA || part == HA) ? 'f' : 'h';
+    const PeopleSprite *s = pose_sprite(prefix, action, part, models[part], d, f, lay);
+    record_part(s, off_x, off_y, pose, mirrored, prefix == 'h' ? colors[part] : 0xffffff);
   }
 }
 
@@ -226,6 +291,7 @@ static const PeopleSprite *find_swim(const char *name) {
 }
 
 void avatar_draw_swim(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, float x, float y, float scale) {
+  look = resolved_look(look);
   Look L = look_decode(look);
   int direction = dir & 7;
   bool mirrored = direction >= 4 && direction <= 6;
@@ -242,9 +308,20 @@ void avatar_draw_swim(u64 look, int dir, Pose pose, int frame, int expr, int hea
   else if (direction == 3) { order[n++] = BD; order[n++] = CH; for (int i = 0; i < 4; i++) order[n++] = heads[i]; order[n++] = LH; order[n++] = RH; }
   else { order[n++] = LH; order[n++] = BD; order[n++] = CH; for (int i = 0; i < 4; i++) order[n++] = heads[i]; order[n++] = RH; }
   const float W_ = 160;
+  bool drew_head = false;
   for (int k = 0; k < n; k++) {
     int part = order[k];
     bool head = part == HD || part == FC || part == EY || part == HR;
+    if (head) {
+      if (!drew_head) {
+        float bob = pose == POSE_FLOAT && frame > 1 ? 2 : 0;
+        head_only = true;
+        avatar_draw(look, dir, POSE_STD, frame, expr, head_dir, 0, false, x + 48 * scale, y + bob * scale, scale, 255);
+        head_only = false;
+        drew_head = true;
+      }
+      continue;
+    }
     int d = FLIP[head ? head_dir & 7 : direction];
     const char *model = head ? models[part] : part == CH ? (sex == 'F' ? "s01" : "s02") : "s01";
     if (!model[0]) continue;
@@ -260,6 +337,7 @@ void avatar_draw_swim(u64 look, int dir, Pose pose, int frame, int expr, int hea
     if (!s && head) { snprintf(name, sizeof name, "h_std_%s_%s_%d_0", PART[part], model, d); s = find_sprite(name); }
     if (!s) continue;
     u32 color = part == HR ? HAIR[L.hair_color] : part == CH ? SHIRT[L.shirt_color] : part == EY ? 0xffffff : SKIN[L.skin];
+    if ((look & AV_FOUNDER) && part != CH) color = 0xffe1cc;
     // Swimming bodies are reduced: the original doubles their registration.
     float factor = head ? 1 : 2, bob = pose == POSE_FLOAT && frame > 1 ? 2 : 0;
     float px = 48 - s->rx * factor, py = ANCHOR_Y - 2 - s->ry * factor + bob, w = s->w * factor;

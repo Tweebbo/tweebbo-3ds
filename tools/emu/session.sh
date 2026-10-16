@@ -20,4 +20,8 @@ while read -r cmd a b c; do
     "#"*|"") ;;
   esac
 done < "${STEPS:-/work/tools/emu/steps-online}"
-kill $EMU 2>/dev/null
+kill "$EMU" 2>/dev/null || true
+sleep 1
+kill -KILL "$EMU" 2>/dev/null || true
+wait "$EMU" 2>/dev/null || true
+exit 0

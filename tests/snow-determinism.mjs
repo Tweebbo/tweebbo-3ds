@@ -1,0 +1,12 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+const bundle='../romfs/snow/game.js',test='snow-determinism.js';
+let expected='';
+const context=vm.createContext({nativeSprite(){},nativeRect(){},nativeText(){},nativeMeasure(){return 0;},nativeSend(){},nativeSound(){},nativeStopWalk(){},print(s){expected=s;}});
+vm.runInContext(fs.readFileSync(bundle,'utf8'),context);vm.runInContext(fs.readFileSync(test,'utf8'),context);
+const result=spawnSync('./snow_host',[bundle,test],{encoding:'utf8',maxBuffer:2*1024*1024});
+assert.equal(result.status,0,result.stderr);assert.equal(result.stdout.trim(),expected);
+console.log('Node and native QuickJS agree across 12 complete Snow Storm matches, including hits, bots and results.');
+console.log(result.stderr.trim());

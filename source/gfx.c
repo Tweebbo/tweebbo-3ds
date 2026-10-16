@@ -3,24 +3,31 @@
 #include <stdio.h>
 #include <string.h>
 #include "catalog.h"
+#include "world.h"
+#include <stdlib.h>
+#include "gen/snow_assets.h"
 
 #define MAX_PAGES 10
 #define MAX_ROOMS 8
 
 static C3D_Tex pages[MAX_PAGES];
 static int page_count;
-static struct { const RoomBackground *bg; C3D_Tex tex; bool loaded; } rooms[MAX_ROOMS];
+static struct { const RoomBackground *bg; C3D_Tex tex[4]; bool loaded; char wall[9], floor[9]; } rooms[MAX_ROOMS];
 static C2D_TextBuf text_buf;
+static C3D_Tex font_texture;
 static bool linear;
 static void scene_free(void);
 static void draw_tex(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float scale, bool flip, u32 color);
+static void draw_tex_xy(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool flip, u32 color);
+static C3D_Tex snow_pages[12];
+static unsigned snow_loaded;
 
 // Furniture textures: one per definition, within a linear-memory budget.
 #define FURNI_SLOTS 160
 #define FURNI_BUDGET_MAX (16u * 1024 * 1024)
 /** Adjusted in gfx_init to the free linear memory (Old 3DS has much less). */
 static u32 furni_budget = 8u * 1024 * 1024;
-static struct { u16 def; bool loaded, failed; C3D_Tex tex; u32 used; } furni[FURNI_SLOTS];
+static struct { u16 def; u8 page; bool loaded, failed; C3D_Tex tex; u32 used, retry; } furni[FURNI_SLOTS];
 static u32 frame_no, furni_bytes;
 
 static bool load_t3x(const char *path, C3D_Tex *tex) {
@@ -41,6 +48,7 @@ bool gfx_init(void) {
     snprintf(path, sizeof path, "romfs:/gfx/%s.t3x", atlas_page_files[page_count]);
     if (!load_t3x(path, &pages[page_count])) return false;
   }
+  if (!load_t3x("romfs:/gfx/font0.t3x", &font_texture)) return false;
   text_buf = C2D_TextBufNew(16384);
   // The system font is drawn scaled down (≈1/3): linear filtering keeps it smooth instead of jagged.
   C2D_FontSetFilter(NULL, GPU_LINEAR, GPU_LINEAR);
@@ -55,41 +63,70 @@ bool gfx_init(void) {
   return true;
 }
 
-static int furni_slot(u16 def) {
-  int free_slot = -1;
+static int furni_victim(int exclude) {
+  int victim = -1;
+  for (int i = 0; i < FURNI_SLOTS; i++)
+    if (i != exclude && furni[i].loaded && furni[i].used != frame_no &&
+        (victim < 0 || furni[i].used < furni[victim].used)) victim = i;
+  return victim;
+}
+
+static void furni_evict(int i) {
+  C2D_Flush();
+  furni_bytes -= furni[i].tex.size;
+  C3D_TexDelete(&furni[i].tex);
+  furni[i].loaded = furni[i].failed = false;
+}
+
+static C3D_Tex *furni_tex(u16 def, u8 page) {
+  u32 bytes = 0;
+  int lo = 0, hi = furni_texture_count - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) / 2;
+    const FurniTexture *t = &furni_textures[mid];
+    if (t->def == def && t->page == page) { bytes = t->bytes; break; }
+    if (t->def < def || (t->def == def && t->page < page)) lo = mid + 1; else hi = mid - 1;
+  }
+  if (!bytes) return NULL;
+  int slot = -1;
   for (int i = 0; i < FURNI_SLOTS; i++) {
-    if ((furni[i].loaded || furni[i].failed) && furni[i].def == def) return i;
-    if (!furni[i].loaded && !furni[i].failed && free_slot < 0) free_slot = i;
+    if ((furni[i].loaded || furni[i].failed) && furni[i].def == def && furni[i].page == page) { slot = i; break; }
+    if (!furni[i].loaded && (!furni[i].failed || frame_no >= furni[i].retry) && slot < 0) slot = i;
   }
-  return free_slot;
+  if (slot < 0) {
+    slot = furni_victim(-1);
+    if (slot < 0) return NULL;
+    furni_evict(slot);
+  }
+  if (furni[slot].loaded) { furni[slot].used = frame_no; return &furni[slot].tex; }
+  if (furni[slot].failed && frame_no < furni[slot].retry) return NULL;
+  // Evict before allocating, preserving textures already queued in this frame.
+  while (furni_bytes + bytes > furni_budget || linearSpaceFree() < bytes + 1024u * 1024) {
+    int victim = furni_victim(slot);
+    if (victim < 0) break;
+    furni_evict(victim);
+  }
+  furni[slot].def = def;
+  furni[slot].page = page;
+  furni[slot].used = frame_no;
+  furni[slot].failed = false;
+  if (furni_bytes + bytes > furni_budget || linearSpaceFree() < bytes + 1024u * 1024) {
+    furni[slot].failed = true; furni[slot].retry = frame_no + 60;
+    return NULL;
+  }
+  char path[64];
+  snprintf(path, sizeof path, "romfs:/furni/d%u_%u.t3x", (unsigned)def, (unsigned)page);
+  if (!load_t3x(path, &furni[slot].tex)) {
+    furni[slot].failed = true; furni[slot].retry = frame_no + 300;
+    return NULL;
+  }
+  if (linear) C3D_TexSetFilter(&furni[slot].tex, GPU_LINEAR, GPU_LINEAR);
+  furni[slot].loaded = true;
+  furni_bytes += furni[slot].tex.size;
+  return &furni[slot].tex;
 }
 
-static C3D_Tex *furni_tex(u16 def) {
-  const FurniDef *d = def_get(def);
-  if (!d || !d->tex) return NULL;
-  int i = furni_slot(def);
-  if (i < 0) {
-    // No free slot: evict the least recently used texture not drawn this frame.
-    for (int k = 0; k < FURNI_SLOTS; k++)
-      if (furni[k].used != frame_no && (i < 0 || furni[k].used < furni[i].used)) i = k;
-    if (i < 0) return NULL;
-    if (furni[i].loaded) { furni_bytes -= furni[i].tex.size; C3D_TexDelete(&furni[i].tex); }
-    furni[i].loaded = furni[i].failed = false;
-  }
-  furni[i].used = frame_no;
-  if (furni[i].loaded) return &furni[i].tex;
-  if (furni[i].failed) return NULL;
-  char path[48];
-  snprintf(path, sizeof path, "romfs:/furni/d%u.t3x", (unsigned)def);
-  furni[i].def = def;
-  if (!load_t3x(path, &furni[i].tex)) { furni[i].failed = true; return NULL; }
-  if (linear) C3D_TexSetFilter(&furni[i].tex, GPU_LINEAR, GPU_LINEAR);
-  furni[i].loaded = true;
-  furni_bytes += furni[i].tex.size;
-  return &furni[i].tex;
-}
-
-void gfx_furni_preload(u16 def) { furni_tex(def); }
+void gfx_furni_preload(u16 def) { furni_tex(def, 0); }
 
 // Pets: one 512×512 texture per breed palette; enough for a room (max. 5 pets).
 #define PET_SLOTS 6
@@ -134,19 +171,53 @@ void gfx_frame(void) {
     for (int k = 0; k < FURNI_SLOTS; k++)
       if (furni[k].loaded && furni[k].used + 1 < frame_no && (victim < 0 || furni[k].used < furni[victim].used)) victim = k;
     if (victim < 0) break;
-    furni_bytes -= furni[victim].tex.size;
-    C3D_TexDelete(&furni[victim].tex);
-    furni[victim].loaded = false;
+    furni_evict(victim);
   }
 }
 
 void gfx_exit(void) {
+  gfx_snow_free();
   scene_free();
   for (int i = 0; i < PET_SLOTS; i++) if (pet_tex[i].loaded) C3D_TexDelete(&pet_tex[i].tex);
   for (int i = 0; i < FURNI_SLOTS; i++) if (furni[i].loaded) C3D_TexDelete(&furni[i].tex);
   for (int i = 0; i < page_count; i++) C3D_TexDelete(&pages[i]);
-  for (int i = 0; i < MAX_ROOMS; i++) if (rooms[i].loaded) C3D_TexDelete(&rooms[i].tex);
+  for (int i = 0; i < MAX_ROOMS; i++) if (rooms[i].loaded) for (int j = 0; j < rooms[i].bg->tile_count; j++) C3D_TexDelete(&rooms[i].tex[j]);
+  C3D_TexDelete(&font_texture);
   C2D_TextBufDelete(text_buf);
+}
+
+void gfx_suspend_room(void) {
+  scene_free();
+  gfx_room_release();
+  for (int i=0;i<FURNI_SLOTS;i++) if(furni[i].loaded) furni_evict(i);
+  for (int i=0;i<PET_SLOTS;i++) if(pet_tex[i].loaded) { C3D_TexDelete(&pet_tex[i].tex); pet_tex[i].loaded=false; }
+}
+bool gfx_snow_load(void) {
+  if(snow_loaded==snow_page_count)return true;
+  gfx_snow_free();
+  if(snow_page_count>COUNT(snow_pages))return false;
+  for(unsigned i=0;i<snow_page_count;i++) {
+    char path[96];snprintf(path,sizeof path,"romfs:/snow/%s.t3x",snow_page_files[i]);
+    if(!load_t3x(path,&snow_pages[i])){gfx_snow_free();return false;}
+    snow_loaded++;
+  }
+  return true;
+}
+void gfx_snow_free(void) {
+  for(unsigned i=0;i<snow_loaded;i++)C3D_TexDelete(&snow_pages[i]);
+  snow_loaded=0;
+}
+void gfx_snow_sprite(unsigned id,float x,float y,float kx,float ky,u32 color,float left,float top,float right,float bottom) {
+  if(id>=snow_sprite_count||!kx||ky<=0)return;
+  const SnowSprite *s=&snow_sprites[id];
+  if(s->page>=snow_loaded)return;
+  bool flip=kx<0;float scale=fabsf(kx);
+  x+=flip?-(s->ox+s->w)*scale:s->ox*scale;y+=s->oy*ky;
+  int l=(int)fmaxf(0,ceilf((left-x)/scale)),t=(int)fmaxf(0,ceilf((top-y)/ky));
+  int r=(int)fminf(s->w,floorf((right-x)/scale)),b=(int)fminf(s->h,floorf((bottom-y)/ky));
+  if(r<=l||b<=t)return;
+  int sx=s->x+(flip?s->w-r:l);
+  draw_tex_xy(&snow_pages[s->page],sx,s->y+t,r-l,b-t,x+l*scale,y+t*ky,scale,ky,flip,color);
 }
 
 static void draw_tex_xy(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool flip, u32 color) {
@@ -221,17 +292,24 @@ void gfx_sprite(int page, int sx, int sy, int sw, int sh, float x, float y, floa
 }
 
 void gfx_furni(u16 def, const FurniPart *p, float x, float y, float scale, u32 color) {
-  C3D_Tex *tex = furni_tex(def);
+  C3D_Tex *tex = furni_tex(def, p->page);
   if (tex) draw_tex(tex, p->x, p->y, p->w, p->h, x, y, scale, false, color);
 }
 
 void gfx_furni_icon(u16 def, float cx, float cy, float box) {
   const FurniDef *d = def_get(def);
-  C3D_Tex *tex = d && d->icon_w ? furni_tex(def) : NULL;
+  C3D_Tex *tex = d && d->icon_w ? furni_tex(def, d->icon_page) : NULL;
   if (!tex) return;
   float k = 1;
   if (d->icon_w > box || d->icon_h > box) k = box / (d->icon_w > d->icon_h ? d->icon_w : d->icon_h);
   draw_tex(tex, d->icon_x, d->icon_y, d->icon_w, d->icon_h, cx - d->icon_w * k / 2, cy - d->icon_h * k / 2, k, false, 0xFFFFFFFF);
+}
+
+void gfx_furni_icon_scaled(u16 def, float cx, float cy, float k) {
+  const FurniDef *d = def_get(def);
+  C3D_Tex *tex = d && d->icon_w ? furni_tex(def, d->icon_page) : NULL;
+  if (!tex) return;
+  draw_tex(tex, d->icon_x, d->icon_y, d->icon_w, d->icon_h, roundf(cx - d->icon_w * k / 2), roundf(cy - d->icon_h * k / 2), k, false, 0xFFFFFFFF);
 }
 
 void gfx_filter(bool on) {
@@ -240,7 +318,7 @@ void gfx_filter(bool on) {
   C2D_Flush();
   GPU_TEXTURE_FILTER_PARAM f = on ? GPU_LINEAR : GPU_NEAREST;
   for (int i = 0; i < page_count; i++) C3D_TexSetFilter(&pages[i], f, f);
-  for (int i = 0; i < MAX_ROOMS; i++) if (rooms[i].loaded) C3D_TexSetFilter(&rooms[i].tex, f, f);
+  for (int i = 0; i < MAX_ROOMS; i++) if (rooms[i].loaded) for (int j = 0; j < rooms[i].bg->tile_count; j++) C3D_TexSetFilter(&rooms[i].tex[j], f, f);
   for (int i = 0; i < FURNI_SLOTS; i++) if (furni[i].loaded) C3D_TexSetFilter(&furni[i].tex, f, f);
   for (int i = 0; i < scene_tex_n; i++) C3D_TexSetFilter(&scene_tex[i], f, f);
 }
@@ -253,7 +331,14 @@ void gfx_additive(bool on) {
 
 void gfx_room_release(void) {
   C2D_Flush();
-  for (int k = 0; k < MAX_ROOMS; k++) if (rooms[k].loaded) { C3D_TexDelete(&rooms[k].tex); rooms[k].loaded = false; }
+  for (int k = 0; k < MAX_ROOMS; k++) if (rooms[k].loaded) { for (int j = 0; j < rooms[k].bg->tile_count; j++) C3D_TexDelete(&rooms[k].tex[j]); rooms[k].loaded = false; }
+}
+
+static bool furni_release_all(void) {
+  bool freed = false;
+  for (int i = 0; i < FURNI_SLOTS; i++) if (furni[i].loaded) { furni_evict(i); freed = true; }
+  if (freed) dbg_log("released furniture cache for a room page (linear free %lu KB)", (unsigned long)(linearSpaceFree() / 1024));
+  return freed;
 }
 
 const RoomBackground *gfx_room(const char *model) {
@@ -263,23 +348,116 @@ const RoomBackground *gfx_room(const char *model) {
     for (int k = 0; k < MAX_ROOMS; k++) if (rooms[k].loaded && rooms[k].bg == bg) return bg;
     // Only the current room background is kept: each takes up to 2 MB of linear memory.
     C2D_Flush();
-    for (int k = 0; k < MAX_ROOMS; k++) if (rooms[k].loaded) { C3D_TexDelete(&rooms[k].tex); rooms[k].loaded = false; }
+    for (int k = 0; k < MAX_ROOMS; k++) if (rooms[k].loaded) { for (int j = 0; j < rooms[k].bg->tile_count; j++) C3D_TexDelete(&rooms[k].tex[j]); rooms[k].loaded = false; }
     for (int k = 0; k < MAX_ROOMS; k++) {
       if (rooms[k].loaded) continue;
-      char path[96];
-      snprintf(path, sizeof path, "romfs:/gfx/%s.t3x", bg->file);
-      if (!load_t3x(path, &rooms[k].tex)) return NULL;
-      if (linear) C3D_TexSetFilter(&rooms[k].tex, GPU_LINEAR, GPU_LINEAR);
-      rooms[k].bg = bg; rooms[k].loaded = true;
+      rooms[k].bg = bg;
+      if (bg->tile_count > 4) return NULL;
+      for (int j = 0; j < bg->tile_count; j++) {
+        char path[96];
+        snprintf(path, sizeof path, "romfs:/gfx/%s.t3x", bg->tiles[j].file);
+        // Room pages are large single allocations: free cached furniture (redrawn on demand) and retry once.
+        if (!load_t3x(path, &rooms[k].tex[j]) && !(furni_release_all() && load_t3x(path, &rooms[k].tex[j]))) {
+          for (int t = 0; t < j; t++) C3D_TexDelete(&rooms[k].tex[t]);
+          return NULL;
+        }
+        if (linear) C3D_TexSetFilter(&rooms[k].tex[j], GPU_LINEAR, GPU_LINEAR);
+      }
+      rooms[k].loaded = true;
+      rooms[k].wall[0] = rooms[k].floor[0] = 0;
       return bg;
     }
   }
   return NULL;
 }
 
+static const FinishChoice *finish_choice(int kind, const char *id) {
+  for (int i = 0; i < finish_choice_count; i++) if (finish_choices[i].kind == kind && !strcmp(finish_choices[i].id, id)) return &finish_choices[i];
+  return NULL;
+}
+
+static u8 *finish_pixels(const FinishChoice *f) {
+  if (!f) return NULL;
+  char path[128]; snprintf(path, sizeof path, "romfs:/spaces/%s.rgb", f->texture);
+  FILE *file = fopen(path, "rb");
+  if (!file) return NULL;
+  size_t bytes = (size_t)f->w * f->h * 3;
+  u8 *data = malloc(bytes);
+  if (data && fread(data, 1, bytes, file) != bytes) { free(data); data = NULL; }
+  fclose(file);
+  return data;
+}
+
+static unsigned morton(unsigned x, unsigned y) {
+  return (x & 1) | ((y & 1) << 1) | ((x & 2) << 1) | ((y & 2) << 2) | ((x & 4) << 2) | ((y & 4) << 3);
+}
+
+static void paint_finish(int slot) {
+  const RoomBackground *bg = rooms[slot].bg;
+  const FinishChoice *wall = finish_choice(1, W.wall), *floor = finish_choice(2, W.floor);
+  u8 *wall_px = finish_pixels(wall), *floor_px = finish_pixels(floor);
+  // Reset from the original texture when removing or changing either finish.
+  for (int j = 0; j < bg->tile_count; j++) {
+    char path[96]; snprintf(path, sizeof path, "romfs:/gfx/%s.t3x", bg->tiles[j].file);
+    C3D_Tex replacement;
+    if (!load_t3x(path, &replacement) && !(furni_release_all() && load_t3x(path, &replacement))) { free(wall_px); free(floor_px); return; }
+    C3D_TexDelete(&rooms[slot].tex[j]);
+    rooms[slot].tex[j] = replacement;
+  }
+  char path[96]; snprintf(path, sizeof path, "romfs:/spaces/%s.mask", bg->model);
+  FILE *mask = fopen(path, "rb");
+  u8 head[4];
+  if (mask && fread(head, 1, 4, mask) == 4) {
+    unsigned mw = head[0] | head[1] << 8, mh = head[2] | head[3] << 8, pos = 0;
+    u8 run[4];
+    while (mw && fread(run, 1, 4, mask) == 4) {
+      unsigned count = run[0] | run[1] << 8;
+      if (!count || pos + count > mw * mh) break;
+      for (unsigned i = 0; i < count; i++, pos++) {
+        unsigned x = pos % mw, y = pos / mw, label = run[2];
+        bool is_wall = label == 3 || label == 4;
+        const FinishChoice *choice = is_wall ? wall : label == 1 || label == 2 || label == 5 ? floor : NULL;
+        u8 *texture = is_wall ? wall_px : floor_px;
+        if (!choice || !texture) continue;
+        int u = is_wall ? (int)x + bg->x : (int)floorf(((int)x + bg->x) / 2.f + (int)y + bg->y);
+        int v = is_wall ? run[3] : (int)floorf((int)y + bg->y - ((int)x + bg->x) / 2.f);
+        u = (u % choice->w + choice->w) % choice->w; v = (v % choice->h + choice->h) % choice->h;
+        for (int j = 0; j < bg->tile_count; j++) {
+          const RoomTile *tile = &bg->tiles[j];
+          if (x < tile->x || y < tile->y || x >= tile->x + tile->w || y >= tile->y + tile->h) continue;
+          unsigned tx = x - tile->x, ty = y - tile->y;
+          C3D_Tex *tex = &rooms[slot].tex[j];
+          unsigned at = ((((ty / 8) * (tex->width / 8) + tx / 8) * 64) + morton(tx & 7, ty & 7)) * 4;
+          u8 *pixel = (u8 *)tex->data + at;
+          for (int channel = 0; channel < 3; channel++) {
+            int color = choice->color >> (16 - channel * 8) & 255;
+            if (label == 3) color = color > 16 ? color - 16 : 0;
+            float factor = label == 2 ? .67f : label == 5 ? 1.f : texture[(v * choice->w + u) * 3 + channel] / 255.f;
+            pixel[3 - channel] = (u8)lrintf(color * factor);
+          }
+        }
+      }
+    }
+  }
+  if (mask) fclose(mask);
+  free(wall_px); free(floor_px);
+  for (int j = 0; j < bg->tile_count; j++) {
+    C3D_Tex *tex = &rooms[slot].tex[j];
+    GSPGPU_FlushDataCache(tex->data, tex->size);
+    C3D_TexSetFilter(tex, linear ? GPU_LINEAR : GPU_NEAREST, linear ? GPU_LINEAR : GPU_NEAREST);
+  }
+  snprintf(rooms[slot].wall, sizeof rooms[slot].wall, "%s", W.wall);
+  snprintf(rooms[slot].floor, sizeof rooms[slot].floor, "%s", W.floor);
+}
+
 void gfx_room_draw(const RoomBackground *bg, float x, float y, float scale) {
-  for (int k = 0; k < MAX_ROOMS; k++)
-    if (rooms[k].loaded && rooms[k].bg == bg) draw_tex(&rooms[k].tex, 0, 0, bg->w, bg->h, x, y, scale, false, 0xFFFFFFFF);
+  for (int k = 0; k < MAX_ROOMS; k++) if (rooms[k].loaded && rooms[k].bg == bg) {
+    if (strcmp(rooms[k].wall, W.wall) || strcmp(rooms[k].floor, W.floor)) { C2D_Flush(); paint_finish(k); }
+    for (int j = 0; j < bg->tile_count; j++) {
+      const RoomTile *tile = &bg->tiles[j];
+      draw_tex(&rooms[k].tex[j], 0, 0, tile->w, tile->h, x + tile->x * scale, y + tile->y * scale, scale, false, 0xFFFFFFFF);
+    }
+  }
 }
 
 // Text cache: parsing a string (glyph lookup) costs more than drawing it, and almost every
@@ -345,9 +523,59 @@ void text_begin(void) {}
 #define FONT_PX 30.0f
 
 /** Very small system font sizes read poorly on the bottom screen: 9 px minimum. */
-static float legible(float size) { return size < 9 ? 9 : size < 10.5f ? size + 0.5f : size; }
+static float legible(float size) { return size < 11 ? 11 : size; }
+
+static unsigned utf8_next(const char **text) {
+  const u8 *p = (const u8 *)*text;
+  unsigned c = *p++, n = c < 128 ? 0 : (c & 0xe0) == 0xc0 ? 1 : (c & 0xf0) == 0xe0 ? 2 : (c & 0xf8) == 0xf0 ? 3 : 0;
+  if (n) c &= (1u << (6 - n)) - 1;
+  while (n-- && *p && (*p & 0xc0) == 0x80) c = c << 6 | (*p++ & 63);
+  *text = (const char *)p;
+  return c;
+}
+
+static const FontGlyph *glyph(unsigned code, int size) {
+  if (code > 0xffff) return NULL;
+  int lo = 0, hi = font_glyph_count - 1;
+  unsigned key = (unsigned)size << 16 | code;
+  while (lo <= hi) {
+    int mid = (lo + hi) / 2;
+    const FontGlyph *g = &font_glyphs[mid];
+    unsigned k = (unsigned)g->size << 16 | g->code;
+    if (key == k) return g;
+    if (k < key) lo = mid + 1; else hi = mid - 1;
+  }
+  return NULL;
+}
+
+static float bitmap_width(const char *s, int size) {
+  float width = 0;
+  while (*s) {
+    const FontGlyph *g = glyph(utf8_next(&s), size);
+    if (!g) return -1;
+    width += g->advance;
+  }
+  return width;
+}
+
+static int bitmap_size(float size) {
+  int px = (int)lroundf(legible(size));
+  return px > 16 ? 16 : px;
+}
 
 float text_draw(const char *s, float x, float y, float size, u32 color, int align) {
+  int px = bitmap_size(size);
+  float width = bitmap_width(s, px);
+  if (width >= 0) {
+    if (align == 1) x -= width / 2; else if (align == 2) x -= width;
+    x = roundf(x); y = roundf(y);
+    while (*s) {
+      const FontGlyph *g = glyph(utf8_next(&s), px);
+      draw_tex(&font_texture, g->x, g->y, g->w, g->h, x + g->left, y + px + g->top, 1, false, color);
+      x += g->advance;
+    }
+    return width;
+  }
   float w1;
   size = legible(size);
   C2D_Text *t = text_get(s, &w1);
@@ -360,16 +588,20 @@ float text_draw(const char *s, float x, float y, float size, u32 color, int alig
 }
 
 float text_width(const char *s, float size) {
+  float width = bitmap_width(s, bitmap_size(size));
+  if (width >= 0) return width;
   float w1;
   return text_get(s, &w1) ? w1 * legible(size) / FONT_PX : 0;
 }
 
 void text_fit(char *s, float size, float max) {
   if (text_width(s, size) <= max) return;
-  int n = (int)strlen(s);
+  int original = (int)strlen(s), n = original;
+  if (original < 3 || text_width("…", size) > max) { s[0] = 0; return; }
   while (n > 0) {
     n--;
     while (n > 0 && ((u8)s[n] & 0xC0) == 0x80) n--;
+    if (n + 3 > original) continue;
     memcpy(s + n, "\xE2\x80\xA6", 4);
     if (text_width(s, size) <= max) return;
   }

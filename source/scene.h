@@ -30,3 +30,5 @@ extern Ghost G;
 int scene_avatar_count(void);
 /** "Ⓐ action" prompt at the bottom of the top screen (NULL hides it). */
 void scene_prompt(const char *text);
+
+u64 scene_look(u32 eid);

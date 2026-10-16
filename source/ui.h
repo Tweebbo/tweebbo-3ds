@@ -19,3 +19,8 @@ void ui_name_changed(u32 eid);
 /** Handles buttons, pad and touch. Returns false when the player wants to quit. */
 bool ui_input(u32 down, u32 held, u64 now);
 void ui_draw(u64 now);
+bool casino_top(u64 now);
+void casino_receive(const char *json, u64 now);
+void casino_notice(void);
+/** Top-screen catalogue preview (drawn over the room while shopping). */
+void shop_top(u64 now);
