@@ -9,6 +9,7 @@ void dbg_log(const char *fmt, ...) { (void)fmt; }
 void on_room(void) {}
 void on_chat(u32 id, const char *s) { (void)id; (void)s; }
 void on_notice(const char *s) { (void)s; }
+void on_kicked(const char *text) { (void)text; }
 void on_transfer(const char *s, const char *a) { (void)s; (void)a; }
 void on_alert(const char *s) { (void)s; }
 void on_casino(const char *s) { (void)s; }

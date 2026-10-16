@@ -10,6 +10,8 @@ void ui_chat(u32 eid, const char *text);
 /** The player ignores the speaker (Friends Console). */
 bool ui_chat_blocked(u32 eid);
 void ui_toast(const char *text, u64 now);
+/** Closes the open window (back to the room panel). */
+void ui_close(void);
 void ui_notice(const char *text);
 void ui_item_changed(u32 id);
 /** Hotel alert (HOTEL_ALERT, JSON {id,title,message}). */

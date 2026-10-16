@@ -615,13 +615,17 @@ void item_draw(u64 now) {
       if (sk_button(NEXT_X, NEXT_Y, bw, label, true)) send_use(it->id);
       col++;
     }
-    if (world_can_manage(it) && it->owner) {
+    // Players with rights move and rotate anything here; picking up stays with the item's owner
+    // and the room's owner (Kepler's room rights).
+    if (world_can_arrange(it) && it->owner) {
       if (sk_button(NEXT_X, NEXT_Y, bw, "Move", world_can_decorate())) { build_start(it->def, 0, it->id); return; }
       col++;
       if (sk_button(NEXT_X, NEXT_Y, bw, "Rotate", true)) send_rotate(it->id);
       col++;
-      if (sk_button(NEXT_X, NEXT_Y, bw, "Pick up", true)) { send_pickup(it->id); ui_close(); return; }
-      col++;
+      if (world_can_manage(it)) {
+        if (sk_button(NEXT_X, NEXT_Y, bw, "Pick up", true)) { send_pickup(it->id); ui_close(); return; }
+        col++;
+      }
     }
     if (it->owner == W.guest_id && (d->flags & DEF_REDEEM)) {
       if (sk_button(NEXT_X, NEXT_Y, bw, "Redeem", true))

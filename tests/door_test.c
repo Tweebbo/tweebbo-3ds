@@ -11,6 +11,7 @@ int rnd_range(int lo, int hi) { return hi <= lo ? lo : lo + rand() % (hi - lo); 
 void on_room(void) {}
 void on_chat(u32 eid, const char *text) {}
 void on_notice(const char *text) {}
+void on_kicked(const char *text) { (void)text; }
 void on_transfer(const char *slug, const char *arrival) { (void)slug; (void)arrival; }
 void on_alert(const char *json) { (void)json; }
 void on_casino(const char *json) { (void)json; }

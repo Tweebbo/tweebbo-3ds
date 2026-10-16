@@ -603,8 +603,16 @@ static void panel_me(u64 now) {
     if (me && me->drink && now < me->drink_until) send_drink(0, 0);
     else get_drink(now);
   }
-  if (sk_button(x, IN_Y + 92, w/2-3, "Badges", net_online())) profile_open(W.guest_id);
-  if (sk_button(x+w/2+3, IN_Y + 92, w/2-3, "Games", net_online())) ui_open(P_GAMES);
+  if (W.room_owner && world_can_decorate()) {
+    // In your own room: who can decorate it and who is banned.
+    float tw = (w - 8) / 3;
+    if (sk_button(x, IN_Y + 92, tw, "Badges", net_online())) profile_open(W.guest_id);
+    if (sk_button(x + tw + 4, IN_Y + 92, tw, "Games", net_online())) ui_open(P_GAMES);
+    if (sk_button(x + 2 * (tw + 4), IN_Y + 92, tw, "Rights", net_online())) ui_open(P_RIGHTS);
+  } else {
+    if (sk_button(x, IN_Y + 92, w/2-3, "Badges", net_online())) profile_open(W.guest_id);
+    if (sk_button(x+w/2+3, IN_Y + 92, w/2-3, "Games", net_online())) ui_open(P_GAMES);
+  }
   y = IN_Y + 114;
   if (sk_button(IN_X + 4, y, 108, "Change looks", true)) ui_open(P_LOOK);
   if (sk_button(IN_X + 118, y, 80, "Rename", true)) rename_me();
@@ -720,6 +728,58 @@ static void panel_move(u64 now) {
 
 // ---------------------------------------------------------------- Ent panel (another character)
 
+// ---------------------------------------------------------------- room rights (server room/moderation.rs)
+
+static int ban_length = 1;
+static void kick_confirmed(void *ctx) { send_room_mod(MOD_KICK, *(u32 *)ctx, 0); ui_close(); scene_select(0); }
+static void ban_confirmed(void *ctx) { send_room_mod(MOD_BAN, *(u32 *)ctx, ban_length); ui_close(); scene_select(0); }
+
+/** Whether a guest has rights here (the owner's list from S_ROOM_RIGHTS). */
+static bool room_rights_has(u32 guest) {
+  if (!W.room_owner || !W.rights_json) return false;
+  json_t *j = json_loads(W.rights_json, 0, NULL), *v;
+  size_t i; bool found = false;
+  json_array_foreach(json_object_get(j, "holders"), i, v) if ((u32)json_integer_value(json_object_get(v, "guest")) == guest) found = true;
+  json_decref(j);
+  return found;
+}
+
+static ListState rights_list;
+static void remove_all_confirmed(void *ctx) { (void)ctx; send_room_mod(MOD_REMOVE_ALL, 0, 0); }
+
+/** The owner's players with rights and banned players, with Remove / Lift. */
+static void panel_rights(u64 now) {
+  (void)now;
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Room rights")) { ui_open(P_ME); return; }
+  sk_content(IN_X, IN_Y, IN_W, IN_H);
+  if (!W.room_owner) { sk_paragraph("Open your own room to manage who can decorate it.", IN_X + 8, IN_Y + 10, IN_W - 16, 11, SK_TEXT, 3); return; }
+  json_t *j = W.rights_json ? json_loads(W.rights_json, 0, NULL) : NULL;
+  json_t *holders = json_object_get(j, "holders"), *bans = json_object_get(j, "bans");
+  int nh = (int)json_array_size(holders), nb = (int)json_array_size(bans), n = nh + nb + 2;
+  const float row = 22, lh = IN_H - 30;
+  fill_rect(IN_X + 2, IN_Y + 2, IN_W - 4, lh, sk_rgb(SK_WHITE));
+  int first = sk_list_begin(&rights_list, IN_X + 2, IN_Y + 2, IN_W - 4, lh, n, row);
+  for (int i = first; i < n; i++) {
+    float y = sk_list_row_y(i);
+    if (y > IN_Y + 2 + lh) break;
+    if (i == 0) { sk_text(nh ? "Players who can decorate" : "Nobody else can decorate.", IN_X + 8, y + 5, 10, SK_DIM, 0, IN_W - 16); continue; }
+    if (i <= nh) {
+      json_t *v = json_array_get(holders, i - 1);
+      sk_text(json_string_value(json_object_get(v, "name")) ?: "Player", IN_X + 8, y + 5, 10.5f, SK_TEXT, 0, IN_W - 90);
+      if (sk_go(IN_X + IN_W - 76, y + 2, 70, 18, "Remove", true)) send_room_mod(MOD_REMOVE_RIGHTS_OF, (u32)json_integer_value(json_object_get(v, "guest")), 0);
+      continue;
+    }
+    if (i == nh + 1) { sk_text(nb ? "Banned players" : "Nobody is banned.", IN_X + 8, y + 5, 10, SK_DIM, 0, IN_W - 16); continue; }
+    json_t *v = json_array_get(bans, i - nh - 2);
+    sk_text(json_string_value(json_object_get(v, "name")) ?: "Player", IN_X + 8, y + 5, 10.5f, SK_TEXT, 0, IN_W - 90);
+    if (sk_go(IN_X + IN_W - 76, y + 2, 70, 18, "Lift ban", true)) send_room_mod(MOD_UNBAN, (u32)json_integer_value(json_object_get(v, "guest")), 0);
+  }
+  sk_list_end();
+  json_decref(j);
+  if (sk_button(IN_X + 4, IN_Y + IN_H - 24, 150, "Remove all rights", nh > 0)) ui_confirm("Remove everyone's rights in this room?", "Remove", remove_all_confirmed, NULL);
+  sk_text("Use a player's card to add.", IN_X + IN_W - 6, IN_Y + IN_H - 20, 9, SK_DIM, 2, 140);
+}
+
 static void panel_ent(u64 now) {
   Ent *e = world_ent(U.ent);
   if (!e) { ui_close(); return; }
@@ -740,10 +800,34 @@ static void panel_ent(u64 now) {
     if (sk_button(x, y + 22, w / 2, blocked ? "Unignore" : "Ignore", true)) friends_act(blocked ? "unblock" : "block", e->guest, "");
   }
   if (sk_button(x, IN_Y + 88, w, "Badges", net_online())) profile_open(e->guest);
+  float note_y = IN_Y + 116;
+  // Room tools in a private room (Kepler's rights and kick, plus entry bans).
+  if (e->guest && e->guest != W.owner && (W.room_owner || W.room_rights) && world_can_decorate() && net_online()) {
+    static int ban_len = 1;
+    static const char *lengths[] = {"", "Ban 1 hour", "Ban 1 day", "Ban always"};
+    bool holder = room_rights_has(e->guest);
+    float bx = IN_X + 4, bw = (IN_W - 16) / 3, by = IN_Y + 112;
+    if (W.room_owner && sk_button(bx, by, bw, holder ? "Remove rights" : "Give rights", true)) send_room_mod(holder ? MOD_REMOVE_RIGHTS : MOD_GIVE_RIGHTS, e->id, 0);
+    if ((W.room_owner || !holder) && sk_button(bx + bw + 4, by, bw, "Kick", true)) {
+      static u32 target; static char q[96]; target = e->id;
+      snprintf(q, sizeof q, "Ask %s to leave this room? They can come back in a minute.", e->name);
+      ui_confirm(q, "Kick", kick_confirmed, &target);
+    }
+    if (W.room_owner) {
+      if (sk_button(bx + 2 * (bw + 4), by, bw - 26, lengths[ban_len], true)) {
+        static u32 target; static char q[120]; target = e->id;
+        snprintf(q, sizeof q, "Keep %s out of this room (%s)?", e->name, ban_len == 1 ? "1 hour" : ban_len == 2 ? "1 day" : "until you lift it");
+        ban_length = ban_len;
+        ui_confirm(q, "Ban", ban_confirmed, &target);
+      }
+      if (sk_button(bx + 3 * bw + 8 - 22, by, 22, ">", true)) ban_len = ban_len % 3 + 1;
+    }
+    note_y = IN_Y + 138;
+  }
   if (e->flags & FLAG_3DS) {
     // Same as the web: note that they play from a console.
-    console_badge(IN_X + 6, IN_Y + 116, 2);
-    sk_paragraph("This person is connected through a Nintendo 3DS system.", IN_X + 36, IN_Y + 118, IN_W - 42, 10.5f, SK_TEXT, 2);
+    console_badge(IN_X + 6, note_y, 2);
+    sk_paragraph("This person is connected through a Nintendo 3DS system.", IN_X + 36, note_y + 2, IN_W - 42, 10.5f, SK_TEXT, 2);
   }
 }
 
@@ -1208,6 +1292,7 @@ void ui_draw(u64 now) {
     case P_PROFILE: profile_draw(now); break;
     case P_GAME: games_draw(now); break;
     case P_GAMES: games_hub_draw(now); break;
+    case P_RIGHTS: panel_rights(now); break;
     case P_ROOM: panel_room(now); break;
     case P_NAV: nav_draw(now); break;
     case P_SHOP: shop_draw(now); break;

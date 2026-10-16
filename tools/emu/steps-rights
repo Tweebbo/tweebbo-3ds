@@ -1,0 +1,10 @@
+# Owner room tools: Me → Rights window, then a visitor's card.
+wait 32
+click 503 712
+wait 2
+shot 160-me
+click 750 628
+wait 2
+shot 161-rights
+key s
+wait 1

@@ -78,3 +78,5 @@ void send_decorate(int kind, const char *id);
 
 void send_game(int op, u32 a, int b, int c, int d);
 void send_casino(int op, int a, int b, int c);
+/** Room moderation: op (MOD_*), entity id (or guest id for unban/remove-of), ban length 1-3. */
+void send_room_mod(int op, u32 target, int length);

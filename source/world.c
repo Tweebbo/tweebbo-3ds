@@ -31,7 +31,8 @@ bool public_model(const char *model) {
   return !strcmp(model, "newbie_lobby") || !strcmp(model, "park_a") || !strcmp(model, "pool_a") || !strcmp(model, "casino");
 }
 
-bool world_can_decorate(void) { return W.owner && W.owner == W.guest_id && !public_model(W.model); }
+bool world_can_decorate(void) { return W.owner && (W.owner == W.guest_id || W.room_rights) && !public_model(W.model); }
+bool world_can_arrange(const Item *it) { return world_can_manage(it) || (W.room_rights && world_can_decorate()); }
 bool world_can_manage(const Item *it) { return it->owner == W.guest_id || W.owner == W.guest_id; }
 
 static void inv_add(u32 id, u16 def) {
@@ -153,6 +154,7 @@ void world_handle(const u8 *data, int len) {
       W.guest_id = (u32)r_var(&r);
       break;
     case S_ROOM: {
+      W.room_rights = W.room_owner = false;
       r_str(&r, W.slug, sizeof W.slug);
       r_str(&r, W.title, sizeof W.title);
       r_str(&r, W.model, sizeof W.model);
@@ -283,6 +285,15 @@ void world_handle(const u8 *data, int len) {
       break;
     }
     case S_OWNER_IDENTITY: set_json(&W.owners_json, &r); W.owners_rev++; break;
+    case S_ROOM_RIGHTS: {
+      set_json(&W.rights_json, &r);
+      // Compact JSON from the server; the lists are read by the room rights window.
+      W.room_rights = W.rights_json && strstr(W.rights_json, "\"rights\":true");
+      W.room_owner = W.rights_json && strstr(W.rights_json, "\"owner\":true");
+      W.rights_rev++;
+      break;
+    }
+    case S_KICKED: r_str(&r, text, sizeof text); if (!r.err) on_kicked(text); break;
     case S_CASINO: {
       char *event = NULL; set_json(&event, &r);
       if (event) { on_casino(event); free(event); }

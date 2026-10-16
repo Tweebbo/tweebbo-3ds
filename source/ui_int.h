@@ -19,7 +19,7 @@ typedef enum {
   P_ENT,      /* another character */
   P_PETS,     /* pets */
   P_MOVE,     /* one-time move of the character to another device */
-  P_GAME, P_PROFILE, P_CASINO, P_SNOW, P_GAMES,
+  P_GAME, P_PROFILE, P_CASINO, P_SNOW, P_GAMES, P_RIGHTS,
   P_COUNT
 } Panel;
 

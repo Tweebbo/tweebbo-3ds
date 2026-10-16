@@ -19,6 +19,7 @@ static char last_chat[256];
 void on_room(void) { rooms++; }
 void on_chat(u32 eid, const char *text) { chats++; snprintf(last_chat, sizeof last_chat, "%u:%s", eid, text); }
 void on_notice(const char *text) { notices++; printf("  notice: %s\n", text); }
+void on_kicked(const char *text) { (void)text; }
 void sim_deliver(const u8 *data, int len) { world_handle(data, len); }
 void on_transfer(const char *slug, const char *arrival) { (void)slug; (void)arrival; }
 void on_alert(const char *json) { (void)json; }

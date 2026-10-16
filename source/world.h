@@ -46,8 +46,10 @@ typedef struct {
   /** Incremented on every inventory change (to refresh the interface). */
   u32 inv_rev;
   /** PETS and PET_INVENTORY JSON as received (parsed by the interface). */
-  char *pets_json, *pet_inv_json, *owners_json;
-  u32 owners_rev;
+  char *pets_json, *pet_inv_json, *owners_json, *rights_json;
+  u32 owners_rev, rights_rev;
+  /* Room rights here: may decorate (owner or rights holder), and whether we own the room. */
+  bool room_rights, room_owner;
   char wall[9], floor[9];
   u32 finish_rev;
   Duel duel;
@@ -71,6 +73,8 @@ bool world_tile(int x, int y);
 Ent *world_ent(u32 id);
 /** Same as State.canDecorate: only the creator of a private room. */
 bool world_can_decorate(void);
+/** Move and rotate: own items, the owner's room, or rights in this room. */
+bool world_can_arrange(const Item *it);
 /** Same as State.canManage. */
 bool world_can_manage(const Item *it);
 /** Public slug of a room (system rooms: lobby, park, pool), like room-links.ts. */
@@ -88,6 +92,8 @@ bool ent_moving(const Ent *e, u64 now);
 void on_room(void);
 void on_chat(u32 eid, const char *text);
 void on_notice(const char *text);
+/** Asked to leave the room by its owner or a rights holder (S_KICKED). */
+void on_kicked(const char *text);
 void on_transfer(const char *slug, const char *arrival);
 void on_alert(const char *json);
 void on_casino(const char *json);

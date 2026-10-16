@@ -13,6 +13,7 @@ void dbg_log(const char *s, ...) { (void)s; }
 void on_room(void) {}
 void on_chat(u32 a, const char *b) { (void)a; (void)b; }
 void on_notice(const char *s) { (void)s; }
+void on_kicked(const char *text) { (void)text; }
 void on_transfer(const char *a, const char *b) { (void)a; (void)b; }
 void on_alert(const char *s) { (void)s; }
 void on_casino(const char *s) { (void)s; }

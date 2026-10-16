@@ -20,6 +20,7 @@ static char last_chat[256], last_notice[256];
 void on_room(void) { rooms++; }
 void on_chat(u32 eid, const char *text) { chats++; snprintf(last_chat, sizeof last_chat, "%u:%s", eid, text); }
 void on_notice(const char *text) { snprintf(last_notice, sizeof last_notice, "%s", text); printf("  notice: %s\n", text); }
+void on_kicked(const char *text) { (void)text; }
 void on_transfer(const char *slug, const char *arrival) { transfers++; net_goto(slug, arrival); }
 void on_alert(const char *json) { printf("  alert: %s\n", json); }
 void on_casino(const char *json) { (void)json; }
