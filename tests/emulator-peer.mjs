@@ -21,7 +21,7 @@ const entity = r => {
     setTimeout(()=>{ if(ws.readyState===1) { send([16,1,...variable(id),3]); console.log('Chess invitation sent to the isolated console fixture.'); } },18000);
   }
 };
-ws.onopen=()=>send([1,6,0,0,0,0,0,1]);
+ws.onopen=()=>send([1,6,0,0,0,0,0,2]);
 ws.onmessage=e=>{
   const b=Buffer.from(e.data),r=new Reader(b);
   if(b[0]===101) own=r.var();

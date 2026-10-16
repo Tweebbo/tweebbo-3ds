@@ -12,10 +12,10 @@ class Reader{
   s(){const n=this.v();assert(this.p+n<=this.b.length);const s=this.b.subarray(this.p,this.p+n).toString();this.p+=n;return s;}
 }
 class Peer{
-  constructor(room,caps=30){
+  constructor(room,caps=62){
     this.events=[];this.credits=0;this.items=[];this.snow=[];
     this.ws=new WebSocket(`${base}/ws/${room}`);this.ws.binaryType='arraybuffer';
-    this.ws.onopen=()=>this.send([1,6,0,0,0,caps?1:0,0,caps||1]);
+    this.ws.onopen=()=>this.send([1,6,0,0,0,caps?1:0,0,caps||2]);
     this.ws.onmessage=e=>{
       const b=Buffer.from(e.data),r=new Reader(b);
       if(b[0]===101){this.id=r.v();r.s();r.s();this.credits=r.v();}

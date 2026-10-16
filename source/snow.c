@@ -203,6 +203,11 @@ void snow_draw(u64 now){
       JSValue r=call("create",6,args);JS_FreeValue(context,r);create_page=false;
     }return;
   }
+  // The server no longer has our match (bridge "ended"): say so once.
+  static bool ended_shown;
+  bool ended=json_is_true(json_object_get(snapshot,"ended"));
+  if(ended&&!ended_shown)ui_toast("That Snow Storm match has ended. Join or create another one.",now);
+  ended_shown=ended;
   if(is_mode("list")){
     json_t *list=json_object_get(snapshot,"games");int n=json_array_size(list);if(page*4>=n)page=0;
     for(int i=0;i<4;i++){
@@ -223,7 +228,7 @@ void snow_draw(u64 now){
   if(is_mode("waiting")){
     json_t *g=json_object_get(snapshot,"waiting"),*list=json_object_get(g,"roster");char line[128];
     snprintf(line,sizeof line,"Arena %d | %d teams | %d min",num(g,"arena"),num(g,"teams"),num(g,"minutes"));sk_text(line,18,44,11,SK_TEXT,0,284);
-    for(size_t i=0;i<json_array_size(list)&&i<5;i++){json_t *p=json_array_get(list,i);snprintf(line,sizeof line,"Team %d: %s",num(p,"team"),str(p,"name"));sk_text(line,18,64+i*16,11,SK_TEXT,0,284);}
+    for(size_t i=0;i<json_array_size(list)&&i<5;i++){json_t *p=json_array_get(list,i);snprintf(line,sizeof line,"Team %d: %s",num(p,"team")+1,str(p,"name"));sk_text(line,18,64+i*16,11,SK_TEXT,0,284);}
     snprintf(line,sizeof line,num(g,"fill")?"Computer players fill places in %d sec.":"Waiting for players. The host can start now.",num(g,"fillIn"));sk_text(line,18,149,10,SK_TEXT,0,284);
     if(sk_button(18,174,86,"Chat",true))chat();
     if(sk_button(116,174,186,"Start with bots",(u32)num(g,"host")==W.me))number_call("start",num(g,"id"));

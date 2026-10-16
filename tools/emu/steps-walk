@@ -1,0 +1,12 @@
+# Walking with the Circle Pad (arrow keys) in several directions.
+wait 30
+shot 130-start
+key Down 900
+wait 2
+shot 131-pad-down
+key Right 900
+wait 2
+shot 132-pad-right
+key Left 900
+wait 2
+shot 133-pad-left

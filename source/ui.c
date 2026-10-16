@@ -1067,7 +1067,8 @@ static void modal(void) {
 static u32 down_keys, held_keys;
 
 bool ui_input(u32 down, u32 held, u64 now) {
-  if (down & KEY_START || quit_requested) return false;
+  // START quits, except while the touch keyboard is open: there it sends the text.
+  if (((down & KEY_START) && !osk_active()) || quit_requested) return false;
   scene_prompt(NULL);
   // Stylus: touch, drag, and a "click" when lifted without dragging.
   touchPosition tp;

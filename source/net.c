@@ -215,7 +215,7 @@ static void net_thread(void *arg) {
       continue;
     }
     Writer w;
-    w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, arrival); w_u8(&w, PLATFORM_3DS); w_str(&w, password); w_u8(&w, NATIVE_STATUS | NATIVE_GAMES | NATIVE_CASINO | NATIVE_SNOW);
+    w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, arrival); w_u8(&w, PLATFORM_3DS); w_str(&w, password); w_u8(&w, NATIVE_STATUS | NATIVE_GAMES | NATIVE_CASINO | NATIVE_SNOW | NATIVE_SNOW2);
     bool alive = ws_send(&ws, w.buf, w.len);
     lock(&N.mu);
     // The arrival ticket is only valid once.

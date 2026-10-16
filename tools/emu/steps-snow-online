@@ -1,0 +1,29 @@
+# Online Snow Storm on the console: create, start with bots, walk, target and throw.
+wait 30
+click 502 520
+wait 3
+key x
+wait 5
+shot 150-lobby
+click 737 645
+wait 2
+shot 151-create
+click 691 674
+wait 4
+shot 152-waiting
+click 689 674
+wait 8
+shot 153-started
+key Down 900
+wait 2
+shot 154-walked
+click 568 568
+wait 1
+key a
+wait 2
+shot 155-thrown
+key z
+wait 3
+key a
+wait 2
+shot 156-again

@@ -1,5 +1,6 @@
 import { Canvas, NativeSprite, rgb } from './canvas';
-import { Engine, TILE } from 'snow-original/engine';
+import { Engine, TILE, SUBTURNS_PER_TURN, SUBTURN_MS, leadPoint } from 'snow-original/engine';
+const TURN_MS=SUBTURNS_PER_TURN*SUBTURN_MS;
 import { Assets } from 'snow-original/assets';
 import { View } from 'snow-original/view';
 import data from 'snow-data';
@@ -31,7 +32,7 @@ view.resize(400,240);view.cam.zoom=view.cam.user=1;
 let engine: Engine|null=null, me=0, game=0, nextTurn=0, rosterIds:number[]=[], pending:any[][]=[];
 let games:any[]=[], last=0, acc=0, received=0, syncAt=0, trajectory=0, aim=0;
 let chats:string[]=[], settings={arena:1,teams:2,players:3,minutes:3,level:1,fill:2};
-let local=false, localTurn=0;
+let local=false, localTurn=0, ended=0;
 class Reader {
   p=0; b:Uint8Array;
   constructor(b:ArrayBuffer){this.b=new Uint8Array(b);}
@@ -63,6 +64,11 @@ function receive(buffer:ArrayBuffer,eid:number,now:number){
       list.push(g);
     }
     games=list;
+    // Our match is gone from the server (it ended while we were away, or its state was lost).
+    // Only after a resync request, so a normal ending still shows the results.
+    if(engine&&!local&&game&&engine.status!=='over'&&syncAt&&now-received>3000&&!list.some((g:any)=>g.id===game&&g.running)){
+      engine=null;game=0;pending=[];view.setEngine(null);ended=now;
+    }
   }else if(op===2){
     const id=r.v(),seed=r.v(),arena=r.u(),teams=r.u(),players=r.u(),minutes=r.u(),level=r.u(),roster=[],ids=[];
     for(let n=r.n(16);n--;){const eid=r.v(),name=r.s(),look=r.v(),team=r.u();ids.push(eid);roster.push({name,look,team,bot:eid===0});}
@@ -74,7 +80,7 @@ function receive(buffer:ArrayBuffer,eid:number,now:number){
     if(!engine||local||id!==game||turn<nextTurn)return;
     if(turn!==nextTurn){if(now-syncAt>2000){send(8);syncAt=now;}return;}
     if(pending.length>6000)throw Error('Snow Storm replay is too large');
-    for(let sub=0;sub<5;sub++)pending.push(commands.filter(c=>Math.min(c.sub,4)===sub));
+    for(let sub=0;sub<SUBTURNS_PER_TURN;sub++)pending.push(commands.filter(c=>Math.min(c.sub,SUBTURNS_PER_TURN-1)===sub));
     nextTurn++;received=now;
   }else if(op===4){
     const id=r.v(),eid=r.v(),name=r.s(),text=r.s();
@@ -97,7 +103,7 @@ function play(events:any[],now:number){
 function tick(now:number){
   if(!engine)return;
   const dt=Math.max(0,Math.min(250,now-last));last=now;
-  if(local){localTurn+=dt;while(localTurn>=300){for(let i=0;i<5;i++)pending.push([]);localTurn-=300;}}
+  if(local){localTurn+=dt;while(localTurn>=TURN_MS){for(let i=0;i<SUBTURNS_PER_TURN;i++)pending.push([]);localTurn-=TURN_MS;}}
   acc+=dt;
   const catchup=pending.length>60,interval=pending.length>15?40:60;
   let steps=0;
@@ -130,7 +136,7 @@ function target(){
 function status(now:number){
   const mine=games.find(g=>g.roster.some((p:any)=>p.id===me));
   const e=engine;
-  return JSON.stringify({settings,games,waiting:!e?mine:null,chats,game,local,trajectory,target:target()?.name||'',manual:!!e&&e.avatars.some(a=>a.id===targetId),
+  return JSON.stringify({ended:ended&&now-ended<15000,settings,games,waiting:!e?mine:null,chats,game,local,trajectory,target:target()?.name||'',manual:!!e&&e.avatars.some(a=>a.id===targetId),
     mode:e?(e.status==='over'?'results':'game'):mine?'waiting':'list',
     syncing:!!e&&!local&&now-received>1500,queued:pending.length,
     state:e?{status:e.status,clock:e.clock,left:Math.max(0,Math.ceil((e.endAt-e.clock)/1000)),hp:e.me?.hp||0,balls:e.me?.balls||0,
@@ -153,7 +159,7 @@ const Snow={
   chat(text:string){if(local){view.addChat(engine!.me!.name,text,engine!.me,last);return;}const g=game||games.find(g=>g.roster.some((p:any)=>p.id===me))?.id;if(g)new Writer().u(7).v(g).s(text).send();},
   move(dx:number,dy:number){const m=engine?.me;if(!m)return;const [x,y]=engine!.tileOf(m);command(1,Math.max(0,x+dx),Math.max(0,y+dy));},
   touch(x:number,y:number,throwing:number){const t=view.tileAt(x,y);command(throwing?3:1,Math.max(0,t[0])*(throwing?TILE:1),Math.max(0,t[1])*(throwing?TILE:1));},
-  make(){command(2);},throw(){const a=target();if(a)command(3,a.x,a.y);},
+  make(){command(2);},throw(){const a=target(),m=engine?.me;if(a&&m){const [x,y]=leadPoint(m,a);command(3,x,y);}},
   aim(){const list=enemies();if(!list.length)return;const at=list.findIndex(a=>a.id===target()?.id);targetId=list[(at+1)%list.length].id;},
   pick(index:number){const a=engine?.avatars[index];if(a&&a!==engine!.me)targetId=targetId===a.id?'':a.id;},trajectory(){trajectory=(trajectory+1)%3;},
   // Integer zoom preserves the imported pixel grid on the 3DS screen.
