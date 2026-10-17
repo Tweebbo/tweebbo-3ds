@@ -13,8 +13,8 @@ BUILD_PROFILE=release
 TARGET=out/tweebbo
 RSF=cia/tweebbo.rsf
 APP_NAME=Tweebbo
-if [ "${1:-}" = debug ]; then
-  : "${TWEEBBO_SERVER:?Set TWEEBBO_SERVER to your local hotel, e.g. ws://192.168.1.20:8092}"
+# Debug and showcase builds only talk to a hotel on the local network.
+require_lan_server() {
   python3 - <<'CHECK'
 import ipaddress, os, urllib.parse
 u = urllib.parse.urlparse(os.environ['TWEEBBO_SERVER'])
@@ -25,8 +25,12 @@ try:
 except ValueError:
     valid = False
 if not valid or u.username or u.password or u.path not in ('', '/') or u.query or u.fragment:
-    raise SystemExit('Debug builds require a private LAN IP or loopback ws:// address.')
+    raise SystemExit('Debug and showcase builds require a private LAN IP or loopback ws:// address.')
 CHECK
+}
+if [ "${1:-}" = debug ]; then
+  : "${TWEEBBO_SERVER:?Set TWEEBBO_SERVER to your local hotel, e.g. ws://192.168.1.20:8092}"
+  require_lan_server
   BUILD_PROFILE=debug
   TARGET=out/debug/tweebbo-debug
   # Debug builds are numbered: consoles on the LAN update when tools/debug-page.py publishes a higher number.
@@ -40,8 +44,16 @@ CHECK
   APP_NAME='Tweebbo Debug'
 fi
 if [ "${1:-}" = showcase ]; then
-  # Poster build for photos on real hardware: plays online with the showcase cast
-  # and a banner. It has its own CIA title, data folder and identity.
+  # Proof-of-concept build for photos on real hardware: plays with the showcase cast and a
+  # banner on the hotel of this PC's Wi-Fi (never tweebbo.lol), with an in-game offline
+  # option. It has its own CIA title, data folder and identity.
+  if [ -z "${TWEEBBO_SERVER:-}" ]; then
+    LAN_IP=$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')
+    : "${LAN_IP:?Could not find the LAN address of this PC: set TWEEBBO_SERVER=ws://IP:8096}"
+    export TWEEBBO_SERVER="ws://$LAN_IP:${SHOWCASE_PORT:-8096}"
+  fi
+  require_lan_server
+  echo "Showcase hotel: $TWEEBBO_SERVER"
   BUILD_PROFILE=showcase
   TARGET=out/showcase/tweebbo-showcase
   RSF=cia/tweebbo-showcase.rsf

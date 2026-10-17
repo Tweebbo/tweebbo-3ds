@@ -98,12 +98,17 @@ The build configuration stamp tracks the server, profile and version and rebuild
 ### Showcase builds (3DS · Switch · Vita)
 
 `./build.sh showcase` produces `out/showcase/tweebbo-showcase.{3dsx,cia}` (title
-`0004000007EBB200`, data in `sdmc:/3ds/Tweebbo-showcase/`, no update checks). It plays online like
-the normal client and, inside the shared room, rotates the five brand models every ~5 s with
+`0004000007EBB200`, data in `sdmc:/3ds/Tweebbo-showcase/`, no update checks). It never connects to
+tweebbo.lol: like the debug build it only accepts private LAN `ws://` addresses, and the build bakes
+in the hotel of this PC's Wi-Fi (`ws://<LAN IP>:8096`, or `TWEEBBO_SERVER`). When the hotel does not
+answer, the connection screen offers **Play offline (Y)** (the simulation with bots, in the same
+build); Help › LAN hotel goes back. Inside the shared room it rotates the five brand models every ~5 s with
 `SET_LOOK` (Bobba, Cyber, Director, Street, VIP Girl), waves or dances and walks a little, with a
 "TWEEBBO SHOWCASE" banner. Every console in the room sees the same character change: it is the
 cross-play demo used for the Switch and Vita proof-of-concept photos. `tools/emu/steps-showcase`
-captures one screenshot per model on the emulator against a local hotel.
+captures one screenshot per model on the emulator against a local hotel; `steps-showcase-offline`
+and `steps-showcase-lan` check the offline option and that a stale tweebbo.lol `server.txt` is
+ignored, and `steps-crossplay` takes the cross-play shots.
 
 The showcase clients identify themselves in `HELLO` with a trailing device byte (1 3DS, 2 Switch,
 3 Vita) and the server announces each player's device with the `DEVICE` (140) message, so the web,

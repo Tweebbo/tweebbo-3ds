@@ -1,0 +1,3 @@
+# Showcase build with a stale tweebbo.lol server.txt: it must ignore it and join the LAN hotel.
+wait 35
+shot lan-01

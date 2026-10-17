@@ -51,7 +51,8 @@ void showcase_start(u64 now) {
 }
 
 void showcase_update(u64 now) {
-  if (!net_online() || !W.in_room) return;
+  // Online or in the offline simulation (same protocol): the cast keeps rotating either way.
+  if (!W.in_room || !(net_online() || net_state() == NET_OFFLINE)) return;
   if (now >= S.next_look) {
     S.next_look = now + LOOK_MS;
     S.cast = (S.cast + 1) % COUNT(CAST);
@@ -79,7 +80,7 @@ void showcase_top(u64 now) {
   float w = w1 > w2 ? w1 : w2;
   fill_round(6, 6, w + 16, 50, 4, C2D_Color32(0x0b, 0x0d, 0x0e, 190));
   text_draw("TWEEBBO SHOWCASE", 14, 9, 13, C2D_Color32(0xff, 0xd1, 0x66, 255), 0);
-  text_draw("Nintendo 3DS - tweebbo.lol", 14, 25, 11, C2D_Color32(0xe8, 0xea, 0xe2, 255), 0);
+  text_draw(net_state() == NET_OFFLINE ? "Nintendo 3DS - offline" : "Nintendo 3DS - LAN hotel", 14, 25, 11, C2D_Color32(0xe8, 0xea, 0xe2, 255), 0);
   text_draw(line, 14, 39, 11, C2D_Color32(0x8f, 0xd9, 0xff, 255), 0);
 }
 

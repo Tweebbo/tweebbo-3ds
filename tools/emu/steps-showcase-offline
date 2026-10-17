@@ -1,0 +1,8 @@
+# Showcase build without a reachable hotel: the connection screen offers "Play offline (Y)".
+wait 25
+shot offline-01-prompt
+key x 300
+wait 15
+shot offline-02-lobby
+wait 10
+shot offline-03-cast

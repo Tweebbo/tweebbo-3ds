@@ -309,6 +309,13 @@ void net_start(u64 now) {
   N.quit = false;
   if (!store_load("server", N.server, sizeof N.server) || !N.server[0]) snprintf(N.server, sizeof N.server, DEFAULT_SERVER);
   if (!net_server_allowed(N.server)) snprintf(N.server, sizeof N.server, DEFAULT_SERVER);
+#ifdef TWEEBBO_SHOWCASE
+  // Proof of concept: every launch tries the hotel of the local network first; offline is
+  // offered on screen when it does not answer (a choice that lasts until the app closes).
+  static bool launched;
+  if (!launched && !strcmp(N.server, "offline")) snprintf(N.server, sizeof N.server, DEFAULT_SERVER);
+  launched = true;
+#endif
   // Offline only when the player chose it: a network failure never silently switches to the simulation.
   if (!strcmp(N.server, "offline")) { start_offline(now); return; }
   if (!endpoint_parse(N.server, &N.ep)) {
@@ -346,7 +353,7 @@ void net_stop(void) {
 }
 
 bool net_server_allowed(const char *url) {
-#ifdef TWEEBBO_DEBUG
+#if defined(TWEEBBO_DEBUG) || defined(TWEEBBO_SHOWCASE)
   if (!strcmp(url, "offline")) return true;
   Endpoint ep; unsigned a, b, c, d; char extra;
   if (!endpoint_parse(url, &ep) || ep.tls || sscanf(ep.host, "%u.%u.%u.%u%c", &a, &b, &c, &d, &extra) != 4 || a > 255 || b > 255 || c > 255 || d > 255) return false;
@@ -357,7 +364,7 @@ bool net_server_allowed(const char *url) {
 }
 
 void net_set_server(const char *url) {
-  if (!net_server_allowed(url)) { on_notice("Debug builds connect to private LAN addresses only."); return; }
+  if (!net_server_allowed(url)) { on_notice("This build connects to private LAN addresses only."); return; }
   net_stop();
   store_save("server", url);
   free(W.pets_json); free(W.pet_inv_json); free(W.owners_json);

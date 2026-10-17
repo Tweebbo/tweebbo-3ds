@@ -902,7 +902,7 @@ static void local_done(const char *url, void *ctx) {
   {
     Endpoint ep;
     if (!endpoint_parse(url, &ep)) { ui_toast("Use ws://host:port or wss://host.", now_ms()); return; }
-    if (!net_server_allowed(url)) { ui_toast("Use a private LAN address for this debug build.", now_ms()); return; }
+    if (!net_server_allowed(url)) { ui_toast("Use a private LAN address for this build.", now_ms()); return; }
     net_set_server(url);
     ui_close();
   }
@@ -928,7 +928,10 @@ static void panel_settings(u64 now) {
   sk_text(line, x, y + 14, 10, st == NET_ONLINE ? SK_GO : SK_DIM, 0, w);
   sk_text("v" APP_VERSION, x + w, y + 14, 10, SK_DIM, 2, 132);
   y += 32;
-#ifndef TWEEBBO_DEBUG
+#if defined(TWEEBBO_SHOWCASE)
+  // The proof of concept only knows the hotel of the local network it was built for.
+  if (sk_button(x, y, (w - 8) / 3, "LAN hotel", strcmp(server, DEFAULT_SERVER) != 0)) { net_set_server(DEFAULT_SERVER); ui_close(); }
+#elif !defined(TWEEBBO_DEBUG)
   if (sk_button(x, y, (w - 8) / 3, "tweebbo.lol", strcmp(server, PROD_SERVER) != 0)) { net_set_server(PROD_SERVER); ui_close(); }
 #else
   sk_button(x, y, (w - 8) / 3, "Local debug", false);
@@ -938,7 +941,11 @@ static void panel_settings(u64 now) {
   y += 22;
   static int check_job;
   static char check_text[96];
+#ifdef TWEEBBO_SHOWCASE
+  if (false) {
+#else
   if (sk_button(x, y, 120, check_job ? "Checking…" : "Check tweebbo.lol", !check_job && net_state() != NET_OFFLINE)) {
+#endif
     check_job = net_check_prod();
     snprintf(check_text, sizeof check_text, "Testing the secure connection…");
   }
@@ -1275,7 +1282,16 @@ void ui_draw(u64 now) {
     sk_text(net_state() == NET_OFFLINE ? "Loading…" : where, BOT_W / 2, 88, 11, SK_TEXT, 1, BOT_W - 60);
     sk_text("v" APP_VERSION, BOT_W - 26, 132, 9, SK_DIM, 2, 60);
     if (s[0]) sk_paragraph(s, 34, 108, BOT_W - 68, 10, SK_DIM, 3);
+#ifdef TWEEBBO_SHOWCASE
+    // No hotel on this Wi-Fi: the same build plays offline (the local simulation with bots).
+    if (net_state() != NET_OFFLINE && (sk_button(BOT_W / 2 - 124, 160, 120, "Play offline (Y)", true) || (down_keys & KEY_Y))) {
+      net_set_server("offline");
+      return;
+    }
+    if (sk_button(BOT_W / 2 + 4, 160, 120, "Settings", true)) ui_open(P_SETTINGS);
+#else
     if (sk_button(BOT_W / 2 - 60, 160, 120, "Settings", true)) ui_open(P_SETTINGS);
+#endif
     if (U.panel == P_SETTINGS) { fill_rect(0, 0, BOT_W, BOT_H, sk_rgb(0x111111)); header(); panel_settings(now); }
     toolbar();
     U.panel = U.panel == P_SETTINGS ? P_SETTINGS : P_ROOM;
