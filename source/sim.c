@@ -99,8 +99,11 @@ static bool occupied(int x, int y, u32 except) {
   return false;
 }
 
+// Players pass through each other, so only furniture (can_walk) blocks a route; occupied()
+// is still used to pick free tiles to stand on or spawn at.
 static bool walk_cb(void *ctx, int x, int y, bool goal) {
-  return can_walk(x, y, goal) && !occupied(x, y, *(u32 *)ctx);
+  (void)ctx;
+  return can_walk(x, y, goal);
 }
 
 static void send(const Writer *w) { sim_deliver(w->buf, w->len); }
@@ -141,7 +144,7 @@ static void walk_to(SEnt *e, int x, int y) {
   SItem *bed = item_at(x, y);
   const FurniDef *bd = bed ? def_get(bed->def) : NULL;
   if (bd && (bd->flags & DEF_LAY)) { if (bed->rot % 2 == 0) y = bed->y; else x = bed->x; }
-  if (!tile(x, y) || (e->x == x && e->y == y) || occupied(x, y, e->id)) return;
+  if (!tile(x, y) || (e->x == x && e->y == y)) return;
   static u8 path[PATH_CAP][2];
   int n = path_find(S.w, S.h, e->x, e->y, x, y, walk_cb, &e->id, path, PATH_CAP);
   if (n < 0) return;
@@ -210,7 +213,7 @@ static void request_drink(SEnt *e, u32 id, u8 drink) {
     for (int x = it->x; x < it->x + w; x++)
       for (int k = 0; k < 4 && n < 32; k++) {
         int nx = x + N4[k][0], ny = y + N4[k][1];
-        if (!can_walk(nx, ny, false) || occupied(nx, ny, e->id)) continue;
+        if (!can_walk(nx, ny, false)) continue;
         int dist = (e->x > nx ? e->x - nx : nx - e->x) + (e->y > ny ? e->y - ny : ny - e->y);
         cand[n][0] = (u8)nx; cand[n][1] = (u8)ny; cand[n][2] = (u8)(dist > 255 ? 255 : dist); n++;
       }
@@ -279,7 +282,7 @@ static void enter(SEnt *e) {
       for (int dx = -r; dx <= r; dx++) {
         if ((dx < 0 ? -dx : dx) != r && (dy < 0 ? -dy : dy) != r) continue;
         int x = tx + dx, y = ty + dy;
-        if (!can_walk(x, y, false) || occupied(x, y, e->id) || near_door(x, y)) continue;
+        if (!can_walk(x, y, false) || near_door(x, y)) continue;
         walk_to(e, x, y);
         if (e->ppos < e->plen) return;
       }
@@ -394,7 +397,7 @@ static void tick(u64 now) {
     if (e->ppos < e->plen) {
       int nx = e->path[e->ppos][0], ny = e->path[e->ppos][1];
       bool last = e->ppos == e->plen - 1;
-      if (can_walk(nx, ny, last) && !occupied(nx, ny, e->id)) {
+      if (can_walk(nx, ny, last)) {
         e->ppos++;
         e->dir = dir_of(nx - e->x, ny - e->y);
         e->x = (u8)nx; e->y = (u8)ny;
