@@ -343,28 +343,52 @@ static void tile_cursor(int x, int y, u32 color) {
   C2D_DrawLine(l, mid, color, cx, top, color, 1, 0.5f);
 }
 
-/** 12×13 px icon drawn pixel by pixel (same as client/src/console-badge.ts). */
-void console_badge(float x, float y, float k) {
-  static const char *ART[] = {
-    ".KKKKKKKKKK.", "K##########K", "K#SSSSSSSS#K", "K#SLSSSSSS#K", "K#SSSSSSSS#K", "K##########K", ".KHHHHHHHHK.",
-    "K##########K", "K#c#ssss#b#K", "Kccc#ss#b#bK", "K#c#ssss#b#K", "K##########K", ".KKKKKKKKKK.",
-  };
-  for (int r = 0; r < 13; r++)
-    for (int c = 0; c < 12; c++) {
-      u32 col;
-      switch (ART[r][c]) {
-        case 'K': col = C2D_Color32(0x14, 0x18, 0x1c, 255); break;
-        case '#': col = C2D_Color32(0x3f, 0xa6, 0xe0, 255); break;
-        case 'H': col = C2D_Color32(0x23, 0x66, 0x8f, 255); break;
-        case 'S': col = C2D_Color32(0x8f, 0xd9, 0xff, 255); break;
-        case 'L': col = C2D_Color32(0xe8, 0xf8, 0xff, 255); break;
-        case 's': col = C2D_Color32(0xd7, 0xee, 0xf8, 255); break;
-        case 'c': case 'b': col = C2D_Color32(0x2b, 0x31, 0x38, 255); break;
-        default: continue;
-      }
-      C2D_DrawRectSolid(x + c * k, y + r * k, 0.5f, k, k, col);
+/** Pixel-art handheld of each native console; same arts as client/src/console-badge.ts. */
+static const char *const BADGE_3DS[] = {
+  ".KKKKKKKKKK.", "K##########K", "K#SSSSSSSS#K", "K#SLSSSSSS#K", "K#SSSSSSSS#K", "K##########K", ".KHHHHHHHHK.",
+  "K##########K", "K#c#ssss#b#K", "Kccc#ss#b#bK", "K#c#ssss#b#K", "K##########K", ".KKKKKKKKKK.",
+};
+static const char *const BADGE_SWITCH[] = {
+  ".KKKKKKKKKKKK.", "KBBKSSSSSSKRRK", "KBcKSLSSSSKRbK", "KBBKSSSSSSKbRK", "KBbKSSSSSSKRRK",
+  "KBBKSSSSSSKRcK", "KBBKSSSSSSKRRK", "KBBKKKKKKKKRRK", ".KKKKKKKKKKKK.",
+};
+static const char *const BADGE_VITA[] = {
+  ".KKKKKKKKKK.", "KWWKBBBBKWWK", "KWcKBBBBKcWK", "KWWKBBBBKWWK", "KwWKBLLBKWWK",
+  "KWWKBBBBKWWK", "KWWKBBBBKWWK", "KWWKKKKKKWWK", ".KKKKKKKKKK.",
+};
+typedef struct { char ch; u8 r, g, b; } BadgeColor;
+static const BadgeColor PAL_3DS[] = {{'K',0x14,0x18,0x1c},{'#',0x3f,0xa6,0xe0},{'H',0x23,0x66,0x8f},{'S',0x8f,0xd9,0xff},{'L',0xe8,0xf8,0xff},{'s',0xd7,0xee,0xf8},{'c',0x2b,0x31,0x38},{'b',0x2b,0x31,0x38}};
+static const BadgeColor PAL_SWITCH[] = {{'K',0x14,0x18,0x1c},{'B',0x00,0xc3,0xe3},{'R',0xff,0x45,0x54},{'S',0x23,0x2a,0x30},{'L',0x8f,0xd9,0xff},{'c',0x14,0x18,0x1c},{'b',0xf6,0xf6,0xef}};
+static const BadgeColor PAL_VITA[] = {{'K',0x14,0x18,0x1c},{'W',0x2c,0x35,0x3d},{'B',0x1b,0x5b,0x91},{'L',0x2d,0x7f,0xc4},{'c',0x0f,0x14,0x17},{'w',0x8f,0xd9,0xff}};
+
+static void badge_draw(const char *const *art, int rows, const BadgeColor *pal, int pal_n, float x, float y, float k) {
+  for (int r = 0; r < rows; r++)
+    for (int c = 0; art[r][c]; c++) {
+      if (art[r][c] == '.') continue;
+      for (int p = 0; p < pal_n; p++)
+        if (pal[p].ch == art[r][c]) {
+          C2D_DrawRectSolid(x + c * k, y + r * k, 0.5f, k, k, C2D_Color32(pal[p].r, pal[p].g, pal[p].b, 255));
+          break;
+        }
     }
 }
+
+/** Width and height in native pixels of the badge of a device. */
+void device_badge_size(int device, int *w, int *h) {
+  if (device == DEVICE_SWITCH) { if (w) *w = 14; if (h) *h = 9; }
+  else if (device == DEVICE_VITA) { if (w) *w = 12; if (h) *h = 9; }
+  else { if (w) *w = 12; if (h) *h = 13; }
+}
+
+/** Badge of a native device (D.._3DS/_SWITCH/_VITA) with the top-left corner at (x, y). */
+void device_badge(int device, float x, float y, float k) {
+  if (device == DEVICE_SWITCH) badge_draw(BADGE_SWITCH, 9, PAL_SWITCH, COUNT(PAL_SWITCH), x, y, k);
+  else if (device == DEVICE_VITA) badge_draw(BADGE_VITA, 9, PAL_VITA, COUNT(PAL_VITA), x, y, k);
+  else badge_draw(BADGE_3DS, 13, PAL_3DS, COUNT(PAL_3DS), x, y, k);
+}
+
+/** 12×13 px icon drawn pixel by pixel (same as client/src/console-badge.ts). */
+void console_badge(float x, float y, float k) { device_badge(DEVICE_3DS, x, y, k); }
 
 static void fallback_floor(void) {
   u32 a = C2D_Color32(0xc5, 0xae, 0x88, 255), b = C2D_Color32(0xc8, 0xb2, 0x8d, 255);
@@ -574,13 +598,16 @@ void scene_draw(u64 now) {
       text_draw("OWNER", bx, by - 15, 10, rgba(0xffe3a0, 255), 1);
       raise = 16;
     }
-    if (e->flags & FLAG_3DS) {
-      // The same pixel-art handheld the web shows over 3DS players.
+    int device = e->device ? e->device : (e->flags & FLAG_3DS ? DEVICE_3DS : 0);
+    if (device) {
+      // Pixel-art handheld of each native console (3DS/Switch/Vita), like the web.
       PoseInfo p = pose_of(e, now, ent_moving(e, now));
       float k = V.zoom < 1 ? 1 : V.zoom;
       float bx = scr_x(sx + p.dx), by = scr_y(sy + HALF_H + p.dy - p.anchor_y + 16 - p.lift);
-      console_badge(bx - 6 * k, by - 13 * k - raise, k);
-      raise += 13 * k + 2;
+      int bw = 12, bh = 13;
+      device_badge_size(device, &bw, &bh);
+      device_badge(device, bx - bw * 0.5f * k, by - bh * k - raise, k);
+      raise += bh * k + 2;
     }
     if (e->id == W.me && now - V.joined_at < 7000) {
       float ax = scr_x(sx), ay = scr_y(sy + HALF_H - ANCHOR_Y + 22 - ent_height(e, now)) + sinf(now / 150.0f) * 3 - raise;

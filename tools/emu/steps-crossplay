@@ -1,0 +1,8 @@
+# Showcase build in the cross-play photo (NET=host; sd:/3ds/Tweebbo-showcase/server.txt points
+# at the test hotel while the Switch, the Vita and a browser share the lobby).
+wait 40
+shot cross-40
+wait 20
+shot cross-60
+wait 20
+shot cross-80

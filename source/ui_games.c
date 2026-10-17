@@ -153,7 +153,8 @@ void games_hub_draw(u64 now) {
     bool focus = hub_list.focus == i;
     fill_rect(x, ry, w, row - 1, sk_rgb(focus ? SK_SELECT : i % 2 ? SK_ROW_ALT : SK_ROW));
     sk_text(people[i]->name, x + 6, ry + 5, 10.5f, SK_TEXT, 0, w - 96);
-    if (people[i]->flags & FLAG_3DS) console_badge(x + w - 96, ry + 4, 0.6f);
+    int dev = people[i]->device ? people[i]->device : (people[i]->flags & FLAG_3DS ? DEVICE_3DS : 0);
+    if (dev) device_badge(dev, x + w - 96, ry + 4, 0.6f);
     if (sk_go(x + w - 78, ry + 2, 74, 18, "Challenge", true) || (focus && K.a)) {
       send_game(1, people[i]->id, hub_kind, 0, 0);
       ui_toast("Challenge sent. They have 30 seconds to accept.", now);

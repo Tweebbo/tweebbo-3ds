@@ -39,6 +39,16 @@ CHECK
   RSF=cia/tweebbo-debug.rsf
   APP_NAME='Tweebbo Debug'
 fi
+if [ "${1:-}" = showcase ]; then
+  # Poster build for photos on real hardware: plays online with the showcase cast
+  # and a banner. It has its own CIA title, data folder and identity.
+  BUILD_PROFILE=showcase
+  TARGET=out/showcase/tweebbo-showcase
+  RSF=cia/tweebbo-showcase.rsf
+  APP_NAME='Tweebbo Showcase'
+  mkdir -p build romfs
+  rm -f "$TARGET.3dsx" "$TARGET.smdh"
+fi
 
 [ "$BUILD_PROFILE" = debug ] || rm -f romfs/debug-build.txt
 run() { podman run --rm -e BUILD_PROFILE="$BUILD_PROFILE" -e TWEEBBO_SERVER="${TWEEBBO_SERVER:-}" -v "$PWD":/work:z -w /work "$IMAGE" bash -c "$*"; }
@@ -46,7 +56,7 @@ run() { podman run --rm -e BUILD_PROFILE="$BUILD_PROFILE" -e TWEEBBO_SERVER="${T
 run_cia() { podman run --rm -v "$PWD":/work:z -w /work docker.io/library/ubuntu:24.04 bash -c "$*"; }
 
 case "${1:-}" in
-  cia|debug) ;;
+  cia|debug|showcase) ;;
   release)
     # Consoles read releases/latest/download/latest.json and update themselves.
     REPO=Tweebbo/tweebbo-3ds
@@ -108,7 +118,7 @@ for file in romfs/furni/*.t3x; do [ -e "build/gfx/furni/$(basename "$file" .t3x)
 run 'bash tools/convert-textures.sh && make -j"$(nproc)"'
 ls -la "$TARGET.3dsx"
 
-if [ "${1:-}" = cia ] || [ "${1:-}" = debug ]; then
+if [ "${1:-}" = cia ] || [ "${1:-}" = debug ] || [ "${1:-}" = showcase ]; then
   TOOLS=build/ctrtools
   if [ ! -x $TOOLS/makerom/makerom ] || [ ! -x $TOOLS/bannertool/linux-x86_64/bannertool ]; then
     mkdir -p $TOOLS/dl

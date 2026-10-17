@@ -18,6 +18,9 @@ void scene_select(u32 eid);
 u32 scene_selected(void);
 /** Pixel-art handheld over 3DS players (12×13 px × k). */
 void console_badge(float x, float y, float k);
+/** Badge of a native device (DEVICE_*): 3DS 12×13, Switch 14×9, Vita 12×9. */
+void device_badge(int device, float x, float y, float k);
+void device_badge_size(int device, int *w, int *h);
 
 /** Ghost furniture in build mode (like renderer.ghost on the web). */
 typedef struct {

@@ -85,6 +85,7 @@ Requirements: Podman, Node 22, Python 3 with Pillow, Google Chrome (for the grap
 ./build.sh brand    # redraws the HOME Menu icon, banner and banner sound with the game's avatars
 ./build.sh          # converts textures (tex3ds, compressed) and builds out/tweebbo.3dsx
 ./build.sh cia      # also packs out/tweebbo.cia (version from VERSION)
+./build.sh showcase # Showcase build for photos and cross-play demos (separate title and data)
 TWEEBBO_SERVER=ws://192.168.1.20:8092 ./build.sh debug # separate local-only CIA and 3DSX
 NOTES="…" ./build.sh release   # publishes the GitHub release (CIA, 3DSX, latest.json, QR code)
 make -C tests                  # simulation, protocol, state, every furniture graphic and animations
@@ -93,6 +94,20 @@ make -C tests tls              # TLS with mbedTLS 2.28 against https://tweebbo.l
 ```
 
 The build configuration stamp tracks the server, profile and version and rebuilds objects when they change. `./build.sh release` refuses to publish a CIA that points to a local server. Debug artifacts use a separate output directory, object directory, title ID and SD directory; public updates are disabled.
+
+### Showcase builds (3DS · Switch · Vita)
+
+`./build.sh showcase` produces `out/showcase/tweebbo-showcase.{3dsx,cia}` (title
+`0004000007EBB200`, data in `sdmc:/3ds/Tweebbo-showcase/`, no update checks). It plays online like
+the normal client and, inside the shared room, rotates the five brand models every ~5 s with
+`SET_LOOK` (Bobba, Cyber, Director, Street, VIP Girl), waves or dances and walks a little, with a
+"TWEEBBO SHOWCASE" banner. Every console in the room sees the same character change: it is the
+cross-play demo used for the Switch and Vita proof-of-concept photos. `tools/emu/steps-showcase`
+captures one screenshot per model on the emulator against a local hotel.
+
+The showcase clients identify themselves in `HELLO` with a trailing device byte (1 3DS, 2 Switch,
+3 Vita) and the server announces each player's device with the `DEVICE` (140) message, so the web,
+the 3DS and the consoles draw the correct pixel-art badge over each other.
 
 ### Graphics shared with the web
 

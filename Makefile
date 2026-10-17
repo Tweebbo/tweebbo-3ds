@@ -19,6 +19,11 @@ TARGET      := tweebbo-debug
 BUILD       := obj-debug
 OUTPUT_DIR  := out/debug
 endif
+ifeq ($(BUILD_PROFILE),showcase)
+TARGET      := tweebbo-showcase
+BUILD       := obj-showcase
+OUTPUT_DIR  := out/showcase
+endif
 SOURCES     := source source/gen vendor/quickjs
 INCLUDES    := source vendor/quickjs
 ROMFS       := romfs
@@ -27,6 +32,10 @@ APP_DESCRIPTION := Tweebbo for Nintendo 3DS
 ifeq ($(BUILD_PROFILE),debug)
 APP_TITLE := Tweebbo Debug
 APP_DESCRIPTION := Local test build - not for public release
+endif
+ifeq ($(BUILD_PROFILE),showcase)
+APP_TITLE := Tweebbo Showcase
+APP_DESCRIPTION := Showcase build for photos on real hardware
 endif
 APP_AUTHOR  := Tweebbo
 ICON        := assets/icon.png
@@ -37,6 +46,8 @@ CFLAGS   += $(INCLUDE) -D__3DS__ -Wno-format-truncation -Wno-missing-field-initi
 CFLAGS   += -DCONFIG_VERSION='"2026-06-04"' -D_GNU_SOURCE
 ifeq ($(BUILD_PROFILE),debug)
 CFLAGS   += -DTWEEBBO_DEBUG=1 -DAPP_VERSION='"$(shell cat $(TOPDIR)/VERSION)-debug"'
+else ifeq ($(BUILD_PROFILE),showcase)
+CFLAGS   += -DTWEEBBO_SHOWCASE=1 -DAPP_VERSION='"$(shell cat $(TOPDIR)/VERSION)-showcase"'
 else
 CFLAGS   += -DAPP_VERSION='"$(shell cat $(TOPDIR)/VERSION)"'
 endif

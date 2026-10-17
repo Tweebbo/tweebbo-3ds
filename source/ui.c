@@ -462,7 +462,8 @@ static void panel_room(u64 now) {
     else if (e->id == scene_selected()) C2D_DrawCircleSolid(sx, sy, 0.5f, r + 2.5f, sk_rgb(SK_WHITE));
     C2D_DrawCircleSolid(sx, sy, 0.5f, r + 1, sk_rgb(0x0d1418));
     C2D_DrawCircleSolid(sx, sy, 0.5f, r, sk_rgb(look_shirt_rgb(e->look)));
-    if (e->flags & FLAG_3DS) console_badge(sx + r - 1, sy - r - 8, 0.6f);
+    int dev = e->device ? e->device : (e->flags & FLAG_3DS ? DEVICE_3DS : 0);
+    if (dev) device_badge(dev, sx + r - 1, sy - r - 8, 0.6f);
   }
 
   // Social accounts as quiet text in the bottom corners of the map, only where no floor is drawn.

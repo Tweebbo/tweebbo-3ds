@@ -14,6 +14,8 @@ typedef struct {
   u32 id, guest;
   char name[NAME_CAP];
   u8 x, y, dir, flags, next_x, next_y;
+  /** Native device (DEVICE_*), from S_DEVICE; 0 when the server did not announce one. */
+  u8 device;
   u64 look;
   u16 z;
   /** Origin of the current step, interpolated over MOVE_MS. */

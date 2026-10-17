@@ -11,13 +11,16 @@
 #include "gfx.h"
 #include "net.h"
 #include "scene.h"
+#include "showcase.h"
 #include "sim.h"
 #include "ui.h"
 #include "snow.h"
 #include "update.h"
 #include "world.h"
 
-#ifdef TWEEBBO_DEBUG
+#if defined(TWEEBBO_SHOWCASE)
+#define DATA_DIR "sdmc:/3ds/Tweebbo-showcase"
+#elif defined(TWEEBBO_DEBUG)
 #define DATA_DIR "sdmc:/3ds/Tweebbo-debug"
 #else
 #define DATA_DIR "sdmc:/3ds/Tweebbo"
@@ -179,15 +182,23 @@ int main(int argc, char **argv) {
 #ifdef TWEEBBO_DEBUG
   dbg_log("TWEEBBO_LOCAL_DEBUG: build %s, updates from the LAN download page", update_current());
 #endif
+#ifdef TWEEBBO_SHOWCASE
+  dbg_log("TWEEBBO_SHOWCASE: poster build; cast cycles every 5 s");
+#endif
   net_start(now_ms());
+#ifdef TWEEBBO_SHOWCASE
+  showcase_start(now_ms());
+#endif
 
   while (aptMainLoop()) {
     hidScanInput();
     u64 now = now_ms();
     if (!ui_input(hidKeysDown(), hidKeysHeld(), now)) break;
+#ifndef TWEEBBO_SHOWCASE
     // Once inside the hotel, check for a newer version (once per session).
     static bool checked;
     if (!checked && W.in_room && net_online()) { checked = true; update_check(); }
+#endif
 #ifdef TWEEBBO_DEBUG
     // A pushed debug build reaches a running console within two minutes.
     static u64 last_check;
@@ -197,6 +208,9 @@ int main(int argc, char **argv) {
         (us == UPD_LATEST || us == UPD_AVAILABLE || us == UPD_FAILED)) { last_check = now_ms(); update_check_quiet(); }
 #endif
     net_update(now);
+#ifdef TWEEBBO_SHOWCASE
+    showcase_update(now);
+#endif
     now = now_ms();
 
     gfx_frame();
@@ -205,7 +219,12 @@ int main(int argc, char **argv) {
     text_begin();
     C2D_TargetClear(top, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(top);
-    if (!snow_top(now) && !casino_top(now)) { scene_draw(now); gfx_filter(false); shop_top(now); }
+    if (!snow_top(now) && !casino_top(now)) {
+      scene_draw(now); gfx_filter(false); shop_top(now);
+#ifdef TWEEBBO_SHOWCASE
+      showcase_top(now);
+#endif
+    }
     C2D_TargetClear(bottom, C2D_Color32(0x1b, 0x25, 0x2c, 255));
     C2D_SceneBegin(bottom);
     gfx_filter(false);

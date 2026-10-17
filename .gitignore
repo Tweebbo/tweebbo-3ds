@@ -17,3 +17,4 @@ tests/protocol_test
 tests/transport_test
 tests/snow_host
 __pycache__/
+obj-showcase/

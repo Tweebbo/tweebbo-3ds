@@ -202,6 +202,14 @@ void world_handle(const u8 *data, int len) {
       if (e) e->used = false;
       break;
     }
+    case S_DEVICE:
+      // Native device of each player (3DS/Switch/Vita); old servers never send it.
+      for (int n = (int)r_var(&r); n > 0 && !r.err; n--) {
+        Ent *e = world_ent((u32)r_var(&r));
+        u8 device = r_u8(&r);
+        if (e && !r.err) e->device = device;
+      }
+      break;
     case S_DELTAS:
       for (int n = (int)r_var(&r); n > 0 && !r.err; n--) {
         u32 id = (u32)r_var(&r);

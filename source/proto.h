@@ -12,6 +12,10 @@ enum {
 };
 /* Room rights (JSON) and being asked to leave a room (server room/moderation.rs). */
 enum { S_ROOM_RIGHTS = 136, S_KICKED = 137 };
+/* Native device of a player: var count, then {var entity id, u8 device}. Added for cross-play
+   (3DS, Nintendo Switch, PlayStation Vita); older servers never send it. */
+enum { S_DEVICE = 140 };
+enum { DEVICE_BROWSER = 0, DEVICE_3DS = 1, DEVICE_SWITCH = 2, DEVICE_VITA = 3 };
 /* ROOM_MOD operations. */
 enum { MOD_GIVE_RIGHTS = 1, MOD_REMOVE_RIGHTS, MOD_REMOVE_ALL, MOD_KICK, MOD_BAN, MOD_UNBAN, MOD_REMOVE_RIGHTS_OF };
 enum {

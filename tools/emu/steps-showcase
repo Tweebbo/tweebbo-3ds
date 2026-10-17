@@ -1,0 +1,14 @@
+# Showcase build against the local hotel (NET=host; sd:/3ds/Tweebbo-showcase/server.txt).
+# One shot per cast model (~5 s each) to check the five characters.
+wait 33
+shot 01-cast
+wait 5
+shot 02-cast
+wait 5
+shot 03-cast
+wait 5
+shot 04-cast
+wait 5
+shot 05-cast
+wait 5
+shot 06-cast
