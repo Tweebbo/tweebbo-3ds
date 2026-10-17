@@ -7,14 +7,15 @@
 #include <stdio.h>
 #include <string.h>
 
-enum { SLOT, ROULETTE, BLACKJACK, CRASH, POKER, VIDEO, NO_GAME };
-static const char *keys[] = {"slot", "roulette", "blackjack", "crash", "poker", "videopoker"};
-static const char *titles[] = {"Slots", "Roulette", "Blackjack", "Crash", "Casino Hold'em", "Video Poker"};
+enum { SLOT, ROULETTE, BLACKJACK, CRASH, POKER, VIDEO, DASH, NO_GAME };
+static const char *keys[] = {"slot", "roulette", "blackjack", "crash", "poker", "videopoker", "dash"};
+static const char *titles[] = {"Slots", "Roulette", "Blackjack", "Crash", "Casino Hold'em", "Video Poker", "VIP Dash"};
+static const char *risks[] = {"Bellboy", "VIP", "High Roller", "Bobba"};
 static const char *slot_names[] = {"Star Treasure", "Lucky Sevens", "Gem Ways", "Candy Tumble", "Coin Rush"};
 static const char *slot_paths[] = {"video", "slots-classic", "slots-ways", "slots-tumble", "slots-coins"};
 static struct {
   bool active, rules;
-  int kind, bet, bets[6], bet_count, slot, free_left, held, roulette_kind, roulette_value, rules_page;
+  int kind, bet, bets[6], bet_count, slot, free_left, held, roulette_kind, roulette_value, rules_page, risk;
   u32 item;
   u64 sent_at, received_at, ready_at, animate_until;
   json_t *state, *round;
@@ -42,15 +43,15 @@ void casino_receive(const char *text, u64 now) {
   if (!json_is_object(j)) { json_decref(j); return; }
   const char *type=string(j,"t");
   if (!strcmp(type,"open")) {
-    int kind=NO_GAME; for(int i=0;i<6;i++)if(!strcmp(string(j,"game"),keys[i]))kind=i;
+    int kind=NO_GAME; for(int i=0;i<NO_GAME;i++)if(!strcmp(string(j,"game"),keys[i]))kind=i;
     if(kind==NO_GAME){json_decref(j);return;}
     casino_close(false); C.kind=kind; C.item=(u32)number(j,"item"); C.active=true; C.rules=false; C.held=0;
     C.bet_count=0; json_t *v; size_t i;
-    json_array_foreach(json_object_get(j,"bets"),i,v) if(C.bet_count<6 && json_integer_value(v)>0 && json_integer_value(v)<=255) C.bets[C.bet_count++]=(int)json_integer_value(v);
+    json_array_foreach(json_object_get(j,"bets"),i,v) if(C.bet_count<6 && json_integer_value(v)>0 && json_integer_value(v)<=100000) C.bets[C.bet_count++]=(int)json_integer_value(v);
     if(!C.bet_count){static const int bets[]={1,2,5,10,25,50};memcpy(C.bets,bets,sizeof bets);C.bet_count=6;}
     bool found=false;for(int b=0;b<C.bet_count;b++)found|=C.bet==C.bets[b];if(!found)C.bet=C.bets[0];
     C.free_left=number(j,"freeLeft"); if(C.free_left)C.slot=(unsigned)number(j,"freeGame")%5;
-    replace(&C.state,json_object_get(j,kind==POKER?"poker":kind==VIDEO?"video":"hand"));
+    replace(&C.state,json_object_get(j,kind==POKER?"poker":kind==VIDEO?"video":kind==DASH?"dash":"hand"));
     replace(&C.round,json_object_get(j,"round"));
     C.status[0]=0; C.ready_at=now; C.received_at=now;
     ui_open(P_CASINO);
@@ -63,6 +64,12 @@ void casino_receive(const char *text, u64 now) {
     else if(!strcmp(type,"slot")&&C.kind==SLOT) {
       replace(&C.state,j);C.slot=(unsigned)number(j,"game")%5;C.free_left=number(j,"freeLeft");C.sent_at=0;C.received_at=now;
       snprintf(C.status,sizeof C.status,"Win: %d credits. Free spins: %d.",number(j,"win"),C.free_left);
+    } else if(!strcmp(type,"dash")&&C.kind==DASH) {
+      replace(&C.state,j);C.sent_at=0;C.received_at=now;
+      if(json_is_true(json_object_get(j,"done"))) {
+        if(json_is_true(json_object_get(j,"lost")))snprintf(C.status,sizeof C.status,"Caught on step %d! The stake of %d credits is lost.",number(j,"step")+1,number(j,"stake"));
+        else snprintf(C.status,sizeof C.status,"Cashed out: %d credits.",number(j,"win"));
+      } else C.status[0]=0;
     } else if(!strcmp(type,"roulette")&&C.kind==ROULETTE) {
       replace(&C.state,j);C.sent_at=0;
       snprintf(C.status,sizeof C.status,"Number %d. Win: %d credits.",number(j,"n"),number(j,"win"));
@@ -162,6 +169,23 @@ bool casino_top(u64 now) {
       char label[8];snprintf(label,sizeof label,"%d",n);text_draw(label,x+(n?14:11),y+(n?9:44),12,sk_rgb(0xffffff),1);
     }
     char result[40];snprintf(result,sizeof result,"Last number: %d",number(C.state,"n"));text_draw(C.state?result:"Choose your bet below.",200,195,13,sk_rgb(0xf2d27a),1);
+  } else if(C.kind==DASH) {
+    // The red carpet: one tile per step; climbed tiles glow, a caught step turns red.
+    int steps=C.state?number(C.state,"steps"):(C.risk==3?10:8),step=C.state?number(C.state,"step"):0;
+    bool lost=C.state&&json_is_true(json_object_get(C.state,"lost"));
+    float tw=(400-40)/(float)steps;
+    fill_rect(14,96,372,44,sk_rgb(0x8f1d1d));
+    for(int i=0;i<steps;i++){
+      u32 c=i<step?0xffd34d:(lost&&i==step)?0xff5544:0xb33a2c;
+      fill_round(20+i*tw,100,tw-4,36,3,sk_rgb(c));
+      char n[4];snprintf(n,sizeof n,"%d",i+1);text_draw(n,20+i*tw+(tw-4)/2,110,11,sk_rgb(0x3a1010),1);
+    }
+    char line[100];snprintf(line,sizeof line,"%s ladder",risks[C.risk%4]);text_draw(line,200,30,12,sk_rgb(0xffffff),1);
+    if(C.state&&!json_is_true(json_object_get(C.state,"done"))){
+      snprintf(line,sizeof line,"Cash out now: %d   Next step: %d",number(C.state,"cashout"),number(C.state,"next"));
+      text_draw(line,200,160,12,sk_rgb(0xffd34d),1);
+    }
+    text_draw("Climb the carpet. One step hides a trap.",200,214,11,sk_rgb(0xf2d27a),1);
   } else if(C.kind==CRASH) {
     const char *p=phase(now);char line[100];
     snprintf(line,sizeof line,"%.2fx",multiplier(now));text_draw(line,200,40,16,sk_rgb(!strcmp(p,"crashed")?0xff9988:0xffd34d),1);
@@ -181,7 +205,8 @@ static const char *rules[] = {
   "Get closer to 21 than the dealer without going over. Aces count as 1 or 11. Blackjack pays 3:2; the dealer stands on 17. Double is available on the first two cards, charges another bet and draws one card. A push returns your bet.",
   "Everyone at this cabinet shares the same round. Bet before it starts. Cash out before the crash to win your bet times the multiplier. An uncashed bet is lost when it crashes. The server decides whether cash-out arrived in time.",
   "Bet the ante. You and the dealer combine two cards with five community cards. Call costs twice the ante; folding loses the ante. The dealer qualifies with a pair of fours or better. Ante pays: royal flush 100:1, straight flush 20:1, four of a kind 10:1, full house 3:1, flush 2:1, other wins 1:1.",
-  "Hold any cards and draw once. Jacks or Better pays per credit: royal flush 250, straight flush 50, four of a kind 25, full house 9, flush 6, straight 4, three of a kind 3, two pair 2, jacks or better 1. Payouts include the bet."
+  "Hold any cards and draw once. Jacks or Better pays per credit: royal flush 250, straight flush 50, four of a kind 25, full house 9, flush 6, straight 4, three of a kind 3, two pair 2, jacks or better 1. Payouts include the bet.",
+  "Choose a ladder and a stake, then climb the red carpet one step at a time. One step hides a trap: stepping on it loses the stake. After every safe step you can cash out for the stake times that step's multiplier; reaching the last step pays the top of the ladder. Bellboy is the safest ladder, Bobba the wildest. On Nintendo 3DS the Dash plays with credits; chips are only in the PC edition."
 };
 
 void casino_draw(u64 now) {
@@ -197,7 +222,7 @@ void casino_draw(u64 now) {
     if(sk_button(214,174,85,"Next",rules[C.kind][next]!=0))C.rules_page++;
     return;
   }
-  bool playing=C.state && ((C.kind==BLACKJACK||C.kind==POKER)?!string(C.state,"result")[0]:C.kind==VIDEO?!json_is_true(json_object_get(C.state,"done")):false);
+  bool playing=C.state && ((C.kind==BLACKJACK||C.kind==POKER)?!string(C.state,"result")[0]:(C.kind==VIDEO||C.kind==DASH)?!json_is_true(json_object_get(C.state,"done")):false);
   for(int i=0;i<C.bet_count;i++) {
     char b[12];snprintf(b,sizeof b,"%d",C.bets[i]);
     if(sk_tab(IN_X+7+i*48,IN_Y+6,44,21,b,C.bet==C.bets[i])&&ready&&!playing&&!C.free_left)C.bet=C.bets[i];
@@ -244,6 +269,23 @@ void casino_draw(u64 now) {
     snprintf(line,sizeof line,playing?"Choose cards to hold, then draw.":C.state?"%s. Paid: %d credits.":"Jacks or Better. Choose your bet.",string(C.state,"hand"),number(C.state,"win"));
     bool can=ready&&(playing||W.credits>=(u32)C.bet);
     if(sk_button_big(20,169,190,playing?"Draw (A)":"Deal (A)",can)||(K.a&&can))action(playing?15:14,playing?C.held:C.bet,0,0,now);
+  } else if(C.kind==DASH) {
+    if(!playing){
+      if(sk_button(20,78,28,"<",ready)||(K.left&&ready))C.risk=(C.risk+3)%4;
+      if(sk_button(272,78,28,">",ready)||(K.right&&ready))C.risk=(C.risk+1)%4;
+    }
+    sk_text(risks[(playing?number(C.state,"risk"):C.risk)%4],160,80,12,SK_TEXT,1,200);
+    if(playing)snprintf(line,sizeof line,"Step %d of %d. Cash out now for %d credits, or risk the next step for %d.",number(C.state,"step"),number(C.state,"steps"),number(C.state,"cashout"),number(C.state,"next"));
+    else snprintf(line,sizeof line,"%s",C.status[0]?C.status:"Choose a ladder and a stake in credits, then start.");
+    if(playing){
+      if(sk_button(20,143,132,"Step (A)",ready)||(K.a&&ready))action(17,0,0,0,now);
+      bool can_out=ready&&number(C.state,"step")>0;
+      if(sk_button(160,143,140,"Cash out (X)",can_out)||(K.x&&can_out))action(18,0,0,0,now);
+    }else{
+      int index=0;while(index<C.bet_count-1&&C.bets[index]!=C.bet)index++;
+      bool can=ready&&W.credits>=(u32)C.bet;
+      if(sk_button_big(20,169,190,"Start (A)",can)||(K.a&&can)){replace(&C.state,NULL);action(16,C.risk,index,0,now);}
+    }
   } else if(C.kind==CRASH) {
     const char *p=phase(now);json_t *mine=my_bet();bool out=json_is_number(json_object_get(mine,"out"));
     snprintf(line,sizeof line,!strcmp(p,"running")?"Cash out before it crashes!":!strcmp(p,"crashed")?"Crashed. Wait for the next round.":"Place your bet before the round starts.");

@@ -104,6 +104,7 @@ PY
     ;;
   export)
     node tools/export/run.mjs build/export all
+    node tools/export/qr.mjs https://tweebbo.lol build/export/data/qr-site.png 3
     python3 tools/pack.py build/export
     ;;
   brand)

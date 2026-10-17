@@ -99,6 +99,8 @@ void on_kicked(const char *text);
 void on_transfer(const char *slug, const char *arrival);
 void on_alert(const char *json);
 void on_casino(const char *json);
+/** s2c TRADE: the JSON state of the player's furniture trade. */
+void on_trade(const char *json);
 void on_snow(const u8 *data, int len);
 void on_social_changed(void);
 void on_name_changed(u32 eid);

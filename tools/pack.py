@@ -309,7 +309,12 @@ def main():
         classic_ui[key] = {'reg': [0, 0]}
         ui_names.append(key)
         ui_rects[key] = packer.add(small)
-    for badge in ['VIP', 'ADM']:
+    qr = SRC / 'data/qr-site.png'
+    if qr.exists():
+        classic_ui['qr-site'] = {'reg': [0, 0]}
+        ui_names.append('qr-site')
+        ui_rects['qr-site'] = packer.add(Image.open(qr).convert('RGBA'))
+    for badge in ['VIP', 'ADM', 'CLUB1', 'CLUB2']:
         name = 'badge-' + badge
         classic_ui[name] = {'reg': [0, 0]}
         ui_names.append(name)
@@ -501,7 +506,7 @@ def main():
         ip, ix, iy, iw, ih = icons.get(d['id'], (0, 0, 0, 0, 0))
         tex = 1 if d['id'] in by_def else 0
         drinks = ','.join(str(x) for x in (d.get('drinks') or []))
-        games = ['slot', 'roulette', 'blackjack', 'crash', 'poker', 'videopoker']
+        games = ['slot', 'roulette', 'blackjack', 'crash', 'poker', 'videopoker', 'dash']
         casino = next((i + 1 for i, name in enumerate(games) if 'casino_' + name in d['flags']), 0)
         w(f"  {{{d['id']}, {d['kind']}, {d['width']}, {d['height']}, {d['seatHeight']}, {d['states']}, {bits}, {rots}, {drink}, {c_str(d['name'])}, {tex}, {ix}, {iy}, {iw}, {ih}, {c_str(drinks)}, {c_str(d.get('description') or '')}, {ip}, {casino}}},")
     w('};')

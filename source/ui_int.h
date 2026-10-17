@@ -20,6 +20,8 @@ typedef enum {
   P_PETS,     /* pets */
   P_MOVE,     /* one-time move of the character to another device */
   P_GAME, P_PROFILE, P_CASINO, P_SNOW, P_GAMES, P_RIGHTS,
+  P_TRADE,    /* furniture trade with another player */
+  P_SUPPORT,  /* donations, Tweebbo Club and chips: what the PC edition offers */
   P_COUNT
 } Panel;
 
@@ -94,6 +96,9 @@ void games_challenge(u32 target);
 
 void profile_open(u32 guest);
 void profile_draw(u64 now);
+
+void trade_draw(u64 now);
+void support_draw(u64 now);
 
 void casino_poll(u64 now);
 void casino_draw(u64 now);

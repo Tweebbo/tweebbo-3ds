@@ -24,5 +24,8 @@ void ui_draw(u64 now);
 bool casino_top(u64 now);
 void casino_receive(const char *json, u64 now);
 void casino_notice(void);
+/** Furniture trade window (s2c TRADE JSON). */
+void trade_receive(const char *json, u64 now);
+void trade_invite(u32 eid);
 /** Top-screen catalogue preview (drawn over the room while shopping). */
 void shop_top(u64 now);

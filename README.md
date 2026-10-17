@@ -21,7 +21,7 @@ A console with custom firmware (Luma3DS) is required. `tweebbo.3dsx` works from 
 
 ## Features
 
-- **Online**: WebSocket over TLS (mbedTLS, embedded root certificates) on its own thread, with exponential reconnection, renewal before Vercel's 270 s limit and session recovery. HELLO carries platform byte `1` (Nintendo 3DS): the web shows a small pixel-art handheld over the player and their profile reads "This person is connected through a Nintendo 3DS system". The 3DS shows it over other console players too.
+- **Online**: WebSocket over TLS (mbedTLS, embedded root certificates) on its own thread, with exponential reconnection, planned socket renewals and session recovery. HELLO carries platform byte `1` (Nintendo 3DS): the web shows a small pixel-art handheld over the player and their profile reads "This person is connected through a Nintendo 3DS system". The 3DS shows it over other console players too.
 - **Shared hotel features**:
   - *Navigator*: All / Public / My Rooms with occupancy, *Go*, refresh every 15 s and **Create a room**.
   - *Catalogue*: every page and offer of the catalogue, icons, prices and purchase confirmation.
@@ -34,9 +34,12 @@ A console with custom firmware (Luma3DS) is required. `tweebbo.3dsx` works from 
   - Rooms: the lobby, private rooms, Classic Park with its animated fountain and The Pool with swimming.
   - Chat bubbles, chat history, ignore list, hotel alerts and server notices.
   - *Games*: Snow Storm (the original SnowWar, in sync with web players, with bots, lobbies and practice; the nearest rival is targeted automatically and you can tap a rival to choose) and one-on-one Tic-tac-toe, Connect Four and Chess challenges with anyone in the room.
-  - *Casino*: five slot machines, roulette, blackjack, Casino Hold'em, Video Poker and Crash, with the original cards and symbols. Bets and payouts are decided by the hotel.
+  - *Casino*: five slot machines, roulette, blackjack, Casino Hold'em, Video Poker, Crash and the **VIP Dash** (climb the red carpet on one of four risk ladders and cash out before the trap), with the original cards and symbols. On the console every game plays with credits; chips (real money) are only in the PC edition. Bets and payouts are decided by the hotel.
+  - **Trading**: *Trade* on another player's card offers furniture from your hand; nothing moves until both sides confirm the same offer, and credits are never traded.
+  - **Tweebbo Club**: Club members are marked on their card, and the Club and Club Gold badges show on profiles. Members get 100 credits instead of 10 for hanging out.
+  - **Support Tweebbo** (Me → *Support*): what a donation gives (Tweebbo Club for life, the VIP badge and 10,000 credits) and how chips work, with a QR code to tweebbo.lol, where donations and chips are available with the same character code.
   - Password rooms: create a room with a password, lock or open your rooms from My Rooms, and enter locked rooms by typing the password.
-  - Walls and floors, the expanded furniture and clothing, VIP/Staff badges and the new lobby.
+  - Walls and floors, the expanded furniture and clothing, VIP/Staff/Club badges and the new lobby.
   - A touch keyboard for chat, names and passwords: the hotel keeps moving on the top screen while you type.
   - Catalogue preview: the selected item is shown large on the top screen, with its price.
 - **"Press A" (3DS only)**: next to a dispenser, seat, bed, dice, switch, gate or teleporter (or facing another player) the top screen shows "Ⓐ Get a drink · Mochamaster", "Ⓐ Sit", "Ⓐ Roll the dice"… and A does it. With nothing nearby, A talks.

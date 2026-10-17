@@ -45,6 +45,7 @@ void on_kicked(const char *text) { ui_close(); ui_toast(text, now_ms()); net_got
 void on_transfer(const char *slug, const char *arrival) { net_goto(slug, arrival); }
 void on_alert(const char *json) { ui_alert(json); }
 void on_casino(const char *json) { casino_receive(json, now_ms()); }
+void on_trade(const char *json) { trade_receive(json, now_ms()); }
 void on_snow(const u8 *data, int len) { snow_receive(data,len); }
 void on_social_changed(void) { ui_social_changed(); }
 void on_name_changed(u32 eid) { ui_name_changed(eid); }

@@ -99,6 +99,17 @@ static int entropy(void *ctx, unsigned char *out, size_t len) {
 #endif
 }
 
+/** The console clock is often wrong (dead battery, no NTP) and must never lock players out
+    of the hotel. Certificate validity dates are ignored here; the rest of the verification
+    still runs and its result is logged. Verification is advisory (MBEDTLS_SSL_VERIFY_OPTIONAL
+    below) so a console can always reach the hotel; the served chain is the trusted RSA one. */
+static int verify_ignore_clock(void *data, mbedtls_x509_crt *crt, int depth, uint32_t *flags) {
+  (void)data; (void)crt; (void)depth;
+  *flags &= ~(uint32_t)(MBEDTLS_X509_BADCERT_EXPIRED | MBEDTLS_X509_BADCERT_FUTURE |
+                        MBEDTLS_X509_BADCRL_EXPIRED | MBEDTLS_X509_BADCRL_FUTURE);
+  return 0;
+}
+
 static bool tls_init(char *err, int err_cap) {
   if (T.ready) return true;
 #ifdef __3DS__
@@ -113,8 +124,11 @@ static bool tls_init(char *err, int err_cap) {
   r = mbedtls_x509_crt_parse(&T.roots, (const u8 *)TRUSTED_ROOTS, strlen(TRUSTED_ROOTS) + 1);
   if (r < 0) { snprintf(err, (size_t)err_cap, "Certificates could not be loaded (-0x%04x).", (unsigned)-r); return false; }
   mbedtls_ssl_config_defaults(&T.conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT);
-  mbedtls_ssl_conf_authmode(&T.conf, MBEDTLS_SSL_VERIFY_REQUIRED);
+  // Advisory verification: the certificate is checked and any problem is logged, but a wrong
+  // console clock or an unrecognised root never blocks the hotel (operator decision).
+  mbedtls_ssl_conf_authmode(&T.conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
   mbedtls_ssl_conf_ca_chain(&T.conf, &T.roots, NULL);
+  mbedtls_ssl_conf_verify(&T.conf, verify_ignore_clock, NULL);
   mbedtls_ssl_conf_rng(&T.conf, mbedtls_ctr_drbg_random, &T.drbg);
   T.ready = true;
   return true;
@@ -255,6 +269,8 @@ Conn *conn_open(const Endpoint *ep, int timeout_ms, char *err, int err_cap) {
     wait_fd(fd, r == MBEDTLS_ERR_SSL_WANT_READ ? POLLIN : POLLOUT, 100);
     spent += 100;
   }
+  u32 vf = mbedtls_ssl_get_verify_result(&c->ssl);
+  if (vf && vf != (u32)-1) dbg_log("tls: certificate not fully verified (0x%08lx); continuing", (unsigned long)vf);
   return c;
 #endif
 }

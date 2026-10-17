@@ -14,7 +14,7 @@ int main(int argc, char **argv) {
   HttpResult r;
   u64 t0 = now_ms();
   http_request(&ep, "GET", "/healthz", NULL, NULL, 20000, &r);
-  printf("%s:%d tls=%d -> %d "%s" %s (%llu ms)\n", ep.host, ep.port, ep.tls, r.status, r.body ? r.body : "", r.err,
+  printf("%s:%d tls=%d -> %d \"%s\" %s (%llu ms)\n", ep.host, ep.port, ep.tls, r.status, r.body ? r.body : "", r.err,
          (unsigned long long)(now_ms() - t0));
   return r.status == 200 && r.body && !strcmp(r.body, "ok") ? 0 : 1;
 }

@@ -15,6 +15,7 @@ void on_kicked(const char *text) { (void)text; }
 void on_transfer(const char *slug, const char *arrival) { (void)slug; (void)arrival; }
 void on_alert(const char *json) { (void)json; }
 void on_casino(const char *json) { (void)json; }
+void on_trade(const char *json) { (void)json; }
 void on_snow(const u8 *data,int len) { (void)data;(void)len; }
 void on_social_changed(void) {}
 void on_name_changed(u32 eid) { (void)eid; }

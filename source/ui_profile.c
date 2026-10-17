@@ -6,10 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-static struct { u32 guest, job_guest; int job, save; bool vip, staff, loading; char status[80]; } P;
+static struct { u32 guest, job_guest; int job, save; bool vip, staff, club, gold, loading; char status[80]; } P;
 
 void profile_open(u32 guest) {
-  P.guest = guest; P.vip = P.staff = false; P.loading = true; P.status[0] = 0;
+  P.guest = guest; P.vip = P.staff = P.club = P.gold = false; P.loading = true; P.status[0] = 0;
   char path[80]; snprintf(path, sizeof path, "/api/badges?guest=%u", (unsigned)guest);
   if (!P.job) { P.job_guest = guest; P.job = net_http("GET", path, NULL, false); }
   ui_open(P_PROFILE);
@@ -27,7 +27,7 @@ void profile_draw(u64 now) {
       json_t *array = json_object_get(j, "badges"), *code; size_t i;
       json_array_foreach(array, i, code) {
         const char *s = json_string_value(code);
-        if (s) { P.vip |= !strcmp(s, "VIP"); P.staff |= !strcmp(s, "ADM"); }
+        if (s) { P.vip |= !strcmp(s, "VIP"); P.staff |= !strcmp(s, "ADM"); P.club |= !strcmp(s, "CLUB1"); P.gold |= !strcmp(s, "CLUB2"); }
       }
     } else snprintf(P.status, sizeof P.status, "Could not load badges. Try Refresh.");
     json_decref(j); free(result.body);
@@ -39,9 +39,19 @@ void profile_draw(u64 now) {
     free(result.body);
   }
   float x = IN_X + 12, y = IN_Y + 10;
-  if (P.vip) { sk_sprite("badge-VIP", x, y, 1); sk_text("VIP", x + 42, y + 10, 12, SK_TEXT, 0, 80); }
-  if (P.staff) { sk_sprite("badge-ADM", x + 150, y, 1); sk_text("Staff", x + 190, y + 10, 12, SK_TEXT, 0, 80); }
-  if (!P.vip && !P.staff) sk_text(P.loading ? "Loading badges…" : "No badges to display.", x, y + 10, 11, SK_DIM, 0, IN_W - 24);
+  // Badges flow left to right: VIP, Staff, then the Tweebbo Club badge (gold for life members).
+  struct { bool on; const char *sprite, *label; } badges[] = {
+    {P.vip, "badge-VIP", "VIP"}, {P.staff, "badge-ADM", "Staff"},
+    {P.gold, "badge-CLUB2", "Club Gold"}, {P.club && !P.gold, "badge-CLUB1", "Club"},
+  };
+  float bx = x;
+  for (unsigned i = 0; i < sizeof badges / sizeof badges[0]; i++) {
+    if (!badges[i].on) continue;
+    sk_sprite(badges[i].sprite, bx, y, 1);
+    sk_text(badges[i].label, bx + 42, y + 10, 11, SK_TEXT, 0, 56);
+    bx += 100;
+  }
+  if (!P.vip && !P.staff && !P.club && !P.gold) sk_text(P.loading ? "Loading badges…" : "No badges to display.", x, y + 10, 11, SK_DIM, 0, IN_W - 24);
   if (sk_button(x, y + 42, 110, "Refresh badges", !P.job)) profile_open(P.guest);
   json_t *owners = W.owners_json ? json_loads(W.owners_json, 0, NULL) : NULL;
   json_t *self = json_object_get(owners, "self");

@@ -589,7 +589,15 @@ static void panel_me(u64 now) {
   text_draw(W.name, x + 0.6f, IN_Y + 4, 13, sk_rgb(SK_TEXT), 0);
   char line[80];
   snprintf(line, sizeof line, "%u credits", (unsigned)W.credits);
-  sk_text(line, x, IN_Y + 22, 10.5f, SK_DIM, 0, w);
+  sk_text(line, x, IN_Y + 22, 10.5f, SK_DIM, 0, w - 80);
+  {
+    // Donations, Tweebbo Club and chips (PC edition): the gold button of the web's top bar.
+    float sx = x + w - 76, sy = IN_Y + 19;
+    fill_round(sx, sy, 76, 16, 4, sk_rgb(0x7a5600));
+    fill_round(sx + 1, sy + 1, 74, 14, 3, sk_rgb(0xf2bf2c));
+    text_draw("Support", sx + 38, sy + 1, 10, sk_rgb(0x4a3000), 1);
+    if (sk_click(sx, sy, 76, 16)) ui_open(P_SUPPORT);
+  }
   sk_text("Nintendo 3DS player", x, IN_Y + 36, 11, SK_DIM, 0, w - 14);
   console_badge(x + w - 12, IN_Y + 34, 1);
   float bw = (w - 6) / 2, y = IN_Y + 52;
@@ -792,7 +800,7 @@ static void panel_ent(u64 now) {
   float x = IN_X + 82, w = IN_W - 88;
   sk_text(e->name, x, IN_Y + 4, 13, SK_TEXT, 0, w);
   text_draw(e->name, x + 0.6f, IN_Y + 4, 13, sk_rgb(SK_TEXT), 0);
-  sk_text("In this room", x, IN_Y + 22, 10.5f, SK_DIM, 0, w);
+  sk_text((e->flags & FLAG_CLUB) ? "Tweebbo Club member" : "In this room", x, IN_Y + 22, 10.5f, (e->flags & FLAG_CLUB) ? 0x8a6200 : SK_DIM, 0, w);
   float y = IN_Y + 42;
   if (e->guest && net_online()) {
     if (sk_button(x, y, w, "Add friend", true)) { friends_act("request", e->guest, ""); ui_toast("Friend request sent.", now); }
@@ -800,7 +808,8 @@ static void panel_ent(u64 now) {
     bool blocked = friends_is_blocked(e->guest);
     if (sk_button(x, y + 22, w / 2, blocked ? "Unignore" : "Ignore", true)) friends_act(blocked ? "unblock" : "block", e->guest, "");
   }
-  if (sk_button(x, IN_Y + 88, w, "Badges", net_online())) profile_open(e->guest);
+  if (sk_button(x, IN_Y + 88, w / 2, "Badges", net_online())) profile_open(e->guest);
+  if (sk_button(x + w / 2 + 4, IN_Y + 88, w / 2 - 4, "Trade", e->guest && net_online())) trade_invite(e->id);
   float note_y = IN_Y + 116;
   // Room tools in a private room (Kepler's rights and kick, plus entry bans).
   if (e->guest && e->guest != W.owner && (W.room_owner || W.room_rights) && world_can_decorate() && net_online()) {
@@ -1305,6 +1314,8 @@ void ui_draw(u64 now) {
   if (build_active()) build_draw_panel(now);
   else switch (U.panel) {
     case P_CASINO: casino_draw(now); break;
+    case P_TRADE: trade_draw(now); break;
+    case P_SUPPORT: support_draw(now); break;
     case P_SNOW: snow_draw(now); break;
     case P_PROFILE: profile_draw(now); break;
     case P_GAME: games_draw(now); break;

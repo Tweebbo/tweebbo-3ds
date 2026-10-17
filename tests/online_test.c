@@ -24,6 +24,8 @@ void on_kicked(const char *text) { (void)text; }
 void on_transfer(const char *slug, const char *arrival) { transfers++; net_goto(slug, arrival); }
 void on_alert(const char *json) { printf("  alert: %s\n", json); }
 void on_casino(const char *json) { (void)json; }
+static char last_trade[2048];
+void on_trade(const char *json) { snprintf(last_trade, sizeof last_trade, "%s", json); }
 void on_snow(const u8 *data,int len) { (void)data;(void)len; }
 void on_social_changed(void) {}
 void on_name_changed(u32 eid) { (void)eid; }
@@ -92,7 +94,7 @@ static void browser_pump(Ws *ws, int ms) {
 static void crossplay_games(Endpoint *ep) {
   Ws peer; Writer w; char err[128];
   assert(ws_connect(&peer, ep, "/ws/lobby", 15000, err, sizeof err));
-  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 2); /* browser build marker */
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 5); /* browser build marker (WEB_CLIENT_BUILD) */
   assert(ws_send(&peer, w.buf, w.len)); browser_pump(&peer, 1500);
   assert(browser_id && world_ent(browser_id));
   assert(!(world_ent(browser_id)->flags & FLAG_3DS));
@@ -114,8 +116,20 @@ static void crossplay_games(Endpoint *ep) {
     send_game(4, W.duel.id, 0, 0, 0); browser_pump(&peer, 1000);
     assert(W.duel.result == 2 && browser_game.result == 2);
   }
+  // Furniture trade (economy update): the browser invites the console, the console accepts,
+  // then the browser cancels; both sides follow the server's state.
+  last_trade[0] = 0;
+  char json[96];
+  snprintf(json, sizeof json, "{\"action\":\"invite\",\"target\":%u}", (unsigned)W.me);
+  w_begin(&w, C_TRADE); w_str(&w, json); assert(ws_send(&peer, w.buf, w.len)); browser_pump(&peer, 1000);
+  assert(strstr(last_trade, "\"stage\":\"invite\"") && "the console did not receive the trade invite");
+  send_trade("{\"action\":\"accept\"}"); browser_pump(&peer, 1000);
+  assert(strstr(last_trade, "\"open\":true") && "the trade did not open after the console accepted");
+  w_begin(&w, C_TRADE); w_str(&w, "{\"action\":\"cancel\"}"); assert(ws_send(&peer, w.buf, w.len)); browser_pump(&peer, 1000);
+  assert(strstr(last_trade, "\"stage\":\"cancelled\""));
   ws_close(&peer);
   puts("native/browser crossplay: Tic-tac-toe, Connect Four and Chess moves and resignation passed");
+  puts("native/browser trade: invite, accept and cancel passed");
 }
 
 int main(int argc, char **argv) {
@@ -172,7 +186,7 @@ int main(int argc, char **argv) {
   char err[128];
   assert(ws_connect(&other, &ep, "/ws/lobby", 15000, err, sizeof err));
   Writer w;
-  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 2); /* browser build marker */
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 5); /* browser build marker (WEB_CLIENT_BUILD) */
   assert(ws_send(&other, w.buf, w.len));
   assert(pump_until(paused, 10000) && "the console was not told it was replaced");
   for (u64 stop = now_ms() + 4000; now_ms() < stop;) {

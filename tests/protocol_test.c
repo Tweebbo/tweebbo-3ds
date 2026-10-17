@@ -13,6 +13,7 @@ void on_kicked(const char *text) { (void)text; }
 void on_transfer(const char *s, const char *a) { (void)s; (void)a; }
 void on_alert(const char *s) { (void)s; }
 void on_casino(const char *s) { (void)s; }
+void on_trade(const char *s) { (void)s; }
 void on_snow(const u8 *data,int len) { (void)data;(void)len; }
 void on_social_changed(void) {}
 void on_name_changed(u32 id) { (void)id; }

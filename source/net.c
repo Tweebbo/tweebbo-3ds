@@ -215,7 +215,7 @@ static void net_thread(void *arg) {
       continue;
     }
     Writer w;
-    w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, arrival); w_u8(&w, PLATFORM_3DS); w_str(&w, password); w_u8(&w, NATIVE_STATUS | NATIVE_GAMES | NATIVE_CASINO | NATIVE_SNOW | NATIVE_SNOW2 | NATIVE_ROOMMOD); w_u8(&w, DEVICE_3DS);
+    w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, arrival); w_u8(&w, PLATFORM_3DS); w_str(&w, password); w_u8(&w, NATIVE_STATUS | NATIVE_GAMES | NATIVE_CASINO | NATIVE_SNOW | NATIVE_SNOW2 | NATIVE_ROOMMOD); w_u8(&w, DEVICE_3DS); w_u8(&w, FEATURE_ECONOMY);
     bool alive = ws_send(&ws, w.buf, w.len);
     lock(&N.mu);
     // The arrival ticket is only valid once.
@@ -564,4 +564,5 @@ void send_decorate(int kind, const char *id) { SEND(w_begin(&w, C_DECORATE); w_u
 
 void send_game(int op, u32 a, int b, int c, int d) { SEND(w_begin(&w, C_GAME); w_u8(&w, op); w_var(&w, a); w_u8(&w, b); w_u8(&w, c); w_u8(&w, d)); }
 void send_room_mod(int op, u32 target, int length) { SEND(w_begin(&w, C_ROOM_MOD); w_u8(&w, op); w_var(&w, target); if (length) w_u8(&w, length)); }
+void send_trade(const char *json) { SEND(w_begin(&w, C_TRADE); w_str(&w, json)); }
 void send_casino(int op, int a, int b, int c) { SEND(w_begin(&w, C_CASINO); w_u8(&w, op); w_u8(&w, a); w_u8(&w, b); w_u8(&w, c)); }
