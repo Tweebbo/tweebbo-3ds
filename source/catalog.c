@@ -65,7 +65,8 @@ u16 furni_frame(u16 def, u8 state, u64 time) {
   if (state > 0 && (d->flags & DEF_HOLO)) return (u8)((time / 100) % 32);
   if (state == 2 && (d->flags & DEF_TELEPORTER)) return (u8)((time / 100) % 2);
   if (def == 8 && state == 1) return (u8)((time / 160) % 8);
-  if ((def == 7 || d->kind == KIND_DICE) && state == 7) return (u8)((time / 90) % 6);
+  // E-Dice Class: a rolling die flashes between its face and frame 7 (client/src/furni.ts).
+  if ((def == 7 || d->kind == KIND_DICE) && state == 7) return (u8)((time / 90) % 2);
   int lo = 0, hi = furni_animation_count - 1;
   while (lo <= hi) {
     int mid = (lo + hi) / 2;

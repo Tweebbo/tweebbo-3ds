@@ -1,6 +1,7 @@
 // Export page: uses the same drawing code as the web client
 // (a snapshot of the web client sources) to get identical sprites.
-import { loadModels, people, poolPeople, spriteImage } from '@web/models';
+import { loadModels, people, poolPeople, spriteImage, loadBarItems, barItems } from '@web/models';
+import { drawHeld } from '@web/after-hours-art';
 import { catalogue, ensureFurniture, furniAnim } from '@web/catalogue';
 import { furniLayers, furniFrame, importedSmall, FURNI_OX, FURNI_OY } from '@web/furni';
 import { Renderer } from '@web/renderer';
@@ -49,6 +50,29 @@ window.exportPeople = async (prefix) => {
     const img = spriteImage(people, name, tint ? '#ffffff' : undefined);
     if (!img) continue;
     out.push({ name, w: s.w, h: s.h, reg: s.reg, tint, png: png(img) });
+  }
+  if (prefix === 'h') {
+    // After Hours: the original bar drinks (client/public/bar) as ordinary hand item models,
+    // and the drawn whisky/cigarette/cigar (200-202, after-hours-art.ts) pre-rendered over the
+    // cup's registration for every direction and pose (the console draws them like any drink).
+    await loadBarItems();
+    for (const [name, s] of Object.entries(barItems!.sprites)) {
+      if (people.sprites[name]) continue;
+      const img = spriteImage(barItems!, name);
+      if (img) out.push({ name, w: s.w, h: s.h, reg: s.reg, tint: false, png: png(img) });
+    }
+    for (const item of [200, 201, 202]) for (const action of ['crr', 'drk']) for (let d = 0; d < 8; d++) {
+      const baseName = `h_${action}_ri_001_${d}_0`, s = people.sprites[baseName];
+      const base = s && spriteImage(people, baseName);
+      if (!s || !base) continue;
+      const pad = 16, c = document.createElement('canvas');
+      c.width = s.w + pad * 2; c.height = s.h + pad * 2;
+      drawHeld(c.getContext('2d')!, item, d, action === 'drk', pad, pad, 0, base);
+      const cut = crop(c);
+      if (!cut) continue;
+      out.push({ name: `h_${action}_ri_${item}_${d}_0`, w: cut.c.width, h: cut.c.height,
+        reg: [s.reg[0] + pad - cut.x, s.reg[1] + pad - cut.y], tint: false, png: png(cut.c) });
+    }
   }
   return out;
 };

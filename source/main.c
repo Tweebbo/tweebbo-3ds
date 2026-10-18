@@ -17,6 +17,9 @@
 #include "snow.h"
 #include "update.h"
 #include "world.h"
+#include "pool.h"
+#include "bar.h"
+#include "music.h"
 
 #if defined(TWEEBBO_SHOWCASE)
 #define DATA_DIR "sdmc:/3ds/Tweebbo-showcase"
@@ -33,7 +36,7 @@ u32 __stacksize__ = 256 * 1024;
 u64 now_ms(void) { return osGetTime(); }
 int rnd_range(int lo, int hi) { return hi <= lo ? lo : lo + (int)((u32)rand() % (u32)(hi - lo)); }
 
-void on_room(void) { u64 now = now_ms(); scene_room_changed(now); ui_room_changed(); }
+void on_room(void) { u64 now = now_ms(); pool_room_changed(); music_room_changed(); scene_room_changed(now); ui_room_changed(); }
 void on_chat(u32 eid, const char *text) {
   if (ui_chat_blocked(eid)) return;
   scene_chat(eid, text, now_ms());
@@ -46,6 +49,8 @@ void on_transfer(const char *slug, const char *arrival) { net_goto(slug, arrival
 void on_alert(const char *json) { ui_alert(json); }
 void on_casino(const char *json) { casino_receive(json, now_ms()); }
 void on_trade(const char *json) { trade_receive(json, now_ms()); }
+void on_activity(const char *json) { if (!bar_receive(json, now_ms())) pool_receive(json, now_ms()); }
+void on_music(const char *json) { music_receive(json, now_ms()); }
 void on_snow(const u8 *data, int len) { snow_receive(data,len); }
 void on_social_changed(void) { ui_social_changed(); }
 void on_name_changed(u32 eid) { ui_name_changed(eid); }
@@ -246,6 +251,7 @@ int main(int argc, char **argv) {
     }
   }
 
+  music_exit();
   net_stop();
   snow_close(false);
   conn_global_exit();

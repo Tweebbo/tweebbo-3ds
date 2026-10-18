@@ -312,6 +312,16 @@ void world_handle(const u8 *data, int len) {
       if (event) { on_trade(event); free(event); }
       break;
     }
+    case S_MUSIC: {
+      char *event = NULL; set_json(&event, &r);
+      if (event) { on_music(event); free(event); }
+      break;
+    }
+    case S_ACTIVITY: {
+      char *event = NULL; set_json(&event, &r);
+      if (event) { on_activity(event); free(event); }
+      break;
+    }
     case S_SNOW: on_snow(r.b+r.p,r.len-r.p); break;
     case S_FINISH:
       r_str(&r, W.wall, sizeof W.wall);

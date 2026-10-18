@@ -272,6 +272,22 @@ void gfx_scene_sprite(const SceneSprite *s, float x, float y, float zoom, u8 alp
               C2D_Color32(255, 255, 255, alpha));
 }
 
+const SceneArt *gfx_art(const char *name) {
+  if (!scene_loaded) return NULL;
+  int lo = 0, hi = scene_loaded->art_count - 1;
+  while (lo <= hi) {
+    int mid = (lo + hi) / 2, c = strcmp(scene_loaded->art[mid].name, name);
+    if (!c) return &scene_loaded->art[mid];
+    if (c < 0) lo = mid + 1; else hi = mid - 1;
+  }
+  return NULL;
+}
+
+void gfx_art_draw(const SceneArt *a, float x, float y, float kx, float ky, u32 color) {
+  if (!a || a->page >= scene_tex_n) return;
+  draw_tex_xy(&scene_tex[a->page], a->sx, a->sy, a->w, a->h, x, y, kx, ky, false, color);
+}
+
 void gfx_sprite_xy(int page, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool flip, u32 color) {
   if (page < 0 || page >= page_count) return;
   draw_tex_xy(&pages[page], sx, sy, sw, sh, x, y, kx, ky, flip, color);

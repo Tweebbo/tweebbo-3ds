@@ -1,0 +1,8 @@
+# A room playing a Trax song (room.txt = its slug): the room line, the playlist window and the samples.
+wait 30
+shot m01-room
+click 740 658
+wait 2
+shot m02-playlist
+wait 8
+shot m03-later

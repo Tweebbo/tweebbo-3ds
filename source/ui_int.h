@@ -22,6 +22,8 @@ typedef enum {
   P_GAME, P_PROFILE, P_CASINO, P_SNOW, P_GAMES, P_RIGHTS,
   P_TRADE,    /* furniture trade with another player */
   P_SUPPORT,  /* donations, Tweebbo Club and chips: what the PC edition offers */
+  P_BAR,      /* After Hours Bar: the menu and the held drink */
+  P_MUSIC,    /* the room playlist (Jukebox / Trax) */
   P_COUNT
 } Panel;
 

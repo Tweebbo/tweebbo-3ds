@@ -38,10 +38,20 @@ ROOMS = ['newbie_lobby']
 # Classic icons the interface draws scaled down (name, maximum side in pixels).
 SMALL_ICONS = [('building_icon', 24), ('brochure_icon', 24), ('hand_icon', 26), ('help_icon', 24), ('mes_lite_icon', 24),
                ('credits_icon', 14), ('mes_smallbuddy_head', 13), ('building_icon', 18),
-               ('door_password', 18)]
+               ('door_password', 18), ('bar_cigar_icon', 18)]
 # Public rooms with their own layers.
-SCENES = ['park_a', 'pool_a']
-CLASSIC = ['model_a', 'model_b', 'model_c', 'model_d', 'model_e', 'model_f', 'casino_hall', 'lobby_hall']
+SCENES = ['park_a', 'pool_a', 'pool_b', 'md_a']
+# Layer roles (SceneSprite.role) of the Lido rooms: drawn under the floor, and the two states
+# of the booth curtains and the lift door (open = 10 + 2k, closed = 11 + 2k), source/pool.c.
+ROLE_UNDER = 1
+SWITCHES = ['curtains1', 'curtains2', 'lift_door']
+# Classic activity artwork (client/public/activities, tools/import-classic-activities.py) packed
+# into the pages of the scene that uses it: name prefixes per scene.
+SCENE_ART = {
+    'pool_b': ['sh_', 'pelle_bg3', 'pomppulauta_4', 'pilvi', 'big_splash_', 'splash_'],
+    'md_a': ['shp_', 'paalu hit ', 'startcount ', 'splash_'],
+}
+CLASSIC = ['model_a', 'model_b', 'model_c', 'model_d', 'model_e', 'model_f', 'casino_hall', 'lobby_hall', 'bar_hall']
 # Catalogue flag bits used by the simulation and the renderer.
 FLAG_BITS = ['can_sit_on_top', 'can_lay_on_top', 'can_stack_on_top', 'teleporter', 'gate', 'solid', 'redeemable']
 
@@ -495,6 +505,10 @@ def main():
 
     # Full catalogue: needed for collisions and seats in any room.
     defs = sorted(catalogue['definitions'].values(), key=lambda d: d['id'])
+    # Jukeboxes and Trax machines (server catalogue::music_machine): the room playlist, source/music.c.
+    music = [d['id'] for d in defs if d.get('sprite', '').split('*')[0] in ('sound_machine', 'sound_machine_pro', 'ads_idol_trax', 'jukebox', 'jukebox_ptv')]
+    w(f'const u16 music_machines[{max(1, len(music))}] = {{{", ".join(map(str, music)) or "0"}}};')
+    w(f'const int music_machine_count = {len(music)};')
     w(f'const FurniDef furni_defs[{len(defs)}] = {{')
     for d in defs:
         bits = 0
@@ -564,8 +578,12 @@ def main():
     w(f'const int dance_track_count = {count};')
     w('')
 
-    models = dict(re.findall(r'(\d+):\'(\d+)\'', drinks_src.split('drinkModels')[1].split(';')[0]))
-    names = dict(re.findall(r"(\d+):'([^']*)'", drinks_src.split('drinkNames')[1].split(';')[0]))
+    models = dict(re.findall(r'(\d+):\'(\d+)\'', drinks_src.split('drinkModels')[1].split('};')[0]))
+    # After Hours whisky, cigarette and cigar: pre-rendered models of their own (tools/export/src/export.ts).
+    for item in ('200', '201', '202'):
+        if item in models and any(p['name'].startswith(f'h_crr_ri_{item}_') for p in people):
+            models[item] = item
+    names = dict(re.findall(r"(\d+):'([^']*)'", drinks_src.split('drinkNames')[1].split('};')[0]))
     pets = json.loads((SRC / 'data/pet-options.json').read_text())
     w(f"const int pet_price = {pets['price']};")
     w(f'const PetPart pet_parts[{len(pet_names)}] = {{')
@@ -636,20 +654,38 @@ def main():
         bg_name = r.get('background') or 'park_bg'
         for l in r['layers']:
             frames = l.get('frames') or [l]
-            for fi, fr in enumerate(frames):
-                img = Image.open(SRC / 'data/public-rooms' / fr['file']).convert('RGBA')
-                if l.get('flip'):
-                    img = img.transpose(Image.FLIP_LEFT_RIGHT)
+            switch = SWITCHES.index(l['name']) if l['name'] in SWITCHES and l.get('closed') else -1
+            role = ROLE_UNDER if l.get('under') else 10 + 2 * switch if switch >= 0 else 0
+            # A switch layer also carries its closed picture (drawn instead when pool.c says so).
+            states = [(frames, role)] + ([([l['closed']], 11 + 2 * switch)] if switch >= 0 else [])
+            for frames_, role_ in states:
+                for fi, fr in enumerate(frames_):
+                    # Original hidden members (barmask on the rooftop) sit millions of pixels away.
+                    if abs(fr['x']) > 30000 or abs(fr['y']) > 30000:
+                        continue
+                    img = Image.open(SRC / 'data/public-rooms' / fr['file']).convert('RGBA')
+                    if l.get('flip'):
+                        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                    page, x, y, w_, h_ = sp.add(img)
+                    depth = -10000.0 if l['name'] == bg_name else -20000.0 if role_ == ROLE_UNDER else float(l['depth'])
+                    sprites.append((page, x, y, w_, h_, fr['x'], fr['y'], fr['w'], fr['h'], depth, round(l['alpha'] * 255),
+                                    len(frames_), fi, 1 if l['name'] == bg_name or role_ == ROLE_UNDER else 0, role_))
+        art = []
+        prefixes = SCENE_ART.get(key, [])
+        if prefixes:
+            atlas = json.loads((SRC / 'data/activities/art.json').read_text())
+            art_pages = [Image.open(SRC / 'data/activities' / f).convert('RGBA') for f in atlas['pages']]
+            for name in sorted(n for n in atlas['sprites'] if n.startswith(tuple(prefixes))):
+                a = atlas['sprites'][name]
+                img = art_pages[a['page']].crop((a['x'], a['y'], a['x'] + a['w'], a['y'] + a['h']))
                 page, x, y, w_, h_ = sp.add(img)
-                depth = -10000.0 if l['name'] == bg_name else float(l['depth'])
-                sprites.append((page, x, y, w_, h_, fr['x'], fr['y'], fr['w'], fr['h'], depth, round(l['alpha'] * 255),
-                                len(frames), fi, 1 if l['name'] == bg_name else 0))
+                art.append((name, page, x, y, w_, h_, a['reg'][0], a['reg'][1]))
         for i, page in enumerate(sp.pages):
             if i == len(sp.pages) - 1:
                 used = sp.y + sp.shelf
                 page = page.crop((0, 0, PAGE, max(8, 1 << (used - 1).bit_length())))
             save_png(page, GFX / f'scene_{key}_{i}.png')
-        scenes.append((key, r, len(sp.pages), sprites))
+        scenes.append((key, r, len(sp.pages), sprites, art))
 
     choices = []
     for kind, key in [(1, 'walls'), (2, 'floors')]:
@@ -674,15 +710,23 @@ def main():
     w('};')
     w(f'const int room_background_count = {len(backgrounds)};')
     w('')
-    for key, r, pages_n, sprites in scenes:
+    for key, r, pages_n, sprites, art in scenes:
         w(f'static const SceneSprite scene_sprites_{key}[] = {{')
-        for (page, x, y, w_, h_, dx, dy, dw, dh, depth, alpha, frames, fi, bg) in sprites:
-            w(f'  {{{page}, {x}, {y}, {w_}, {h_}, {dx}, {dy}, {dw}, {dh}, {depth:.3f}f, {alpha}, {frames}, {fi}, {bg}}},')
+        for (page, x, y, w_, h_, dx, dy, dw, dh, depth, alpha, frames, fi, bg, role) in sprites:
+            w(f'  {{{page}, {x}, {y}, {w_}, {h_}, {dx}, {dy}, {dw}, {dh}, {depth:.3f}f, {alpha}, {frames}, {fi}, {bg}, {role}}},')
+        w('};')
+        # Sorted by name (strcmp order) for the binary search in source/pool.c.
+        art.sort(key=lambda a: a[0].encode())
+        w(f'static const SceneArt scene_art_{key}[] = {{')
+        for (name, page, x, y, w_, h_, rx, ry) in art:
+            w(f'  {{{c_str(name)}, {page}, {x}, {y}, {w_}, {h_}, {rx}, {ry}}},')
+        if not art:
+            w('  {0},')
         w('};')
     w(f'const Scene scenes[{max(1, len(scenes))}] = {{')
-    for key, r, pages_n, sprites in scenes:
+    for key, r, pages_n, sprites, art in scenes:
         water = r.get('waterHeight', -1)
-        w(f'  {{{c_str(key)}, {pages_n}, {len(sprites)}, scene_sprites_{key}, {water}}},')
+        w(f'  {{{c_str(key)}, {pages_n}, {len(sprites)}, scene_sprites_{key}, {water}, {len(art)}, scene_art_{key}}},')
     w('};')
     w(f'const int scene_count = {len(scenes)};')
     w('')

@@ -1,0 +1,29 @@
+# Rooftop Rumble (room.txt = rooftop, in a swimsuit) with a second player at the other end of the pole.
+wait 28
+shot w00-rooftop
+click 640 649
+wait 24
+shot w01-pole
+wait 2
+shot w02-count
+wait 2
+key y 60
+shot w03-push
+key q 60
+wait 1
+shot w04-lean
+key h 60
+key a 60
+shot w05-hit
+wait 2
+key w 60
+key y 60
+shot w06
+wait 3
+shot w07
+wait 4
+shot w08
+wait 6
+shot w09
+wait 8
+shot w10

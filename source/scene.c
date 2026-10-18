@@ -5,6 +5,8 @@
 #include "gfx.h"
 #include "net.h"
 #include "pets.h"
+#include "pool.h"
+#include "bar.h"
 #include "proto.h"
 #include "world.h"
 #include <math.h>
@@ -113,7 +115,8 @@ void scene_room_changed(u64 now) {
   if (V.scene) {
     for (int i = 0; i < V.scene->count; i++) {
       const SceneSprite *sp = &V.scene->sprites[i];
-      if (!sp->background) continue;
+      // The floor sets the bounds; the sky under a rooftop is wider than the room.
+      if (!sp->background || sp->role == 1) continue;
       V.bx0 = sp->x; V.by0 = sp->y; V.bx1 = sp->x + sp->dw; V.by1 = sp->y + sp->dh;
     }
   } else if (V.bg) {
@@ -148,6 +151,12 @@ static void camera(u64 now) {
     iso(G.x + .5f, G.y + .5f, &sx, &sy);
     tx = lw * .5f - sx;
     ty = lh * .6f - sy;
+    if (V.bx1 - V.bx0 >= lw) tx = fminf(-V.bx0, fmaxf(lw - V.bx1, tx)); else tx = lw / 2 - (V.bx0 + V.bx1) / 2;
+    if (V.by1 - V.by0 >= lh) ty = fminf(-V.by0, fmaxf(lh - V.by1, ty)); else ty = lh / 2 - (V.by0 + V.by1) / 2;
+  } else if (!V.overview && pool_camera(&tx, &ty, now)) {
+    // Wobble Squabble players see the whole pole; a landing jumper sees the pool.
+    tx = lw * .5f - tx;
+    ty = lh * .6f - ty;
     if (V.bx1 - V.bx0 >= lw) tx = fminf(-V.bx0, fmaxf(lw - V.bx1, tx)); else tx = lw / 2 - (V.bx0 + V.bx1) / 2;
     if (V.by1 - V.by0 >= lh) ty = fminf(-V.by0, fmaxf(lh - V.by1, ty)); else ty = lh / 2 - (V.by0 + V.by1) / 2;
   } else if (!me) {
@@ -277,7 +286,7 @@ static json_t *owner_identity(u32 guest) {
 }
 
 static u64 appearance(const Ent *e) {
-  return e->look | (owner_identity(e->guest) ? AV_FOUNDER : (e->flags & 128) ? AV_FRANK : 0);
+  return pool_look(e, e->look) | (owner_identity(e->guest) ? AV_FOUNDER : (e->flags & 128) ? AV_FRANK : 0);
 }
 
 static void founder_diamond(float x, float y, float width, u8 alpha) {
@@ -325,7 +334,8 @@ static void draw_ent(const Ent *e, u64 now) {
   bool talking = now < e->talk_until && (now / 140) % 2 == 0;
   bool blink = (now + e->id * 1777) % 5200 < 130;
   int drink = now < e->drink_until ? e->drink : 0;
-  bool sip = !moving && (now + e->id * 177) % 6000 < 900;
+  int bar = bar_sip(e, now, moving);
+  bool sip = bar >= 0 ? bar == 1 : !moving && (now + e->id * 177) % 6000 < 900;
   avatar_draw(appearance(e), body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0),
               head_dir(e, now, moving), drink, sip,
               scr_x(roundf(sx) + p.dx - ANCHOR_X), scr_y(roundf(sy + HALF_H) + p.dy - p.anchor_y - p.lift), V.zoom, 255);
@@ -483,13 +493,23 @@ void scene_draw(u64 now) {
     text_draw(status, TOP_W / 2, TOP_H / 2 - 8, 16, C2D_Color32(255, 255, 255, 255), 1);
     return;
   }
+  if (pool_tower_view()) {
+    // The jumper's own view: pool_tower.room over the whole screen.
+    pool_draw_tower(now);
+    draw_bubbles(now);
+    draw_prompt();
+    V.last_frame = now;
+    return;
+  }
   camera(now);
   if (V.scene) {
-    for (int i = 0; i < V.scene->count; i++)
-      if (V.scene->sprites[i].background) {
-        const SceneSprite *sp = &V.scene->sprites[i];
-        gfx_scene_sprite(sp, scr_x(sp->x), scr_y(sp->y), V.zoom, sp->alpha);
-      }
+    // Sky and clouds under a rooftop first, then the floor.
+    for (int pass = 0; pass < 2; pass++)
+      for (int i = 0; i < V.scene->count; i++)
+        if (V.scene->sprites[i].background && (V.scene->sprites[i].role == 1) == (pass == 0)) {
+          const SceneSprite *sp = &V.scene->sprites[i];
+          gfx_scene_sprite(sp, scr_x(sp->x), scr_y(sp->y), V.zoom, sp->alpha);
+        }
   } else if (V.bg) gfx_room_draw(V.bg, scr_x(V.bg->x), scr_y(V.bg->y), V.zoom);
   else fallback_floor();
 
@@ -525,6 +545,8 @@ void scene_draw(u64 now) {
       const SceneSprite *sp = &V.scene->sprites[i];
       if (sp->background) continue;
       if (sp->frames > 1 && sp->frame != (now / 120) % sp->frames) continue;
+      // Booth curtains and the lift door: their open or closed picture (source/pool.c).
+      if (sp->role >= 10 && (sp->role & 1) != pool_switch_closed((sp->role - 10) / 2)) continue;
       list[n] = (Drawable){sp->depth, n, NULL, NULL, NULL, sp, NULL};
       n++;
     }
@@ -556,7 +578,7 @@ void scene_draw(u64 now) {
   }
   for (int i = 0; i < MAX_ENTS && n < COUNT(list); i++) {
     const Ent *e = &W.ents[i];
-    if (!e->used) continue;
+    if (!e->used || pool_hides(e)) continue;
     float px, py;
     ent_pos(e, now, &px, &py);
     PoseInfo p = pose_of(e, now, ent_moving(e, now));
@@ -574,6 +596,8 @@ void scene_draw(u64 now) {
     } else if (list[i].layer) gfx_scene_sprite(list[i].layer, scr_x(list[i].layer->x), scr_y(list[i].layer->y), V.zoom, list[i].layer->alpha);
     else draw_item_part(list[i].item, list[i].part);
   }
+  // Wobble Squabble on the pole, the countdown, the diver and the splashes.
+  pool_draw_room(now);
 
   // Name of the selected avatar and an arrow over your own on arrival.
   for (int i = 0; i < MAX_ENTS; i++) {
@@ -642,3 +666,6 @@ static void draw_prompt(void) {
   text_draw("A", x + 13, y + 4, 10, C2D_Color32(255, 255, 255, 255), 1);
   text_draw(t, x + 26, y + 4, 11, C2D_Color32(0x22, 0x22, 0x22, 255), 0);
 }
+
+void scene_to_screen(float wx, float wy, float *x, float *y) { *x = scr_x(wx); *y = scr_y(wy); }
+float scene_zoom(void) { return V.zoom; }

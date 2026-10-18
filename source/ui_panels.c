@@ -30,7 +30,7 @@ static bool online_or_toast(void) {
 #define MAX_MODELS 16
 
 // Titles hold 40 characters of up to 4 UTF-8 bytes each (the server's limit).
-typedef struct { char slug[48], title[164], owner[64], activity[64]; int online; bool pub, mine, locked, featured, credits; } RoomRow;
+typedef struct { char slug[48], title[164], owner[64], activity[64]; int online; bool pub, mine, locked, featured, credits, bar; } RoomRow;
 
 static struct {
   int tab; /* 0 all, 1 public, 2 mine */
@@ -86,6 +86,8 @@ static void nav_poll(void) {
         row->featured = row->pub && json_is_object(featured);
         const char *accent = json_string_value(json_object_get(featured, "accent"));
         row->credits = row->featured && accent && !strcmp(accent, "credits");
+        const char *icon = json_string_value(json_object_get(featured, "icon"));
+        row->bar = row->featured && icon && !strcmp(icon, "bar_cigar_icon");
         utf8_copy(row->activity, sizeof row->activity, row->featured ? json_string_value(json_object_get(featured, "label")) : NULL);
       }
       NV.model_n = 0;
@@ -254,6 +256,7 @@ void nav_draw(u64 now) {
     fill_rect(IN_X + 2, y, IN_W - 4, row - 1, sk_rgb(background));
     fill_rect(IN_X + 2, y + row - 1, IN_W - 4, 1, sk_rgb(SK_LINE));
     if (r->credits && !r->locked) sk_icon_coin(IN_X + 8, y + 5);
+    else if (r->bar && !r->locked) sk_sprite("bar_cigar_icon@18", IN_X + 5, y + 4, 1);
     else sk_sprite(r->locked ? "door_password@18" : "building_icon@18", IN_X + 5, y + 4, 1);
     sk_text(r->title, IN_X + 28, y + 2, 10.5f, r->credits ? SK_CREDITS_INK : SK_TEXT, 0, IN_W - 120);
     char sub[96];

@@ -35,3 +35,6 @@ int scene_avatar_count(void);
 void scene_prompt(const char *text);
 
 u64 scene_look(u32 eid);
+/** World point (iso pixels) on the top screen, and the current zoom (activity drawings). */
+void scene_to_screen(float wx, float wy, float *x, float *y);
+float scene_zoom(void);

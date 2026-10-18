@@ -25,6 +25,8 @@ void on_transfer(const char *slug, const char *arrival) { (void)slug; (void)arri
 void on_alert(const char *json) { (void)json; }
 void on_casino(const char *json) { (void)json; }
 void on_trade(const char *json) { (void)json; }
+void on_activity(const char *json) { (void)json; }
+void on_music(const char *json) { (void)json; }
 void on_snow(const u8 *data,int len) { (void)data;(void)len; }
 void on_social_changed(void) {}
 void on_name_changed(u32 eid) { (void)eid; }
@@ -60,7 +62,7 @@ static void animated_furniture_changes(void) {
     else if (d->flags & DEF_TELEPORTER) state = 2;
     if (state == 255) continue;
     // Two different moments must give different frames and graphics.
-    u16 f0 = furni_frame(d->id, state, 0), f1 = furni_frame(d->id, state, d->flags & DEF_HOLO ? 500 : 180);
+    u16 f0 = furni_frame(d->id, state, 0), f1 = furni_frame(d->id, state, d->flags & DEF_HOLO ? 500 : 100);
     const FurniVariant *a = variant_frame(d->id, 0, state, f0), *b = variant_frame(d->id, 0, state, f1);
     bool changes = f0 != f1 && a && b && a != b;
     printf("  animated %u %-26s frames %u→%u %s\n", d->id, d->name, f0, f1, changes ? "changes" : "SAME");

@@ -7,17 +7,20 @@
 enum { NATIVE_STATUS = 2, NATIVE_GAMES = 4, NATIVE_CASINO = 8, NATIVE_SNOW = 16, NATIVE_SNOW2 = 32 /* 180 ms Snow Storm turns */, NATIVE_ROOMMOD = 64 };
 /* Feature byte after the device byte. 1.0.8: VIP Dash with credits, furniture trading and
    Tweebbo Club badges (chips stay PC-only). */
-enum { FEATURE_ECONOMY = 1 };
+/* 1.0.11: the Lido activities (booths, diving tower, Wobble Squabble) on the ACTIVITY channel. */
+enum { FEATURE_ECONOMY = 1, FEATURE_ACTIVITIES = 2, FEATURE_MUSIC = 4 };
 
 enum {
   C_HELLO = 1, C_WALK, C_CHAT, C_GESTURE, C_SET_NAME, C_BUY, C_PLACE, C_PICKUP,
-  C_ROTATE, C_USE, C_SET_LOOK, C_MOVE, C_REDEEM, C_PET, C_DRINK, C_GAME, C_SNOW, C_DECORATE, C_CASINO, C_ROOM_MOD, C_TRADE,
+  C_ROTATE, C_USE, C_SET_LOOK, C_MOVE, C_REDEEM, C_PET, C_DRINK, C_GAME, C_SNOW, C_DECORATE, C_CASINO, C_ROOM_MOD, C_TRADE, C_ACTIVITY, C_MUSIC,
 };
 /* Room rights (JSON) and being asked to leave a room (server room/moderation.rs). */
 enum { S_ROOM_RIGHTS = 136, S_KICKED = 137 };
 /* Native device of a player: var count, then {var entity id, u8 device}. Added for cross-play
    (3DS, Nintendo Switch, PlayStation Vita); older servers never send it. */
 enum { S_DEVICE = 140 };
+/* Lido activity state (JSON, server room/activities.rs), for FEATURE_ACTIVITIES clients. */
+enum { S_ACTIVITY = 141, S_MUSIC = 142 };
 /* Chips balance (PC-only currency, ignored here) and a furniture trade (JSON, server room/trade.rs). */
 enum { S_CHIPS = 138, S_TRADE = 139 };
 enum { DEVICE_BROWSER = 0, DEVICE_3DS = 1, DEVICE_SWITCH = 2, DEVICE_VITA = 3 };

@@ -101,6 +101,10 @@ void on_alert(const char *json);
 void on_casino(const char *json);
 /** s2c TRADE: the JSON state of the player's furniture trade. */
 void on_trade(const char *json);
+/** s2c ACTIVITY: the Lido activity state (JSON). */
+void on_activity(const char *json);
+/** s2c MUSIC: the room playlist (JSON). */
+void on_music(const char *json);
 void on_snow(const u8 *data, int len);
 void on_social_changed(void);
 void on_name_changed(u32 eid);

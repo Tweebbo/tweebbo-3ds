@@ -33,9 +33,13 @@ typedef struct { u8 kind; const char *id; u32 color; const char *texture; u16 w,
 extern const FinishChoice finish_choices[];
 extern const int finish_choice_count, finish_price;
 /** Public room layer: region (page,sx,sy,w,h) drawn at (x,y) with size (dw,dh). */
-typedef struct { u8 page; u16 sx, sy, w, h; s16 x, y; u16 dw, dh; float depth; u8 alpha, frames, frame, background; } SceneSprite;
+/** `role`: 0 always, 1 under the floor (drawn first), 10 + 2k / 11 + 2k open / closed picture of
+ *  switch k (booth curtains 1 and 2, the lift door), chosen by source/pool.c. */
+typedef struct { u8 page; u16 sx, sy, w, h; s16 x, y; u16 dw, dh; float depth; u8 alpha, frames, frame, background, role; } SceneSprite;
+/** Classic activity artwork packed in the scene pages: registration (rx, ry) like the web atlas. */
+typedef struct { const char *name; u8 page; u16 sx, sy, w, h; s16 rx, ry; } SceneArt;
 /** Layered public room (romfs:/gfx/scene_<model>_<page>.t3x). `water`: water height or -1. */
-typedef struct { const char *model; u8 pages; int count; const SceneSprite *sprites; s8 water; } Scene;
+typedef struct { const char *model; u8 pages; int count; const SceneSprite *sprites; s8 water; int art_count; const SceneArt *art; } Scene;
 typedef struct { u32 id; u16 def; u8 x, y, rot; u16 z; } RoomItem;
 typedef struct {
   const char *key, *name, *classic, *rows;
@@ -53,6 +57,9 @@ extern const int ui_sprite_count;
 extern const FurniVariant furni_variants[];
 extern const int furni_variant_count;
 extern const FurniDef furni_defs[];
+/** Definitions of the jukeboxes and Trax machines (room playlist, source/music.c). */
+extern const u16 music_machines[];
+extern const int music_machine_count;
 extern const int furni_def_count;
 extern const CatPage cat_pages[];
 extern const int cat_page_count;

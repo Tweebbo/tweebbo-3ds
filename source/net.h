@@ -80,5 +80,9 @@ void send_game(int op, u32 a, int b, int c, int d);
 void send_casino(int op, int a, int b, int c);
 /** c2s TRADE: {"action":"invite|accept|decline|cancel|add|remove|confirm","target":eid,"id":item}. */
 void send_trade(const char *json);
+/** c2s ACTIVITY: a Lido activity request ({"op": …}, server room/activities.rs). */
+void send_activity(const char *json);
+/** c2s MUSIC: a room playlist request ({"op": …, "item": …}, server room/music.rs). */
+void send_music(const char *json);
 /** Room moderation: op (MOD_*), entity id (or guest id for unban/remove-of), ban length 1-3. */
 void send_room_mod(int op, u32 target, int length);

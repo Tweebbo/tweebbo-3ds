@@ -18,6 +18,9 @@
 #include "proto.h"
 #include "scene.h"
 #include "ui_int.h"
+#include "pool.h"
+#include "bar.h"
+#include "music.h"
 #include "snow.h"
 #include "osk.h"
 #include "world.h"
@@ -234,6 +237,8 @@ static bool context_find(Context *c, u64 now) {
     if (!d || d->kind == KIND_WALL) continue;
     const char *verb = NULL;
     if (d->casino) verb = "Play";
+    else if (it->def == BAR_EIGHT_BALL) verb = "Ask the 8-Ball";
+    else if (it->def == BAR_DICE) verb = "Pull the lever";
     else if (d->drinks && d->drinks[0]) verb = (me->drink && now < me->drink_until) ? NULL : "Get a drink";
     else if (d->kind == KIND_DICE) verb = "Roll the dice";
     else if (d->flags & DEF_TELEPORTER) verb = "Enter the teleporter";
@@ -466,8 +471,9 @@ static void panel_room(u64 now) {
     if (dev) device_badge(dev, sx + r - 1, sy - r - 8, 0.6f);
   }
 
-  // Social accounts as quiet text in the bottom corners of the map, only where no floor is drawn.
-  {
+  // Social accounts as quiet text in the bottom corners of the map, only where no floor is drawn
+  // (the music and bar strip takes that row in its rooms).
+  if (!bar_room() && !music_now_playing()[0]) {
     float sy = MM_Y + MM_H - 24;
     const float lw = 100, rw = 112;
     if (mm_corner_free(0, sy - 2, lw, 26)) {
@@ -493,6 +499,14 @@ static void panel_room(u64 now) {
     if (world_tile(x, y)) tap_tile(x, y, now);
   }
 
+  // The room's music and, in After Hours Bar, the bar.
+  {
+    const char *line = music_now_playing();
+    float sy = BAR_Y - 48;
+    if (line[0]) sk_text(line, 6, sy + 5, 9, 0xc9d3d8, 0, BOT_W - (bar_room() ? 160 : 92));
+    if (line[0] && sk_button(BOT_W - 82, sy, 78, "Playlist", true)) ui_open(P_MUSIC);
+    if (bar_room() && sk_button(BOT_W - (line[0] ? 160 : 82), sy, 74, bar_holding() ? "Drink" : "Bar menu", true)) ui_open(P_BAR);
+  }
   // Quick actions, like the room bar buttons on the web.
   Ent *me = world_ent(W.me);
   bool sitting = me && (me->flags & FLAG_SIT), dancing = me && (me->flags & FLAG_DANCE);
@@ -1299,6 +1313,8 @@ bool ui_input(u32 down, u32 held, u64 now) {
   if (!W.in_room) return true;
   if (U.alert || U.confirm || blocking_update) return true;
   if (U.panel == P_SNOW) { snow_input(down, held, now); return true; }
+  // Booth, diving tower, vote and Wobble Squabble: the buttons drive the game (no walking).
+  if (pool_panel_active()) { pool_input(down, held, now); return true; }
   if (build_input(down, held, now)) return true;
   if (down & KEY_SELECT) {
     static const Panel cycle[] = {P_ROOM, P_ME, P_NAV, P_SHOP, P_HAND, P_FRIENDS, P_CHAT};
@@ -1307,7 +1323,22 @@ bool ui_input(u32 down, u32 held, u64 now) {
     ui_open(cycle[(i + 1) % COUNT(cycle)]);
   }
   if ((down & (KEY_L | KEY_R)) && U.panel != P_LOOK) scene_toggle_overview();
-  if (!window) {
+  char lido[64];
+  if (!window && (bar_context(lido, sizeof lido, now) || music_context(lido, sizeof lido, now))) {
+    // After Hours Bar's counter and bartender, and the room's Jukebox or Trax machine.
+    scene_prompt(lido);
+    if (down & KEY_A) ui_open(strcmp(lido, "Open the playlist") ? P_BAR : P_MUSIC);
+    if (down & KEY_X) send_gesture(GESTURE_WAVE);
+    if (down & KEY_Y) send_gesture(GESTURE_DANCE);
+    if (down & KEY_B) send_gesture(GESTURE_SIT);
+  } else if (!window && pool_context(lido, sizeof lido, now)) {
+    // Lido signposts, booths, the lift and the pole come first.
+    scene_prompt(lido);
+    if (down & KEY_A) pool_context_run(now);
+    if (down & KEY_X) send_gesture(GESTURE_WAVE);
+    if (down & KEY_Y) send_gesture(GESTURE_DANCE);
+    if (down & KEY_B) send_gesture(GESTURE_SIT);
+  } else if (!window) {
     Context ctx;
     bool near = context_find(&ctx, now);
     scene_prompt(near ? ctx.label : NULL);
@@ -1398,7 +1429,10 @@ void ui_draw(u64 now) {
   confirm_opened = false;
   bool had_modal = U.alert || U.confirm || update_modal_up;
   if (had_modal) { memset(&T, 0, sizeof T); memset(&K, 0, sizeof K); }
+  pool_poll(now);
+  music_poll(now);
   if (build_active()) build_draw_panel(now);
+  else if (pool_panel_active()) pool_draw_panel(now);
   else switch (U.panel) {
     case P_CASINO: casino_draw(now); break;
     case P_TRADE: trade_draw(now); break;
@@ -1421,6 +1455,8 @@ void ui_draw(u64 now) {
     case P_ITEM: item_draw(now); break;
     case P_ENT: panel_ent(now); break;
     case P_PETS: pets_draw(now); break;
+    case P_BAR: bar_draw(now); break;
+    case P_MUSIC: music_draw(now); break;
     default: panel_room(now); break;
   }
   header();

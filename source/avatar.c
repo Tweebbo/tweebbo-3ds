@@ -90,6 +90,13 @@ static const char *drink_model(int drink) {
   return "001";
 }
 
+void avatar_draw_held(int drink, float cx, float cy, float scale) {
+  char name[32];
+  snprintf(name, sizeof name, "h_crr_ri_%s_2_0", drink_model(drink));
+  const PeopleSprite *s = find_sprite(name);
+  if (s) gfx_sprite(s->page, s->x, s->y, s->w, s->h, cx - s->w * scale / 2, cy - s->h * scale / 2, scale, false, 0xffffffff);
+}
+
 static u32 abgr(u32 rgb, u8 alpha) {
   return (u32)alpha << 24 | (rgb & 0xff) << 16 | (rgb & 0xff00) | (rgb >> 16 & 0xff);
 }
@@ -115,6 +122,8 @@ static int rec_n;
 static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, int drink, bool sip);
 
 static u64 resolved_look(u64 look) {
+  u64 bathing = look & AV_BATHING;
+  look &= ~AV_BATHING;
   if (look & AV_FOUNDER) {
     Look owner = {.skin=0,.face_style=0,.hair_style=12,.hair_color=5,.shirt_style=1,.shirt_color=0,.pants=1};
     look = look_encode(&owner) | AV_FOUNDER;
@@ -122,7 +131,15 @@ static u64 resolved_look(u64 look) {
     Look frank = {.skin=0,.face_style=0,.hair_style=0,.hair_color=6,.shirt_style=4,.shirt_color=2,.pants=5};
     look = look_encode(&frank) | AV_FRANK;
   }
-  return look;
+  return look | bathing;
+}
+
+char look_gender(u64 look) {
+  look &= ~(AV_FRANK | AV_FOUNDER | AV_BATHING);
+  Look L = look_decode(look);
+  return look >= (1ull << 32)
+           ? wardrobe_faces[L.face_style < wardrobe_faces_count ? L.face_style : 0].sex
+           : wardrobe_tops[L.shirt_style < wardrobe_tops_count ? L.shirt_style : 0].sex;
 }
 
 void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, int drink, bool sip,
@@ -173,6 +190,12 @@ static void record_part(const PeopleSprite *s, int ox, int oy, Pose pose, bool m
 }
 
 static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, int drink, bool sip) {
+  // On the deck a swimsuit is worn on the full-size body (avatar.ts): the head, every direction
+  // and every animation match the usual figure; only the clothes change.
+  bool bathing = (look & AV_BATHING) != 0;
+  char sex = bathing ? look_gender(look) : 'M';
+  look &= ~AV_BATHING;
+  if (bathing) drink = 0;
   Look L = look_decode(look);
   bool founder = (look & AV_FOUNDER) != 0, frank = !founder && (look & AV_FRANK) != 0;
   bool lay = pose == POSE_LAY;
@@ -266,6 +289,13 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
     if ((expr & EXPR_TALK) && (part == HD || part == FC || part == HR)) { action = lay ? "lsp" : "spk"; f = frame & 1; }
     if (!lay && (expr & EXPR_BLINK) && part == EY) { action = "eyb"; f = 0; }
     if (drink && !lay && (part == RI || part == RH || part == RS)) { action = sip ? "drk" : "crr"; f = 0; }
+    if (bathing && !head && part != LH && part != BD && part != RH) {
+      // Swimwear: the original "Mini shorts" (lg 2027) as trunks, plus the plain torso (ch 001)
+      // in the same colour for a women's one-piece.
+      if (part == LG) record_part(pose_sprite('x', action, LG, "2027", d, f, lay), off_x, off_y, pose, mirrored, SHIRT[L.shirt_color]);
+      if (part == CH && sex == 'F') record_part(pose_sprite('h', action, CH, "001", d, f, lay), off_x, off_y, pose, mirrored, SHIRT[L.shirt_color]);
+      continue;
+    }
 
     for (int j = 0; j < layer_n; j++) if (layers[j].part == part) {
       const PeopleSprite *tint = pose_sprite('x', action, part, layers[j].model, d, f, lay);

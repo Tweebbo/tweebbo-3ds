@@ -35,6 +35,10 @@ void gfx_room_draw(const RoomBackground *bg, float x, float y, float scale);
 /** Loads the pages of a layered public room (freeing the previous one). NULL if it has none. */
 const Scene *gfx_scene(const char *model);
 void gfx_scene_sprite(const SceneSprite *s, float x, float y, float zoom, u8 alpha);
+/** Activity artwork of the loaded scene by name (NULL when this room has none). */
+const SceneArt *gfx_art(const char *name);
+/** Draws it with its top-left at (x, y), scaled kx/ky, multiplied by `color`. */
+void gfx_art_draw(const SceneArt *a, float x, float y, float kx, float ky, u32 color);
 /** Second pass in a solid color with alpha (teal water veil, like source-atop on the web). */
 void gfx_sprite_solid(int page, int sx, int sy, int sw, int sh, float x, float y, float sx_scale, float sy_scale, bool flip, u32 color);
 /** Like gfx_sprite with separate x and y scales. */

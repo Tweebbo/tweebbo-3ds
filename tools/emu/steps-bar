@@ -1,0 +1,26 @@
+# After Hours Bar (room.txt = afterhours): the counter prompt, the menu, an order and a sip.
+wait 28
+click 640 582
+wait 8
+shot b01-counter
+key a 100
+wait 3
+shot b02-menu
+key g 60
+key g 60
+key g 60
+key g 60
+key g 60
+wait 1
+shot b03-focus
+key a 100
+wait 12
+shot b04-served
+key a 100
+wait 2
+shot b05-actions
+key a 100
+shot b06-sip
+wait 2
+key z 100
+shot b07-cheers

@@ -1,0 +1,102 @@
+# Diving Deck (room.txt = diving, in a swimsuit): the lift, the run, the jump and the fall.
+wait 28
+click 720 580
+wait 22
+key a 100
+wait 7
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+shot r00
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+shot r01
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+shot r02
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+shot r03
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+shot r04
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+shot r05
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+shot r06
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+key f 40
+key h 40
+shot r07
+key f 40
+key h 40
+key f 40
+key h 40
+key t 40
+shot a00
+key t 40
+shot a01
+key t 40
+shot a02
+key t 40
+shot a03
+key t 40
+shot a04
+key t 40
+shot a05
+key t 40
+shot a06
+key t 40
+shot a07
+wait 1
+shot z1
+wait 2
+shot z2

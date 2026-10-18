@@ -26,6 +26,8 @@ void on_alert(const char *json) { printf("  alert: %s\n", json); }
 void on_casino(const char *json) { (void)json; }
 static char last_trade[2048];
 void on_trade(const char *json) { snprintf(last_trade, sizeof last_trade, "%s", json); }
+void on_activity(const char *json) { (void)json; }
+void on_music(const char *json) { (void)json; }
 void on_snow(const u8 *data,int len) { (void)data;(void)len; }
 void on_social_changed(void) {}
 void on_name_changed(u32 eid) { (void)eid; }
@@ -94,7 +96,7 @@ static void browser_pump(Ws *ws, int ms) {
 static void crossplay_games(Endpoint *ep) {
   Ws peer; Writer w; char err[128];
   assert(ws_connect(&peer, ep, "/ws/lobby", 15000, err, sizeof err));
-  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 5); /* browser build marker (WEB_CLIENT_BUILD) */
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 6); /* browser build marker (WEB_CLIENT_BUILD) */
   assert(ws_send(&peer, w.buf, w.len)); browser_pump(&peer, 1500);
   assert(browser_id && world_ent(browser_id));
   assert(!(world_ent(browser_id)->flags & FLAG_3DS));
@@ -186,7 +188,7 @@ int main(int argc, char **argv) {
   char err[128];
   assert(ws_connect(&other, &ep, "/ws/lobby", 15000, err, sizeof err));
   Writer w;
-  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 5); /* browser build marker (WEB_CLIENT_BUILD) */
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 6); /* browser build marker (WEB_CLIENT_BUILD) */
   assert(ws_send(&other, w.buf, w.len));
   assert(pump_until(paused, 10000) && "the console was not told it was replaced");
   for (u64 stop = now_ms() + 4000; now_ms() < stop;) {
