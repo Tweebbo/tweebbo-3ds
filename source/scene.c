@@ -66,13 +66,11 @@ bool scene_water_tile(int x, int y) {
   return c >= '0' && c <= '9' && c - '0' <= V.scene->water;
 }
 
-/** Overview zoom: the whole room on screen (at most 0.5×, as in the lobby). */
-static float overview_zoom(void) {
-  float w = V.bx1 - V.bx0, h = V.by1 - V.by0;
-  if (w <= 0 || h <= 0) return 0.5f;
-  float fit = fminf(TOP_W / w, TOP_H / h);
-  return fit > 0.5f ? 0.5f : fit < 0.2f ? 0.2f : fit;
-}
+/** Overview zoom: always exactly 0.5x. A whole-number ratio keeps the pixel art intact: with
+    integer screen positions every pixel is the plain average of a 2x2 block of the original,
+    while fractional scales (the old fit-to-screen 0.2-0.5x) sampled scattered texels and broke
+    outlines. Rooms larger than the 0.5x view scroll with the player instead of shrinking. */
+static float overview_zoom(void) { return 0.5f; }
 
 void scene_toggle_overview(void) {
   V.overview = !V.overview;
@@ -152,7 +150,7 @@ static void camera(u64 now) {
     ty = lh * .6f - sy;
     if (V.bx1 - V.bx0 >= lw) tx = fminf(-V.bx0, fmaxf(lw - V.bx1, tx)); else tx = lw / 2 - (V.bx0 + V.bx1) / 2;
     if (V.by1 - V.by0 >= lh) ty = fminf(-V.by0, fmaxf(lh - V.by1, ty)); else ty = lh / 2 - (V.by0 + V.by1) / 2;
-  } else if (V.overview || !me) {
+  } else if (!me) {
     tx = lw / 2 - (V.bx0 + V.bx1) / 2;
     ty = lh / 2 - (V.by0 + V.by1) / 2;
   } else {
@@ -172,8 +170,9 @@ static void camera(u64 now) {
   V.cam_y += (ty - V.cam_y) * .12f;
 }
 
-static float scr_x(float wx) { return roundf(V.cam_x * V.zoom) + wx * V.zoom; }
-static float scr_y(float wy) { return roundf(V.cam_y * V.zoom) + wy * V.zoom; }
+// In the overview everything lands on whole screen pixels (see overview_zoom).
+static float scr_x(float wx) { return V.overview ? roundf((V.cam_x + wx) * V.zoom) : roundf(V.cam_x * V.zoom) + wx * V.zoom; }
+static float scr_y(float wy) { return V.overview ? roundf((V.cam_y + wy) * V.zoom) : roundf(V.cam_y * V.zoom) + wy * V.zoom; }
 
 // ---------------------------------------------------------------- poses
 

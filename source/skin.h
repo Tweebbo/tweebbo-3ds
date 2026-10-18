@@ -15,6 +15,10 @@
 #define SK_ROW 0xffffff
 #define SK_ROW_ALT 0xf6f6f6
 #define SK_SELECT 0xcfe3ec
+#define SK_FEATURED 0xedf2f3
+#define SK_CREDITS 0xfff0c4
+#define SK_CREDITS_SELECT 0xf5dda0
+#define SK_CREDITS_INK 0x684100
 #define SK_LINE 0xc9c9c9
 #define SK_GO 0x3c7a2c
 #define SK_GO_OFF 0x7b7b7b

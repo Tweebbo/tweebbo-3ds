@@ -2,6 +2,9 @@
 #include "gfx.h"
 #include "net.h"
 #include "world.h"
+#include "avatar.h"
+#include "catalog.h"
+#include <citro2d.h>
 #include <jansson.h>
 #include <math.h>
 #include <stdio.h>
@@ -17,25 +20,29 @@ static struct {
   bool active, rules;
   int kind, bet, bets[6], bet_count, slot, free_left, held, roulette_kind, roulette_value, rules_page, risk;
   u32 item;
+  int pending_op;
   u64 sent_at, received_at, ready_at, animate_until;
   json_t *state, *round;
+  int pays[16];
   char status[180];
 } C = {.kind=NO_GAME, .bet=5};
 
 static int number(json_t *j, const char *key) { return (int)json_integer_value(json_object_get(j, key)); }
 static const char *string(json_t *j, const char *key) { const char *s=json_string_value(json_object_get(j,key)); return s?s:""; }
 static void replace(json_t **dest, json_t *value) { json_incref(value); json_decref(*dest); *dest=value; }
+static json_t *my_bet(void);
 void casino_close(bool notify) {
   if (C.active && notify) send_casino(10,0,0,0);
   json_decref(C.state); json_decref(C.round); C.state=C.round=NULL;
-  C.active=false; C.kind=NO_GAME; C.sent_at=0;
+  C.active=false; C.kind=NO_GAME; C.sent_at=0;C.pending_op=0;
 }
-void casino_notice(void) { C.sent_at=0; }
+void casino_notice(const char *text) { if(strstr(text,"enough")||strstr(text,"Choose")||strstr(text,"Too late")||strstr(text,"Please wait"))C.sent_at=0; }
 void casino_poll(u64 now) {
   if (C.sent_at && now-C.sent_at>5000) { C.sent_at=0; snprintf(C.status,sizeof C.status,"No result received. Reopen the machine to check your game."); }
 }
 static void action(int op, int a, int b, int c, u64 now) {
-  send_casino(op,a,b,c); C.sent_at=now; C.ready_at=now+700;
+  if(C.sent_at)return;
+  send_casino(op,a,b,c); C.sent_at=now;C.pending_op=op; C.ready_at=now+700;
   if (op==2) C.animate_until=now+900;
 }
 void casino_receive(const char *text, u64 now) {
@@ -57,15 +64,22 @@ void casino_receive(const char *text, u64 now) {
     ui_open(P_CASINO);
   } else if(C.active) {
     if(!strcmp(type,"crash")) {
-      if(C.kind==CRASH && (u32)number(j,"item")==C.item){replace(&C.round,json_object_get(j,"round"));C.received_at=now;C.sent_at=0;}
-    } else if(!strcmp(type,"note")) { snprintf(C.status,sizeof C.status,"%s",string(j,"text"));C.sent_at=0; }
+      if(C.kind==CRASH && (u32)number(j,"item")==C.item){
+        replace(&C.round,json_object_get(j,"round"));C.received_at=now;
+        json_t *mine=my_bet();const char *p=string(C.round,"phase");
+        bool answered=C.pending_op==9?(json_is_number(json_object_get(mine,"out"))||!strcmp(p,"crashed")||!strcmp(p,"idle")):C.pending_op==8?mine!=NULL:true;
+        if(answered){C.sent_at=0;C.pending_op=0;}
+      }
+    } else if(!strcmp(type,"note")||!strcmp(type,"refused")) { snprintf(C.status,sizeof C.status,"%s",string(j,!strcmp(type,"refused")?"message":"text"));C.sent_at=0; }
     else if((!strcmp(type,"bj")&&C.kind==BLACKJACK)||(!strcmp(type,"poker")&&C.kind==POKER)) {replace(&C.state,json_object_get(j,"hand"));C.sent_at=0;}
     else if(!strcmp(type,"vp")&&C.kind==VIDEO) { replace(&C.state,j);C.held=json_is_true(json_object_get(j,"done"))?0:number(j,"held");C.sent_at=0; }
     else if(!strcmp(type,"slot")&&C.kind==SLOT) {
       replace(&C.state,j);C.slot=(unsigned)number(j,"game")%5;C.free_left=number(j,"freeLeft");C.sent_at=0;C.received_at=now;
       snprintf(C.status,sizeof C.status,"Win: %d credits. Free spins: %d.",number(j,"win"),C.free_left);
     } else if(!strcmp(type,"dash")&&C.kind==DASH) {
+      if(number(j,"step")==0&&!json_is_true(json_object_get(j,"done")))memset(C.pays,0,sizeof C.pays);
       replace(&C.state,j);C.sent_at=0;C.received_at=now;
+      {int st=number(j,"step");if(st>0&&st<16&&number(j,"cashout"))C.pays[st]=number(j,"cashout");if(st+1<16&&number(j,"next"))C.pays[st+1]=number(j,"next");}
       if(json_is_true(json_object_get(j,"done"))) {
         if(json_is_true(json_object_get(j,"lost")))snprintf(C.status,sizeof C.status,"Caught on step %d! The stake of %d credits is lost.",number(j,"step")+1,number(j,"stake"));
         else snprintf(C.status,sizeof C.status,"Cashed out: %d credits.",number(j,"win"));
@@ -109,6 +123,106 @@ static bool red(int n) {
   static const u8 reds[]={1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36};
   for(unsigned i=0;i<sizeof reds;i++)if(n==reds[i])return true;
   return false;
+}
+
+
+// ---------------------------------------------------------------- VIP Dash hall (top screen)
+// The web's Dash stage (client/src/dash.ts) on 400x240: the casino wall with the marble pillars
+// and the golden carp, the red runner with its gold edge, one v14 guest per position, the
+// throne at the end, and the amounts the server revealed. Same furniture and figures, at 1x.
+static const u64 DASH_GUESTS[] = {8592415008ull, 65516340544ull};
+static u64 dash_guest(int n) {
+  static const Look looks[] = {
+    {.skin=1,.hair_style=1,.hair_color=2,.shirt_style=0,.shirt_color=7,.pants=0,.shoes=2},
+    {.skin=2,.hair_style=5,.hair_color=0,.shirt_style=2,.shirt_color=4,.pants=5,.pants_style=1,.shoes=3,.face_style=1},
+    {.skin=0,.hair_style=24,.hair_color=7,.shirt_style=18,.shirt_color=9,.pants=1,.pants_style=2,.shoe_style=1,.face_style=6},
+    {.skin=0,.hair_style=35,.hair_color=3,.shirt_style=22,.shirt_color=10,.pants=6,.pants_style=3,.shoes=2,.shoe_style=2,.face_style=2},
+    {.skin=1,.hair_style=42,.hair_color=0,.shirt_style=14,.shirt_color=1,.pants=1,.face_style=4},
+    {.skin=0,.hair_style=12,.hair_color=4,.shirt_style=9,.shirt_color=2,.pants=1,.face_style=3},
+  };
+  int k=(n-1)%8;
+  return k==2?DASH_GUESTS[0]:k==5?DASH_GUESTS[1]:look_encode(&looks[(k<2?k:k<5?k-1:k-2)%COUNT(looks)]);
+}
+static void tri(float x0,float y0,float x1,float y1,float x2,float y2,u32 c){C2D_DrawTriangle(x0,y0,c,x1,y1,c,x2,y2,c,0.5f);}
+static void diamond(float cx,float cy,float rx,float ry,u32 c){tri(cx-rx,cy,cx,cy-ry,cx+rx,cy,c);tri(cx-rx,cy,cx,cy+ry,cx+rx,cy,c);}
+/** Draws a catalogue furniture whose floor tile is centred on (cx, floor), like a room item. */
+static void furni_at(u16 def,int rot,float cx,float floor){
+  gfx_furni_preload(def);
+  const FurniVariant *v=variant_get(def,(u8)rot,0);
+  if(!v)v=variant_get(def,0,0);
+  if(!v)return;
+  for(int i=0;i<v->count;i++){const FurniPart *p=&v->parts[i];gfx_furni(def,p,roundf(cx+p->ox),roundf(floor-16+p->oy),1,C2D_Color32(255,255,255,p->alpha));}
+}
+static void dash_top(u64 now){
+  int steps=C.state?number(C.state,"steps"):(C.risk==3?10:8),step=C.state?number(C.state,"step"):0;
+  bool done=C.state&&json_is_true(json_object_get(C.state,"done")),lost=done&&json_is_true(json_object_get(C.state,"lost"));
+  if(steps<1||steps>15)steps=8;
+  // Wall, gold trim and floor. The wall is tall enough for the whole marble pillars (116 px).
+  fill_rect(0,0,400,124,sk_rgb(0x3d1020));fill_rect(0,0,400,30,sk_rgb(0x2d0c16));
+  for(int x=0;x<400;x+=28)fill_rect(x,0,12,120,sk_rgba(0xffc878,14));
+  fill_rect(0,120,400,4,sk_rgb(0xc78a00));fill_rect(0,124,400,3,sk_rgb(0x5c3809));
+  fill_rect(0,127,400,113,sk_rgb(0x17111a));
+  for(int x=-400;x<800;x+=48){C2D_DrawLine(x,127,sk_rgba(0xffffff,10),x-226,240,sk_rgba(0xffffff,10),1,0.5f);C2D_DrawLine(x,127,sk_rgba(0xffffff,10),x+226,240,sk_rgba(0xffffff,10),1,0.5f);}
+  for(int x=110;x<=330;x+=110)furni_at(60007,0,x,124);
+  // A candle on a corner plinth by the start (the Love Carp is taller than the screen).
+  furni_at(1114,0,18,128);furni_at(1098,0,18,96);
+  // Positions run from the start platform (left) to the throne (right), dropping slightly.
+  float x0=48,y0=190,x1=334,y1=202,pitch=(x1-x0)/steps;
+  #define AT_X(n) (x0+(n)*pitch)
+  #define AT_Y(n) (y0+(y1-y0)*(n)/steps)
+  float ax=AT_X(0),ay=AT_Y(0),bx=AT_X(steps),by=AT_Y(steps);
+  tri(ax-34,ay-14,bx+30,by-14,bx+22,by+16,sk_rgb(0xe0a82e));tri(ax-34,ay-14,bx+22,by+16,ax-42,ay+16,sk_rgb(0xe0a82e));
+  tri(ax-32,ay-12,bx+28,by-12,bx+20,by+14,sk_rgb(0x7a121d));tri(ax-32,ay-12,bx+20,by+14,ax-40,ay+14,sk_rgb(0x7a121d));
+  diamond(ax,ay,20,10,sk_rgb(0x87a8b8));diamond(ax,ay,18,9,sk_rgb(0x2a3d45));
+  text_draw("START",ax,ay-5,8,sk_rgb(0xffffff),1);
+  furni_at(1107,2,bx+22,by+4);
+  float rx=fminf(17,pitch*0.46f);
+  for(int n=1;n<=steps;n++){
+    float x=roundf(AT_X(n)),y=roundf(AT_Y(n));
+    bool banked=n<=step&&!(lost&&n==step+1),trap=lost&&n==step+1,next=!done&&n==step+1&&C.state;
+    u32 fill=banked?0x1e5e26:trap?0x4a0c10:next?0x8f5d0a:0x5c141d,edge=trap?0xff4f4f:next?0xffe875:banked?0x8dff69:0xc78a00;
+    diamond(x,y,rx+2,rx/2+1,sk_rgb(edge));diamond(x,y,rx,rx/2,sk_rgb(fill));
+  }
+  // Guests back to front, then the runner on the position reached.
+  for(int n=1;n<=steps;n++){
+    float x=roundf(AT_X(n)),y=roundf(AT_Y(n));
+    bool banked=n<=step,trap=lost&&n==step+1,next=!done&&n==step+1&&C.state;
+    if(n==step&&!lost)continue;
+    Pose pose=trap?POSE_LAY:banked?POSE_DANCE:next?POSE_WAVE:POSE_STD;
+    int frame=pose==POSE_DANCE?(int)(now/220)%2:pose==POSE_WAVE?(int)(now/350)%2:0;
+    if(trap){float progress=fminf(1,(now-C.received_at)/650.0f);avatar_draw(dash_guest(n),4,POSE_LAY,0,0,4,0,false,x-44,y-34,1,255);furni_at(1203,2,x,y+6-140*(1-progress)*(1-progress));}
+    else avatar_draw(dash_guest(n),4,pose,frame,next?EXPR_TALK:0,4,0,false,x-ANCHOR_X+6,y-ANCHOR_Y+4,1,255);
+  }
+  Ent *me=world_ent(W.me);
+  if(me){float x=roundf(AT_X(lost?step:step)),y=roundf(AT_Y(step));avatar_draw(me->look,2,POSE_STD,0,0,2,0,false,x-ANCHOR_X,y-ANCHOR_Y+2,1,255);}
+  // Amounts as far as the server revealed them, and the position numbers.
+  for(int n=1;n<=steps;n++){
+    float x=roundf(AT_X(n)),y=roundf(AT_Y(n));
+    bool banked=n<=step&&!(lost&&n==step+1),trap=lost&&n==step+1,next=!done&&n==step+1&&C.state;
+    char label[12];
+    if(trap)snprintf(label,sizeof label,"X");
+    else if((banked||next)&&n<16&&C.pays[n])snprintf(label,sizeof label,"%d",C.pays[n]);
+    else snprintf(label,sizeof label,banked?"ok":"?");
+    float w=fmaxf(20,strlen(label)*6+8),by2=y-96+(next?(float)((now/180)%2):0);
+    fill_round(x-w/2-1,by2-1,w+2,14,3,sk_rgb(trap?0xff5a4f:next?0x3a2200:banked?0x7fcf55:0xb07d1a));
+    fill_round(x-w/2,by2,w,12,3,sk_rgb(banked?0x144519:trap?0x6e1116:next?0xffe066:0x0f1216));
+    text_draw(label,x,by2,9,sk_rgb(next?0x241200:banked?0x9dff70:0xffd84a),1);
+    char tag[6];snprintf(tag,sizeof tag,"#%d",n);
+    fill_rect(x-9,y+8,18,10,sk_rgba(0x000000,190));text_draw(tag,x,y+7,8,sk_rgb(next?0xffd84a:0xffffff),1);
+  }
+  #undef AT_X
+  #undef AT_Y
+  // Header like the web cabinet; the amounts sit there so nothing covers the carpet.
+  fill_rect(0,0,400,20,sk_rgba(0x000000,140));
+  text_draw("VIP Dash",8,3,12,sk_rgb(0xf2d27a),0);
+  char line[100];
+  if(C.state&&!done)snprintf(line,sizeof line,"Cash out %d - next pays %d",number(C.state,"cashout"),number(C.state,"next"));
+  else snprintf(line,sizeof line,"%s ladder - credits",risks[(C.state?number(C.state,"risk"):C.risk)%4]);
+  text_draw(line,392,5,10,sk_rgb(C.state&&!done?0xffd34d:0xffffff),2);
+  if(done&&!lost&&number(C.state,"win")>0&&now-C.received_at<900){
+    float progress=(now-C.received_at)/900.0f;
+    for(int n=0;n<12;n++){float side=(n%2?1:-1)*(12+n*8);float x=200+side*progress,y=155-(90+n%4*12)*progress+110*progress*progress;sk_sprite("credits_icon@14",roundf(x),roundf(y),1);}
+  }
 }
 
 bool casino_top(u64 now) {
@@ -170,22 +284,7 @@ bool casino_top(u64 now) {
     }
     char result[40];snprintf(result,sizeof result,"Last number: %d",number(C.state,"n"));text_draw(C.state?result:"Choose your bet below.",200,195,13,sk_rgb(0xf2d27a),1);
   } else if(C.kind==DASH) {
-    // The red carpet: one tile per step; climbed tiles glow, a caught step turns red.
-    int steps=C.state?number(C.state,"steps"):(C.risk==3?10:8),step=C.state?number(C.state,"step"):0;
-    bool lost=C.state&&json_is_true(json_object_get(C.state,"lost"));
-    float tw=(400-40)/(float)steps;
-    fill_rect(14,96,372,44,sk_rgb(0x8f1d1d));
-    for(int i=0;i<steps;i++){
-      u32 c=i<step?0xffd34d:(lost&&i==step)?0xff5544:0xb33a2c;
-      fill_round(20+i*tw,100,tw-4,36,3,sk_rgb(c));
-      char n[4];snprintf(n,sizeof n,"%d",i+1);text_draw(n,20+i*tw+(tw-4)/2,110,11,sk_rgb(0x3a1010),1);
-    }
-    char line[100];snprintf(line,sizeof line,"%s ladder",risks[C.risk%4]);text_draw(line,200,30,12,sk_rgb(0xffffff),1);
-    if(C.state&&!json_is_true(json_object_get(C.state,"done"))){
-      snprintf(line,sizeof line,"Cash out now: %d   Next step: %d",number(C.state,"cashout"),number(C.state,"next"));
-      text_draw(line,200,160,12,sk_rgb(0xffd34d),1);
-    }
-    text_draw("Climb the carpet. One step hides a trap.",200,214,11,sk_rgb(0xf2d27a),1);
+    dash_top(now);
   } else if(C.kind==CRASH) {
     const char *p=phase(now);char line[100];
     snprintf(line,sizeof line,"%.2fx",multiplier(now));text_draw(line,200,40,16,sk_rgb(!strcmp(p,"crashed")?0xff9988:0xffd34d),1);
@@ -275,8 +374,14 @@ void casino_draw(u64 now) {
       if(sk_button(272,78,28,">",ready)||(K.right&&ready))C.risk=(C.risk+1)%4;
     }
     sk_text(risks[(playing?number(C.state,"risk"):C.risk)%4],160,80,12,SK_TEXT,1,200);
-    if(playing)snprintf(line,sizeof line,"Step %d of %d. Cash out now for %d credits, or risk the next step for %d.",number(C.state,"step"),number(C.state,"steps"),number(C.state,"cashout"),number(C.state,"next"));
+    if(playing)snprintf(line,sizeof line,"Step %d/%d. Cash out %d. Next %d credits.",number(C.state,"step"),number(C.state,"steps"),number(C.state,"cashout"),number(C.state,"next"));
     else snprintf(line,sizeof line,"%s",C.status[0]?C.status:"Choose a ladder and a stake in credits, then start.");
+    for(int n=1;n<=8;n++){
+      float x=16+(n-1)*36;char tag[12];fill_round(x,108,34,27,2,sk_rgb(n<=number(C.state,"step")?0xe3edda:SK_WHITE));
+      snprintf(tag,sizeof tag,"#%d",n);sk_text(tag,x+17,108,8,SK_DIM,1,32);
+      if(C.pays[n])snprintf(tag,sizeof tag,"%d",C.pays[n]);else snprintf(tag,sizeof tag,"?");
+      sk_text(tag,x+17,120,8,SK_TEXT,1,32);
+    }
     if(playing){
       if(sk_button(20,143,132,"Step (A)",ready)||(K.a&&ready))action(17,0,0,0,now);
       bool can_out=ready&&number(C.state,"step")>0;
@@ -293,6 +398,6 @@ void casino_draw(u64 now) {
     if(sk_button(20,143,132,"Place bet (A)",can_bet)||(K.a&&can_bet))action(8,C.bet,0,0,now);
     if(sk_button(160,143,140,"Cash out (X)",can_out)||(K.x&&can_out))action(9,0,0,0,now);
   }
-  sk_paragraph(line,IN_X+12,C.kind==ROULETTE?132:112,IN_W-24,11,SK_TEXT,2);
+  sk_paragraph(line,IN_X+12,C.kind==DASH?90:C.kind==ROULETTE?132:112,IN_W-24,C.kind==DASH?9:11,SK_TEXT,C.kind==DASH?1:2);
   if(sk_button(220,169,80,"Rules",true)){C.rules=true;C.rules_page=0;}
 }

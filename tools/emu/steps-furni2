@@ -1,0 +1,12 @@
+# Walk to the piano corner of the lobby (D-pad held) and look at it.
+wait 30
+key h 3000
+key g 6000
+key h 3000
+wait 4
+shot g01-piano
+key q
+wait 3
+shot g02-piano-overview
+key q
+wait 1

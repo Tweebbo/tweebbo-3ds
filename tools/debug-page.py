@@ -64,6 +64,9 @@ captures = [
     ('41-casino-room', 'Casino'),
     ('44-casino-slot', 'Slot machine'),
     ('45-casino-spin', 'Server-confirmed spin'),
+    ('autumn-piano', 'Lobby piano, lamps and Overview'),
+    ('autumn-dash', 'VIP Dash with server-confirmed amounts'),
+    ('autumn-trade', 'Safe Trading final confirmation'),
 ]
 captures = [(key, label) for key, label in captures if (share / f'screenshots/{key}.png').exists()]
 options = ''.join(f'<option value="{key}">{html.escape(label)}</option>' for key, label in captures)

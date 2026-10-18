@@ -253,8 +253,12 @@ def main():
             for p in v['parts']:
                 p['img'] = add(Image.open(SRC / 'furni' / p['file']))
         asset = catalogue['definitions'][str(def_id)].get('asset') or {}
-        icon_file = SRC / 'data/icons' / (asset.get('icon') or '-')
-        icon = add(Image.open(icon_file)) if asset.get('icon') and icon_file.exists() else None
+        # The web client's own icon for this definition (with its colours); older exports only
+        # have the bank's shared, uncoloured -icon.png.
+        icon_file = SRC / 'icons' / f'{def_id}.png'
+        if not icon_file.exists():
+            icon_file = SRC / 'data/icons' / (asset.get('icon') or '-')
+        icon = add(Image.open(icon_file)) if icon_file.exists() and icon_file.is_file() else None
         canvas, def_rects = pack_def(images)
         if canvas is not None:
             canvases = [canvas]
@@ -538,7 +542,8 @@ def main():
     for key in ['hair', 'tops', 'bottoms', 'shoes', 'faces']:
         w(f'const WardrobeEntry wardrobe_{key}[{len(wardrobe[key])}] = {{')
         for e in wardrobe[key]:
-            w(f"  {{{c_str(e['label'])}, {c_str(parts_str(e))}, '{e.get('sex', 'U')}'}},")
+            layers = ' '.join(f'{part}:{model}:{tint}' for part, model, tint in e.get('layers', []))
+            w(f"  {{{c_str(e['label'])}, {c_str(parts_str(e))}, '{e.get('sex', 'U')}', {c_str(layers) if layers else 'NULL'}}},")
         w('};')
         w(f'const int wardrobe_{key}_count = {len(wardrobe[key])};')
     w('')

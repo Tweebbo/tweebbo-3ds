@@ -20,6 +20,8 @@ static struct {
   bool invited_me;  /* the other player invited me and I have not answered */
   bool picking;     /* choosing furniture from the hand */
   bool ok_mine, ok_peer;
+  bool confirming;
+  u32 revision;
   u32 peer, asked;  /* asked: the player I invited (to tell the two sides apart) */
   char peer_name[NAME_CAP], note[120];
   Offer mine[TRADE_MAX], theirs[TRADE_MAX];
@@ -28,8 +30,8 @@ static struct {
 } T_;
 
 static void act(const char *action, u32 target, u32 id) {
-  char json[96];
-  snprintf(json, sizeof json, "{\"action\":\"%s\",\"target\":%u,\"id\":%u}", action, (unsigned)target, (unsigned)id);
+  char json[128];
+  snprintf(json, sizeof json, "{\"action\":\"%s\",\"target\":%u,\"id\":%u,\"revision\":%u}", action, (unsigned)target, (unsigned)id,(unsigned)T_.revision);
   send_trade(json);
 }
 
@@ -73,6 +75,8 @@ void trade_receive(const char *text, u64 now) {
   T_.theirs_n = read_offers(json_object_get(j, "theirs"), T_.theirs);
   T_.ok_mine = json_is_true(json_object_get(j, "okMine"));
   T_.ok_peer = json_is_true(json_object_get(j, "okPeer"));
+  T_.confirming=json_is_true(json_object_get(j,"confirming"));
+  T_.revision=(u32)json_integer_value(json_object_get(j,"revision"));
   snprintf(T_.note, sizeof T_.note, "%s", note ?: "");
   // The server sends the same "invite" stage to both sides: the one I asked is the inviter.
   if (!was_active) T_.invited_me = !T_.open && T_.peer != T_.asked;
@@ -87,11 +91,11 @@ static bool offered(u32 id) {
 }
 
 static void offer_grid(const Offer *list, int n, float x, float y, float w, bool mine) {
-  const float slot = 30;
-  int cols = (int)(w / slot);
-  fill_round(x, y, w, 2 * slot + 4, 3, sk_rgb(SK_WHITE));
+  const float slot = 28;
+  int cols = 4;
+  fill_round(x, y, w, 3 * slot + 4, 3, sk_rgb(SK_WHITE));
   if (!n) sk_text(mine ? "Add furniture from your hand." : "Nothing offered yet.", x + w / 2, y + slot - 6, 9.5f, SK_DIM, 1, w - 8);
-  for (int i = 0; i < n && i < 2 * cols; i++) {
+  for (int i = 0; i < n && i < TRADE_MAX; i++) {
     float cx = x + 2 + (i % cols) * slot, cy = y + 2 + (i / cols) * slot;
     gfx_furni_icon(list[i].def, cx + slot / 2, cy + slot / 2, slot - 6);
     if (mine && T_.open && sk_click(cx, cy, slot, slot)) act("remove", 0, list[i].id);
@@ -167,17 +171,17 @@ void trade_draw(u64 now) {
     return;
   }
   float half = (IN_W - 12) / 2, y = IN_Y + 2;
-  sk_text("You offer", IN_X + 4, y, 10.5f, SK_TEXT, 0, half);
   snprintf(line, sizeof line, "%s offers", T_.peer_name);
-  sk_text(line, IN_X + 8 + half, y, 10.5f, SK_TEXT, 0, half);
-  offer_grid(T_.mine, T_.mine_n, IN_X + 4, y + 16, half, true);
-  offer_grid(T_.theirs, T_.theirs_n, IN_X + 8 + half, y + 16, half, false);
-  float sy = y + 84;
-  sk_text(T_.ok_mine ? "You confirmed." : "Not confirmed yet.", IN_X + 4, sy, 9.5f, T_.ok_mine ? SK_GO : SK_DIM, 0, half);
-  sk_text(T_.ok_peer ? "They confirmed." : "Not confirmed yet.", IN_X + 8 + half, sy, 9.5f, T_.ok_peer ? SK_GO : SK_DIM, 0, half);
-  sk_text(T_.mine_n ? "Tap your furniture to take it back." : "", IN_X + 4, sy + 13, 9, SK_DIM, 0, IN_W - 8);
+  sk_text(line, IN_X + 4, y, 10.5f, SK_TEXT, 0, half);
+  sk_text("You offer", IN_X + 8 + half, y, 10.5f, SK_TEXT, 0, half);
+  offer_grid(T_.theirs, T_.theirs_n, IN_X + 4, y + 16, half, false);
+  offer_grid(T_.mine, T_.mine_n, IN_X + 8 + half, y + 16, half, true);
+  float sy = y + 106;
+  sk_text(T_.ok_peer ? "They confirmed." : "Not confirmed yet.", IN_X + 4, sy, 9.5f, T_.ok_peer ? SK_GO : SK_DIM, 0, half);
+  sk_text(T_.ok_mine ? "You confirmed." : "Not confirmed yet.", IN_X + 8 + half, sy, 9.5f, T_.ok_mine ? SK_GO : SK_DIM, 0, half);
+  sk_text(T_.confirming?"Review the final offers and confirm again.":T_.mine_n?"Tap your furniture to take it back.":"", IN_X + 4, sy + 13, 9, SK_DIM, 0, IN_W - 8);
   float by = IN_Y + IN_H - 26;
   if (sk_button(IN_X + 4, by, 96, "Add (X)", T_.mine_n < TRADE_MAX) || (K.x && T_.mine_n < TRADE_MAX)) { T_.picking = true; T_.sel = 0; }
-  if (sk_button(IN_X + 106, by, 110, T_.ok_mine ? "Confirmed" : "Confirm (A)", !T_.ok_mine && (T_.mine_n || T_.theirs_n)) || (K.a && !T_.ok_mine && (T_.mine_n || T_.theirs_n))) act("confirm", 0, 0);
+  if (sk_button(IN_X + 106, by, 110, T_.ok_mine ? "Accepted" : T_.confirming?"Confirm (A)":"Accept (A)", !T_.ok_mine && (T_.mine_n || T_.theirs_n)) || (K.a && !T_.ok_mine && (T_.mine_n || T_.theirs_n))) act(T_.confirming?"confirm":"ready", 0, 0);
   if (sk_button(IN_X + IN_W - 86, by, 82, "Cancel (B)", true) || K.b) { act("cancel", 0, 0); T_.active = false; ui_close(); }
 }

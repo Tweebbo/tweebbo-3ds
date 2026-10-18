@@ -105,6 +105,10 @@ try {
     }
     process.stdout.write(`\rfurniture: ${Math.min(i + 40, defs.length)}/${defs.length}`);
   }
+  await mkdir(join(outDir, 'icons'), { recursive: true });
+  for (let i = 0; i < defs.length; i += 40)
+    for (const icon of await page.evaluate((d) => window.exportIcons(d), defs.slice(i, i + 40)))
+      await writeFile(join(outDir, 'icons', `${icon.def}.png`), Buffer.from(icon.png, 'base64'));
   process.stdout.write('\n');
   await writeFile(join(outDir, 'furni-timelines.json'), JSON.stringify(await page.evaluate(() => window.furnitureTimelines())));
   await writeFile(join(outDir, 'furni.json'), JSON.stringify(furniMeta));

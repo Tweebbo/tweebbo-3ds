@@ -1,0 +1,21 @@
+# Furniture check: the lobby (piano corner), the catalogue icons and the hand.
+wait 30
+shot f01-lobby
+key q
+wait 3
+shot f02-overview
+key q
+wait 2
+click 594 712
+wait 3
+shot f03-shop
+click 718 642
+wait 3
+shot f04-shop-page
+key s
+wait 1
+click 660 712
+wait 3
+shot f05-hand
+key s
+wait 1

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const base=process.env.FIXTURE_SERVER||'ws://127.0.0.1:18093';
-assert.equal(new URL(base).hostname,'127.0.0.1');assert.equal(new URL(base).port,'18093');
+assert.equal(new URL(base).hostname,'127.0.0.1');assert(['18092','18093'].includes(new URL(base).port),'Use an isolated native fixture server.');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const variable=n=>{const b=[];do{const v=n%128;n=Math.floor(n/128);b.push(v|(n?128:0));}while(n);return b;};
 class Reader{
@@ -15,7 +15,7 @@ class Peer{
   constructor(room,caps=62){
     this.events=[];this.credits=0;this.items=[];this.snow=[];
     this.ws=new WebSocket(`${base}/ws/${room}`);this.ws.binaryType='arraybuffer';
-    this.ws.onopen=()=>this.send([1,6,0,0,0,caps?1:0,0,caps||2]);
+    this.ws.onopen=()=>this.send([1,6,0,0,0,caps?1:0,0,caps||5,...(caps?[1,1]:[])]);
     this.ws.onmessage=e=>{
       const b=Buffer.from(e.data),r=new Reader(b);
       if(b[0]===101){this.id=r.v();r.s();r.s();this.credits=r.v();}
@@ -37,7 +37,7 @@ const peers=[];
 try{
   const p=new Peer('casino');peers.push(p);await p.wait(()=>p.room,'casino room');
   const catalogue=JSON.parse(fs.readFileSync(new URL('../build/export/data/models/catalogue.json',import.meta.url),'utf8'));
-  for(const kind of ['slot','roulette','blackjack','poker','videopoker','crash']){
+  for(const kind of ['slot','roulette','blackjack','poker','videopoker','crash','dash']){
     const it=p.items.find(it=>catalogue.definitions[it.def]?.flags.includes(`casino_${kind}`));assert(it,kind);
     const open=await p.event('open',()=>p.send([10,...variable(it.id)]));assert.equal(open.game,kind);
     if(kind==='slot'){
@@ -62,6 +62,16 @@ try{
       const v=await p.event('vp',()=>p.send([19,15,3]));assert(v.done);assert.equal(v.cards.length,5);
     }
     if(kind==='crash')assert(open.round.phase);
+    if(kind==='dash'){
+      const before=p.credits,stake=open.bets[0];
+      const start=await p.event('dash',()=>p.send([19,16,0,0]));assert.equal(start.step,0);assert.equal(start.stake,stake);
+      await p.wait(()=>p.credits===before-stake,'Dash debit');await sleep(750);
+      const step=await p.event('dash',()=>p.send([19,17]));
+      if(!step.done){
+        await sleep(750);const out=await p.event('dash',()=>p.send([19,18]));assert(out.done&&!out.lost);assert(out.win>0);
+        await p.wait(()=>p.credits===before-stake+out.win,'Dash cashout');
+      }else{assert(step.lost);assert.equal(p.credits,before-stake);}
+    }
     p.send([19,10]);await sleep(750);console.log(`Native Casino ${kind}: server-confirmed.`);
   }
   const a=new Peer('lobby'),b=new Peer('lobby',0);peers.push(a,b);await a.wait(()=>a.room&&b.room,'snow peers');

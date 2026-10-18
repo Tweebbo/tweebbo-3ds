@@ -2,7 +2,7 @@
 // (a snapshot of the web client sources) to get identical sprites.
 import { loadModels, people, poolPeople, spriteImage } from '@web/models';
 import { catalogue, ensureFurniture, furniAnim } from '@web/catalogue';
-import { furniLayers, furniFrame, FURNI_OX, FURNI_OY } from '@web/furni';
+import { furniLayers, furniFrame, importedSmall, FURNI_OX, FURNI_OY } from '@web/furni';
 import { Renderer } from '@web/renderer';
 import { State } from '@web/state';
 import { loadClassic } from '@web/classic';
@@ -29,6 +29,7 @@ declare global {
   interface Window {
     exportPeople(prefix: string): Promise<unknown[]>;
     exportFurni(defs: number[]): Promise<unknown[]>;
+    exportIcons(defs: number[]): Promise<{ def: number; png: string }[]>;
     furnitureTimelines(): Record<string, number[]>;
     furniIds(): Promise<number[]>;
     exportFloors(models: { key: string; rows: string[]; door: [number, number] }[]): Promise<unknown[]>;
@@ -59,6 +60,20 @@ window.furniIds = async () => {
 };
 
 const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
+
+// Catalogue and inventory icons as the web draws them (importedSmall): one per definition, with
+// the definition's own colours. The bank's -icon.png is shared by every colour and only holds the
+// uncoloured layer, so coloured furniture showed as white outlines.
+window.exportIcons = async (defs) => {
+  await loadModels();
+  const out = [];
+  for (const id of defs) {
+    if (!catalogue.definitions[id]?.asset) continue;
+    await ensureFurniture(id);
+    out.push({ def: id, png: png(importedSmall(id)) });
+  }
+  return out;
+};
 
 const timelines: Record<string, number[]> = {};
 window.furnitureTimelines = () => timelines;

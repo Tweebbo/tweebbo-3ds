@@ -39,7 +39,7 @@ void on_chat(u32 eid, const char *text) {
   scene_chat(eid, text, now_ms());
   ui_chat(eid, text);
 }
-void on_notice(const char *text) { casino_notice(); ui_notice(text); ui_toast(text, now_ms()); }
+void on_notice(const char *text) { casino_notice(text); ui_notice(text); ui_toast(text, now_ms()); }
 // Asked to leave a room: back to the lobby with the reason.
 void on_kicked(const char *text) { ui_close(); ui_toast(text, now_ms()); net_goto("lobby", ""); }
 void on_transfer(const char *slug, const char *arrival) { net_goto(slug, arrival); }
@@ -221,7 +221,7 @@ int main(int argc, char **argv) {
     C2D_TargetClear(top, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(top);
     if (!snow_top(now) && !casino_top(now)) {
-      scene_draw(now); gfx_filter(false); shop_top(now);
+      scene_draw(now); gfx_filter(false); shop_top(now); look_top(now);
 #ifdef TWEEBBO_SHOWCASE
       showcase_top(now);
 #endif

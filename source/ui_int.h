@@ -103,4 +103,4 @@ void support_draw(u64 now);
 void casino_poll(u64 now);
 void casino_draw(u64 now);
 void casino_close(bool notify);
-void casino_notice(void);
+void casino_notice(const char *text);

@@ -23,19 +23,19 @@ A console with custom firmware (Luma3DS) is required. `tweebbo.3dsx` works from 
 
 - **Online**: WebSocket over TLS (mbedTLS, embedded root certificates) on its own thread, with exponential reconnection, planned socket renewals and session recovery. HELLO carries platform byte `1` (Nintendo 3DS): the web shows a small pixel-art handheld over the player and their profile reads "This person is connected through a Nintendo 3DS system". The 3DS shows it over other console players too.
 - **Shared hotel features**:
-  - *Navigator*: All / Public / My Rooms with occupancy, *Go*, refresh every 15 s and **Create a room**.
+  - *Navigator*: All / Public / My Rooms with occupancy, *Go*, refresh every 15 s and **Create a room**. Featured official rooms appear first; Casino uses the original credits bag and an ochre row, matching the browser.
   - *Catalogue*: every page and offer of the catalogue, icons, prices and purchase confirmation.
   - *Hand*: grouped inventory and **place in room**.
   - **Build mode**: Circle Pad / D-Pad moves the ghost furniture (green when it fits, red when it does not, same rules as the web), L/R rotate, A places, B cancels; wall items slide along the wall and L/R lower or raise them. Tapping the minimap jumps to that tile.
   - Furniture panel: sit or lie down, use (switches, dice, teleporters, gates), choose a drink at dispensers, move, rotate, pick up and redeem.
-  - *Me*: gestures, drinks, the full wardrobe, renaming and **Save / restore character**.
+  - *Me*: gestures, drinks, the full wardrobe (category tabs, real clothing previews, colours and gender filters), renaming and **Save / restore character**.
   - *Friends Console*: friends with their room and *Visit*, requests, search, remove, ignore and private messages.
   - *Pets*: adopt (species, coat, color and name), place, commands and status; pets are drawn and walk in the room.
   - Rooms: the lobby, private rooms, Classic Park with its animated fountain and The Pool with swimming.
   - Chat bubbles, chat history, ignore list, hotel alerts and server notices.
   - *Games*: Snow Storm (the original SnowWar, in sync with web players, with bots, lobbies and practice; the nearest rival is targeted automatically and you can tap a rival to choose) and one-on-one Tic-tac-toe, Connect Four and Chess challenges with anyone in the room.
-  - *Casino*: five slot machines, roulette, blackjack, Casino Hold'em, Video Poker, Crash and the **VIP Dash** (climb the red carpet on one of four risk ladders and cash out before the trap), with the original cards and symbols. On the console every game plays with credits; chips (real money) are only in the PC edition. Bets and payouts are decided by the hotel.
-  - **Trading**: *Trade* on another player's card offers furniture from your hand; nothing moves until both sides confirm the same offer, and credits are never traded.
+  - *Casino*: five slot machines, roulette, blackjack, Casino Hold'em, Video Poker, Crash and the **VIP Dash** (climb the red carpet on one of four risk ladders and cash out before the trap, with the original furniture, figures, coin and trap animations), with the original cards and symbols. On the console every game plays with credits; chips (real money) are only in the PC edition. Bets and payouts are decided by the hotel.
+  - **Trading**: *Trade* on another player's card offers up to twelve furniture slots from your hand; both players accept and then confirm again, any change to an offer resets both confirmations, and credits are never traded.
   - **Tweebbo Club**: Club members are marked on their card, and the Club and Club Gold badges show on profiles. Members get 100 credits instead of 10 for hanging out.
   - **Support Tweebbo** (Me → *Support*): what a donation gives (Tweebbo Club for life, the VIP badge and 10,000 credits) and how chips work, with a QR code to tweebbo.lol, where donations and chips are available with the same character code.
   - Password rooms: create a room with a password, lock or open your rooms from My Rooms, and enter locked rooms by typing the password.

@@ -1,0 +1,12 @@
+# Two confirmations with the real protocol peer in tests/trade-emulator-peer.mjs.
+wait 30
+shot trade-invite
+key a
+wait 4
+shot trade-offers
+key a
+wait 4
+shot trade-final-confirmation
+key a
+wait 4
+shot trade-completed

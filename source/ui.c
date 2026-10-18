@@ -42,7 +42,7 @@ static struct {
   Look draft;
   bool draft_dirty;
   int preview_dir;
-  int look_tab;
+  int look_tab, look_page, look_sel, look_sex;
   // Walking with the pad
   int stick_dir;
   u64 stick_sent;
@@ -845,63 +845,150 @@ static void panel_ent(u64 now) {
 
 static int wrap(int v, int n) { return n <= 0 ? 0 : ((v % n) + n) % n; }
 
-typedef struct { const char *label; int *value; int count; const WardrobeEntry *list; const u32 *palette; } Row;
+// Like the web "Change looks" window (client/src/ui.ts, wardrobe.css): category tabs, a grid
+// of real figures wearing each style, the colours of that category, and the large preview
+// ("Your new look") at a whole-number 2x scale on the top screen (look_top).
+typedef struct { const char *tab; int *style; int count; const WardrobeEntry *list; int *color; int colors; const u32 *palette; bool heads; } Category;
+
+static int look_categories(Look *L, Category *out) {
+  Category c[] = {
+    {"Face", &L->face_style, wardrobe_faces_count, wardrobe_faces, &L->skin, 4, SKIN, true},
+    {"Hair", &L->hair_style, wardrobe_hair_count, wardrobe_hair, &L->hair_color, 8, HAIR, true},
+    {"Tops", &L->shirt_style, wardrobe_tops_count, wardrobe_tops, &L->shirt_color, 16, SHIRT, false},
+    {"Trousers", &L->pants_style, wardrobe_bottoms_count, wardrobe_bottoms, &L->pants, 8, PANTS, false},
+    {"Shoes", &L->shoe_style, wardrobe_shoes_count, wardrobe_shoes, &L->shoes, 4, SHOES, false},
+  };
+  memcpy(out, c, sizeof c);
+  return COUNT(c);
+}
+
+/** Styles of a category shown with the Boy/Girl filter (unisex styles always show). */
+static int look_filtered(const Category *c, int *idx) {
+  static const char sexes[] = {0, 'M', 'F'};
+  int n = 0;
+  for (int i = 0; i < c->count; i++)
+    if (!U.look_sex || c->list[i].sex == 'U' || c->list[i].sex == sexes[U.look_sex]) idx[n++] = i;
+  return n;
+}
+
+static void look_random(Look *L) {
+  Category c[5]; look_categories(L, c);
+  int idx[160];
+  for (int i = 0; i < 5; i++) {
+    int n = look_filtered(&c[i], idx);
+    if (n) *c[i].style = idx[rand() % n];
+    *c[i].color = rand() % c[i].colors;
+  }
+}
 
 static void panel_look(u64 now) {
   Ent *me = world_ent(W.me);
   if (me && !U.draft_dirty) U.draft = look_decode(me->look);
   if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Change looks")) { ui_open(P_ME); return; }
-  sk_content(IN_X, IN_Y, IN_W, IN_H);
   Look *L = &U.draft;
-  fill_round(IN_X + 3, IN_Y + 3, 80, 104, 4, sk_rgb(SK_WHITE));
-  u64 look = look_encode(L);
-  bool blink = now % 4000 < 130;
-  avatar_draw(look, U.preview_dir, POSE_STD, 0, blink ? EXPR_BLINK : 0, U.preview_dir, 0, false, IN_X + 43 - ANCHOR_X,
-              IN_Y + 100 - ANCHOR_Y, 1, 255);
-  if (sk_button(IN_X + 3, IN_Y + 110, 38, "<", true)) U.preview_dir = (U.preview_dir + 1) & 7;
-  if (sk_button(IN_X + 45, IN_Y + 110, 38, ">", true)) U.preview_dir = (U.preview_dir + 7) & 7;
-  if (sk_button_big(IN_X + 3, IN_Y + IN_H - 27, 80, U.draft_dirty ? "Save" : "Saved", U.draft_dirty)) {
-    send_look(look);
+  Category cats[5];
+  look_categories(L, cats);
+  U.look_tab = wrap(U.look_tab, 5);
+  float tw = IN_W / 5.0f;
+  for (int i = 0; i < 5; i++)
+    if (sk_tab(IN_X + i * tw, IN_Y, tw - 2, 15, cats[i].tab, U.look_tab == i)) { U.look_tab = i; U.look_page = 0; }
+  sk_content(IN_X, IN_Y + 17, IN_W, IN_H - 17);
+  Category *c = &cats[U.look_tab];
+  int idx[160], n = look_filtered(c, idx);
+  // Heads (face, hair) fit two rows of six; whole figures one row of six.
+  int cols = 6, rows = c->heads ? 2 : 1, per = cols * rows, pages = n ? (n + per - 1) / per : 1;
+  if ((K.left || K.right) && n) {
+    int cur = 0;
+    for (int i = 0; i < n; i++) if (idx[i] == *c->style) cur = i;
+    cur = wrap(cur + (K.right ? 1 : -1), n);
+    *c->style = idx[cur]; U.draft_dirty = true; U.look_page = cur / per;
+  }
+  if (K.up) U.look_tab = wrap(U.look_tab - 1, 5), U.look_page = 0;
+  if (K.dn) U.look_tab = wrap(U.look_tab + 1, 5), U.look_page = 0;
+  if (K.down & KEY_L) U.look_page--;
+  if (K.down & KEY_R) U.look_page++;
+  U.look_page = wrap(U.look_page, pages);
+  float gx = IN_X + 4, gy = IN_Y + 21, cw = (IN_W - 8) / (float)cols, ch = c->heads ? 46 : 92;
+  for (int k = 0; k < per; k++) {
+    int i = U.look_page * per + k;
+    if (i >= n) break;
+    float x = gx + (k % cols) * cw, y = gy + (k / cols) * (ch + 2);
+    bool on = idx[i] == *c->style;
+    fill_round(x, y, cw - 3, ch, 2, sk_rgb(on ? 0x796130 : 0xb0b6a8));
+    fill_round(x + 1, y + 1, cw - 5, ch - 2, 2, sk_rgb(on ? 0xf3dda1 : 0xdfe2d6));
+    Look t = *L;
+    Category tc[5]; look_categories(&t, tc);
+    *tc[U.look_tab].style = idx[i];
+    u64 tl = look_encode(&t);
+    float ax = roundf(x + (cw - 3) / 2) - ANCHOR_X;
+    if (c->heads) avatar_draw_head(tl, 2, ax, roundf(y + ch / 2) - 37, 1);
+    else avatar_draw(tl, 2, POSE_STD, 0, 0, 2, 0, false, ax, roundf(y + ch - 4) - ANCHOR_Y, 1, 255);
+    if (T.released && sk_click(x, y, cw - 3, ch)) { *c->style = idx[i]; U.draft_dirty = true; }
+  }
+  // The category's colours (skin tone on the Face tab).
+  float sy = IN_Y + IN_H - 41, sw = fminf(18, (IN_W - 8) / (float)c->colors);
+  for (int i = 0; i < c->colors; i++) {
+    float x = IN_X + 4 + i * sw;
+    bool on = *c->color == i;
+    fill_round(x, sy, sw - 2, 14, 2, sk_rgb(on ? 0x203b4a : 0x66695c));
+    fill_round(x + 1, sy + 1, sw - 4, 12, 1, sk_rgb(c->palette[i]));
+    if (on) fill_round(x + sw / 2 - 3, sy + 5, 4, 4, 1, sk_rgb(SK_WHITE));
+    if (T.released && sk_click(x, sy, sw - 2, 14)) { *c->color = i; U.draft_dirty = true; }
+  }
+  float fy = IN_Y + IN_H - 22;
+  char page[24];
+  snprintf(page, sizeof page, "%d / %d", U.look_page + 1, pages);
+  if (sk_button(IN_X + 2, fy, 24, "<", pages > 1)) U.look_page = wrap(U.look_page - 1, pages);
+  sk_text(page, IN_X + 52, fy + 2, 10, SK_DIM, 1, 48);
+  if (sk_button(IN_X + 78, fy, 24, ">", pages > 1)) U.look_page = wrap(U.look_page + 1, pages);
+  static const char *sex_names[] = {"All", "Boy", "Girl"};
+  for (int i = 0; i < 3; i++)
+    if (sk_tab(IN_X + 110 + i * 38, fy + 1, 36, 15, sex_names[i], U.look_sex == i)) { U.look_sex = i; U.look_page = 0; }
+  if (sk_button(IN_X + 228, fy, 74, U.draft_dirty ? "Save looks" : "Saved", U.draft_dirty) || (K.a && U.draft_dirty)) {
+    send_look(look_encode(L));
     U.draft_dirty = false;
     ui_toast("Look saved.", now);
   }
-  Row rows[] = {
-    {"Skin", &L->skin, 4, NULL, SKIN},
-    {"Hair", &L->hair_style, wardrobe_hair_count, wardrobe_hair, NULL},
-    {"Hair color", &L->hair_color, 8, NULL, HAIR},
-    {"Top", &L->shirt_style, wardrobe_tops_count, wardrobe_tops, NULL},
-    {"Top color", &L->shirt_color, 16, NULL, SHIRT},
-    {"Trousers", &L->pants_style, wardrobe_bottoms_count, wardrobe_bottoms, NULL},
-    {"Pants color", &L->pants, 8, NULL, PANTS},
-    {"Shoes", &L->shoe_style, wardrobe_shoes_count, wardrobe_shoes, NULL},
-    {"Shoe color", &L->shoes, 4, NULL, SHOES},
-    {"Face", &L->face_style, wardrobe_faces_count, wardrobe_faces, NULL},
-  };
-  float y = IN_Y + 3, x = IN_X + 88, rw = IN_W - 92;
-  int first_row = (U.look_tab / 5) * 5;
-  for (int i = first_row; i < first_row + 5 && i < COUNT(rows); i++, y += 26) {
-    Row *r = &rows[i];
-    bool focus = U.look_tab == i;
-    if (focus) fill_round(x - 2, y - 1, rw + 2, 14, 3, sk_rgb(SK_SELECT));
-    sk_text(r->label, x, y + 1, 9.5f, SK_TEXT, 0, 66);
-    bool prev = sk_button(x + 70, y - 1, 18, "<", true), next = sk_button(x + rw - 18, y - 1, 18, ">", true);
-    if (prev || next) { *r->value = wrap(*r->value + (next ? 1 : -1), r->count); U.draft_dirty = true; U.look_tab = i; }
-    float cx = x + 92, cw = rw - 114;
-    if (r->palette) fill_round(cx, y + 2, cw, 10, 2, sk_rgb(r->palette[*r->value]));
-    else sk_text(r->list[wrap(*r->value, r->count)].label, cx + cw / 2, y + 1, 9.5f, SK_TEXT, 1, cw);
+  if (K.y) { look_random(L); U.draft_dirty = true; }
+  if (K.x) U.preview_dir = (U.preview_dir + 7) & 7;
+}
+
+/** Top screen while the wardrobe is open: "Your new look" at 2x and the outfit, as on the web. */
+void look_top(u64 now) {
+  if (ui_panel() != P_LOOK) return;
+  fill_rect(0, 0, 400, 240, sk_rgba(0x000000, 150));
+  // Preview tile (wardrobe.css .dress-preview / .dress-avatar).
+  fill_round(10, 6, 146, 228, 3, sk_rgb(0xa2a594));
+  fill_round(11, 7, 144, 226, 3, sk_rgb(0xd3d4c6));
+  sk_text("Your new look", 83, 10, 10.5f, SK_TEXT, 1, 140);
+  fill_rect(17, 26, 132, 180, sk_rgb(0x7a8773));
+  fill_rect(18, 27, 130, 142, sk_rgb(0xb6c0af));
+  fill_rect(18, 169, 130, 37, sk_rgb(0xa0ab95));
+  u64 look = look_encode(&U.draft);
+  bool blink = now % 4000 < 130;
+  avatar_draw(look, U.preview_dir, POSE_STD, 0, blink ? EXPR_BLINK : 0, U.preview_dir, 0, false, 83 - ANCHOR_X * 2,
+              196 - ANCHOR_Y * 2, 2, 255);
+  sk_text("X: turn around", 83, 214, 9.5f, SK_TEXT, 1, 140);
+  // Outfit summary in a classic window.
+  float x = 168, y = 6, w = 224, h = 228;
+  fill_round(x - 1, y - 1, w + 2, h + 2, 5, sk_rgb(0x202020));
+  fill_round(x, y, w, h, 4, sk_rgb(SK_WINDOW));
+  sk_text("Wardrobe", x + w / 2, y + 2, 10.5f, SK_WHITE, 1, w - 8);
+  fill_round(x + 4, y + 18, w - 8, h - 22, 3, sk_rgb(SK_CONTENT));
+  Look L = U.draft;
+  Category c[5]; look_categories(&L, c);
+  for (int i = 0; i < 5; i++) {
+    float ry = y + 24 + i * 26;
+    if (i == U.look_tab) fill_round(x + 8, ry - 2, w - 16, 22, 3, sk_rgb(SK_SELECT));
+    sk_text(c[i].tab, x + 14, ry + 3, 10, SK_DIM, 0, 60);
+    fill_round(x + 76, ry + 2, 12, 12, 2, sk_rgb(0x66695c));
+    fill_round(x + 77, ry + 3, 10, 10, 1, sk_rgb(c[i].palette[*c[i].color]));
+    sk_text(c[i].list[wrap(*c[i].style, c[i].count)].label, x + 94, ry + 3, 10, SK_TEXT, 0, w - 104);
   }
-  if (sk_button(x, IN_Y + IN_H - 22, 56, "Prev", first_row > 0) || (K.x && first_row > 0)) U.look_tab -= 5;
-  sk_text(first_row ? "2 / 2" : "1 / 2", x + rw / 2, IN_Y + IN_H - 20, 11, SK_DIM, 1, 60);
-  if (sk_button(x + rw - 56, IN_Y + IN_H - 22, 56, "Next", first_row == 0) || (K.y && first_row == 0)) U.look_tab += 5;
-  // D-Pad: up/down picks a row, left/right changes the value.
-  if (K.up) U.look_tab = wrap(U.look_tab - 1, COUNT(rows));
-  if (K.dn) U.look_tab = wrap(U.look_tab + 1, COUNT(rows));
-  if (K.left || K.right) {
-    Row *r = &rows[U.look_tab];
-    *r->value = wrap(*r->value + (K.right ? 1 : -1), r->count);
-    U.draft_dirty = true;
-  }
-  if (K.a && U.draft_dirty) { send_look(look); U.draft_dirty = false; ui_toast("Look saved.", now); }
+  float hy = y + 160;
+  sk_text("Left/Right: style    Up/Down: category", x + 14, hy, 9, SK_DIM, 0, w - 24);
+  sk_text("L/R: page    Y: randomize    A: save", x + 14, hy + 16, 9, SK_DIM, 0, w - 24);
+  sk_text(U.draft_dirty ? "Not saved yet" : "Saved", x + 14, hy + 40, 10, U.draft_dirty ? SK_DANGER : SK_GO, 0, w - 24);
 }
 
 // ---------------------------------------------------------------- Help panel
@@ -1219,7 +1306,7 @@ bool ui_input(u32 down, u32 held, u64 now) {
     while (i < COUNT(cycle) && cycle[i] != U.panel) i++;
     ui_open(cycle[(i + 1) % COUNT(cycle)]);
   }
-  if (down & (KEY_L | KEY_R)) scene_toggle_overview();
+  if ((down & (KEY_L | KEY_R)) && U.panel != P_LOOK) scene_toggle_overview();
   if (!window) {
     Context ctx;
     bool near = context_find(&ctx, now);

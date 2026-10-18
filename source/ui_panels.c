@@ -30,7 +30,7 @@ static bool online_or_toast(void) {
 #define MAX_MODELS 16
 
 // Titles hold 40 characters of up to 4 UTF-8 bytes each (the server's limit).
-typedef struct { char slug[48], title[164], owner[64]; int online; bool pub, mine, locked; } RoomRow;
+typedef struct { char slug[48], title[164], owner[64], activity[64]; int online; bool pub, mine, locked, featured, credits; } RoomRow;
 
 static struct {
   int tab; /* 0 all, 1 public, 2 mine */
@@ -82,6 +82,11 @@ static void nav_poll(void) {
         row->pub = json_is_true(json_object_get(v, "public"));
         row->mine = json_is_true(json_object_get(v, "mine"));
         row->locked = json_is_true(json_object_get(v, "locked"));
+        json_t *featured = json_object_get(v, "featured");
+        row->featured = row->pub && json_is_object(featured);
+        const char *accent = json_string_value(json_object_get(featured, "accent"));
+        row->credits = row->featured && accent && !strcmp(accent, "credits");
+        utf8_copy(row->activity, sizeof row->activity, row->featured ? json_string_value(json_object_get(featured, "label")) : NULL);
       }
       NV.model_n = 0;
       json_array_foreach(json_object_get(j, "models"), i, v) {
@@ -245,12 +250,15 @@ void nav_draw(u64 now) {
     if (y > ly + lh) break;
     RoomRow *r = &NV.rooms[i];
     bool focus = NV.list.focus == i;
-    fill_rect(IN_X + 2, y, IN_W - 4, row - 1, sk_rgb(focus ? SK_SELECT : i % 2 ? SK_ROW_ALT : SK_ROW));
+    u32 background = r->credits ? (focus ? SK_CREDITS_SELECT : SK_CREDITS) : focus ? SK_SELECT : r->featured ? SK_FEATURED : i % 2 ? SK_ROW_ALT : SK_ROW;
+    fill_rect(IN_X + 2, y, IN_W - 4, row - 1, sk_rgb(background));
     fill_rect(IN_X + 2, y + row - 1, IN_W - 4, 1, sk_rgb(SK_LINE));
-    sk_sprite(r->locked ? "door_password@18" : "building_icon@18", IN_X + 5, y + 4, 1);
-    sk_text(r->title, IN_X + 28, y + 2, 10.5f, SK_TEXT, 0, IN_W - 120);
+    if (r->credits && !r->locked) sk_icon_coin(IN_X + 8, y + 5);
+    else sk_sprite(r->locked ? "door_password@18" : "building_icon@18", IN_X + 5, y + 4, 1);
+    sk_text(r->title, IN_X + 28, y + 2, 10.5f, r->credits ? SK_CREDITS_INK : SK_TEXT, 0, IN_W - 120);
     char sub[96];
-    if (r->pub) snprintf(sub, sizeof sub, "Public room");
+    if (r->featured) snprintf(sub, sizeof sub, "Featured · %s", r->activity);
+    else if (r->pub) snprintf(sub, sizeof sub, "Public room");
     else snprintf(sub, sizeof sub, r->locked ? "by %s · locked" : "by %s", r->owner);
     sk_text(sub, IN_X + 28, y + 13, 9, SK_DIM, 0, IN_W - 120);
     bool here = !strcmp(public_slug(W.slug), r->slug);
@@ -273,7 +281,7 @@ void nav_draw(u64 now) {
   if (!NV.n) sk_text(NV.error[0] ? NV.error : NV.job ? "Loading rooms…" : NV.tab == 2 ? "You have not created any rooms yet." : "No rooms.",
                      BOT_W / 2, ly + 30, 10.5f, NV.error[0] ? SK_DANGER : SK_DIM, 1, IN_W - 20);
   float by = IN_Y + IN_H - 22;
-  sk_text("Most populated rooms first.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
+  sk_text(NV.tab == 2 ? "Most populated rooms first." : "Featured rooms first.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
   if (sk_button(IN_X + IN_W - 182, by, 76, NV.job ? "Loading…" : "Refresh", !NV.job)) nav_refresh();
   if (sk_button(IN_X + IN_W - 102, by, 100, "Create a room", true) || K.x) { NV.creating = true; NV.new_title[0] = 0; memset(NV.new_password, 0, sizeof NV.new_password); }
 }

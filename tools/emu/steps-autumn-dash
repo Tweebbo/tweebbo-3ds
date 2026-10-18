@@ -1,0 +1,19 @@
+# Real server-driven VIP Dash. Resume at the casino door (1,6).
+wait 30
+keys f g 180
+wait 3
+shot dash-approach
+key a
+wait 3
+shot dash-open
+key a
+wait 2
+shot dash-start
+key a
+wait 2
+shot dash-step
+key z
+wait 2
+shot dash-cashout
+key s
+wait 2

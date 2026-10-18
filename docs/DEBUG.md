@@ -1,12 +1,12 @@
 # Local Nintendo 3DS debug
 
-Build: **1.0.4-debug**, October 15, 2026. This is an unpublished test build, not approval to release the public client. First physical test target: New 3DS, New 3DS XL or New 2DS XL.
+Build: **1.0.9-debug.29**, October 18, 2026. This is an unpublished test build, not approval to release the public client. First physical test target: New 3DS, New 3DS XL or New 2DS XL.
 
 ## Install on the same LAN
 
-Open `http://192.168.1.20:8097/` on a computer or phone. On a console with the existing homebrew setup, open **FBI → Remote Install → Scan QR Code** and scan the page's CIA QR. Alternatively, download `tweebbo-debug.3dsx` and put it in `SD:/3ds/` for the Homebrew Launcher.
+Open `http://192.168.1.156:8097/` on a computer or phone. On a console with the existing homebrew setup, open **FBI → Remote Install → Scan QR Code** and scan the page's CIA QR. Alternatively, download `tweebbo-debug.3dsx` and put it in `SD:/3ds/` for the Homebrew Launcher.
 
-The PC and console must reach each other on the local network. The PC must remain on. The hotel is `ws://192.168.1.20:8092`; the browser edition is `http://192.168.1.20:8092`. If the PC's LAN address changes, change **Help → Local server…** on the console and rebuild the download page/QR for its new address.
+The PC and console must reach each other on the local network. The PC must remain on. The hotel is `ws://192.168.1.156:8092`; the browser edition is `http://192.168.1.156:8092`. If the PC's LAN address changes, change **Help → Local server…** on the console and rebuild the download page/QR for its new address.
 
 The HOME Menu title is **Tweebbo Debug** (title ID `0004000007EBB100`). It coexists with the public Tweebbo installation. It keeps its settings and character key in `SD:/3ds/Tweebbo-debug/`. It cannot join a public hotel or run the public updater. It starts a separate local character unless you explicitly restore a local account. Help's public health check only reads `/healthz` and never joins or creates an account.
 
@@ -66,10 +66,20 @@ Do not publish this build or remove the above gates as part of installing/testin
 ## Rebuild
 
 ```sh
-TWEEBBO_SERVER=ws://192.168.1.20:8092 ./build.sh debug
+TWEEBBO_SERVER=ws://192.168.1.156:8092 ./build.sh debug
 make -C tests
 make -C tests transport
 make -C tests online SERVER=ws://127.0.0.1:18093
 ```
 
 Port 18093 is an isolated fixture hotel; tests must never target a live player database. `out/debug/` contains the CIA/3DSX. The LAN download service serves only a curated `out/debug/share/` directory, not source, SD contents, logs, database backups or credentials.
+
+## Autumn local review — 2026-10-18
+
+The current debug package includes the tabbed wardrobe, fixed half-scale Overview, VIP Dash amounts/animations and the twelve-slot Safe Trading interface with two confirmation phases. The emulator completed a real browser/3DS transfer, including acceptance and both final confirmations, and a server-driven Dash stake/step/cashout. Native host and transport tests, online browser crossplay, all seven Casino games and twelve Node/QuickJS Snow Storm matches passed. The matching web/server source passed 126 Rust tests, 24 PostgreSQL contracts and the complete browser validation pipeline. See `docs/autumn-validation.json` and `../Tweebbo-Vercel/docs/performance/autumn-implementation.json`.
+
+The global M moderator tool remains browser-only. Existing real-device release gates still apply; emulator screenshots do not establish physical-console performance. No public release was uploaded.
+
+## Featured Navigator rooms — 2026-10-18
+
+Debug build 29 reads the shared room API metadata: Lobby, Casino, Pool, Diving and Rooftop appear before ordinary rooms. Casino has the original credits bag and ochre background; featured activity labels accompany the color. My Rooms keeps its owner filter and occupancy order. Older servers without the optional metadata still work. The shared policy and required work for future activity rooms are in `../Tweebbo-Vercel/docs/navigator-featured-rooms.md`.

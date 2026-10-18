@@ -1,0 +1,12 @@
+# Against an isolated local hotel with featured room metadata.
+wait 30
+shot navigator-lobby
+click 549 712
+wait 4
+shot navigator-all
+click 640 540
+wait 3
+shot navigator-public
+click 740 540
+wait 3
+shot navigator-mine

@@ -14,6 +14,7 @@ while read -r cmd a b c; do
     wait) sleep "$a" ;;
     shot) import -window root "/work/build/shots/$a.png" ;;
     key) xdotool search --sync --onlyvisible --class azahar windowactivate --sync 2>/dev/null; xdotool keydown "$a"; sleep "$(awk "BEGIN{print ${b:-120}/1000}")"; xdotool keyup "$a" ;;
+    keys) xdotool search --sync --onlyvisible --class azahar windowactivate --sync 2>/dev/null; xdotool keydown "$a" "$b"; sleep "$(awk "BEGIN{print ${c:-120}/1000}")"; xdotool keyup "$b" "$a" ;;
     click) xdotool mousemove "$a" "$b" mousedown 1; sleep 0.15; xdotool mouseup 1 ;;
     type) xdotool type --delay 80 "$a $b $c" ;;
     windows) xdotool search --onlyvisible --name . getwindowname %@ 2>/dev/null > /work/build/shots/windows.txt ;;
