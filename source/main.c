@@ -201,9 +201,16 @@ int main(int argc, char **argv) {
     u64 now = now_ms();
     if (!ui_input(hidKeysDown(), hidKeysHeld(), now)) break;
 #ifndef TWEEBBO_SHOWCASE
-    // Once inside the hotel, check for a newer version (once per session).
+    // Once inside the hotel, check for a newer version, then again every 15 minutes: the offer
+    // appears on both screens as soon as a release is published.
     static bool checked;
-    if (!checked && W.in_room && net_online()) { checked = true; update_check(); }
+    static u64 release_check;
+    if (!checked && W.in_room && net_online()) { checked = true; release_check = now_ms(); update_check(); }
+#ifndef TWEEBBO_DEBUG
+    UpdateState rs = update_state();
+    if (checked && W.in_room && net_online() && now_ms() - release_check > 15 * 60 * 1000 &&
+        (rs == UPD_LATEST || rs == UPD_AVAILABLE || rs == UPD_FAILED)) { release_check = now_ms(); update_check_quiet(); }
+#endif
 #endif
 #ifdef TWEEBBO_DEBUG
     // A pushed debug build reaches a running console within two minutes.
@@ -226,7 +233,7 @@ int main(int argc, char **argv) {
     C2D_TargetClear(top, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(top);
     if (!snow_top(now) && !casino_top(now)) {
-      scene_draw(now); gfx_filter(false); shop_top(now); look_top(now);
+      scene_draw(now); gfx_filter(false); shop_top(now); look_top(now); ui_draw_top(now);
 #ifdef TWEEBBO_SHOWCASE
       showcase_top(now);
 #endif

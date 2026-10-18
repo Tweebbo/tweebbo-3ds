@@ -1222,6 +1222,31 @@ static bool update_modal(void) {
 
 static bool update_modal_up;
 
+/** Top screen: the update offer where the player is looking, as soon as it is known (A updates,
+ *  B is Later on the bottom-screen window); after Later, a small reminder stays in the corner. */
+void ui_draw_top(u64 now) {
+  (void)now;
+  UpdateState st = update_state();
+  if (st != UPD_AVAILABLE) return;
+  char line[96];
+  if (!update_dismissed) {
+    fill_rect(0, 0, TOP_W, TOP_H, sk_rgba(0x000000, 150));
+    float w = 300, h = 104, x = (TOP_W - w) / 2, y = (TOP_H - h) / 2;
+    sk_window(x, y, w, h, "Update available");
+    sk_content(x + 5, y + TITLE_H + 2, w - 10, h - TITLE_H - 7);
+    snprintf(line, sizeof line, "Tweebbo %s is ready to install.", update_version());
+    sk_text(line, x + w / 2, y + TITLE_H + 10, 12, SK_TEXT, 1, w - 20);
+    snprintf(line, sizeof line, "You have %s. We recommend updating now.", update_current());
+    sk_text(line, x + w / 2, y + TITLE_H + 30, 10, SK_DIM, 1, w - 20);
+    sk_text("A: Update now     B: Later", x + w / 2, y + TITLE_H + 54, 11, SK_TEXT, 1, w - 20);
+    return;
+  }
+  snprintf(line, sizeof line, "Update %s ready · Help", update_version());
+  float w = text_width(line, 9.5f) + 14;
+  fill_round(TOP_W - w - 6, 6, w, 17, 4, sk_rgba(0x000000, 170));
+  text_draw(line, TOP_W - w / 2 - 6, 8, 9.5f, sk_rgb(SK_ACCENT), 1);
+}
+
 static void modal(void) {
   update_modal_up = update_modal();
   if (update_modal_up) return;

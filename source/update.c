@@ -101,6 +101,9 @@ static void manifest_url(char *url, int cap) {
   snprintf(url, (size_t)cap, "http://%s:%d/latest.json", host, DEBUG_DOWNLOADS_PORT);
 #else
   if (!store_load("update-url", url, cap) || !url[0]) snprintf(url, (size_t)cap, "%s", UPDATE_MANIFEST);
+  // GitHub's latest-release redirect is cached for a while after publishing: ask past the cache.
+  size_t n = strlen(url);
+  snprintf(url + n, (size_t)cap - n, "%ct=%llu", strchr(url, '?') ? '&' : '?', (unsigned long long)osGetTime());
 #endif
 }
 
