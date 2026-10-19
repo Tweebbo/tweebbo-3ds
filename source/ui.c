@@ -586,7 +586,7 @@ static void identity_done(const char *code, void *ctx) {
 
 static void identity_code(void *ctx) {
   (void)ctx;
-  osk_open_secret("Private access code from \"Save / restore character\"", 64, identity_done, NULL);
+  osk_open_secret("Private access code from \"Character code\"", 64, identity_done, NULL);
 }
 
 static void panel_me(u64 now) {
@@ -641,18 +641,35 @@ static void panel_me(u64 now) {
   if (sk_button(IN_X + 118, y, 80, "Rename", true)) rename_me();
   if (sk_button(IN_X + 204, y, IN_W - 208, "Pets", net_online())) ui_open(P_PETS);
   y += 24;
-  // Private code: hidden by default (must not appear in screenshots).
-  sk_text("Character code", IN_X + 4, y + 2, 10.5f, SK_TEXT, 0, 92);
-  if (net_state() == NET_OFFLINE) sk_text("Only online.", IN_X + 160, y + 2, 10, SK_DIM, 0, 100);
-  else {
-    if (sk_button(IN_X + 98, y, 66, U.show_code ? "Hide code" : "Show code", net_token()[0] != 0)) U.show_code = !U.show_code;
-    if (sk_button(IN_X + 168, y, 66, "Use a code", U.identity_job == 0)) identity_code(NULL);
-    if (sk_button(IN_X + 238, y, IN_W - 242, "Move…", true)) ui_open(P_MOVE);
-    if (U.show_code && net_token()[0]) {
-      fill_round(IN_X + 4, y + 20, IN_W - 8, 15, 3, sk_rgb(SK_WHITE));
-      sk_text(net_token(), IN_X + 8, y + 21, 10, SK_TEXT, 0, IN_W - 16);
-    }
+  // The private code (and restoring another character) has its own window: it is long and
+  // the Me panel has no room above the bottom bar for it.
+  if (sk_button(IN_X + 4, y, IN_W - 8, "Character code", true)) ui_open(P_IDENTITY);
+  identity_poll(now);
+}
+
+// The web's "Save / restore character" sheet: the private code, restoring another character
+// and the one-time move. It has its own window so the code is never hidden by the bottom bar.
+void identity_draw(u64 now) {
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Character code")) { ui_open(P_ME); return; }
+  sk_content(IN_X, IN_Y, IN_W, IN_H);
+  float x = IN_X + 6, w = IN_W - 12, y = IN_Y + 6;
+  if (net_state() == NET_OFFLINE) {
+    sk_paragraph("Connect to tweebbo.lol to see and use your character code.", x, y, w, 11, SK_TEXT, 4);
+    if (sk_button(x, IN_Y + IN_H - 26, w, "Back", true)) ui_open(P_ME);
+    return;
   }
+  // Private code: hidden by default (must not appear in screenshots).
+  fill_round(x, y, w, 22, 4, sk_rgb(SK_WHITE));
+  if (U.show_code && net_token()[0]) sk_text(net_token(), x + w / 2, y + 5, 12.5f, SK_TEXT, 1, w - 12);
+  else sk_text(net_token()[0] ? "The code is hidden." : "Waiting for the hotel…", x + w / 2, y + 5, 10.5f, SK_DIM, 1, w - 12);
+  y += 28;
+  if (sk_button(x, y, w, U.show_code ? "Hide code" : "Show code", net_token()[0] != 0)) U.show_code = !U.show_code;
+  y += 24;
+  sk_paragraph("Anyone with this code can use your character, also on the web (PC, phone or X). Keep it private.", x, y, w, 9, SK_DIM, 2);
+  y += 26;
+  if (sk_button(x, y, w, "Use a code", U.identity_job == 0)) identity_code(NULL);
+  y += 24;
+  if (sk_button(x, y, w, "Move to another device…", true)) ui_open(P_MOVE);
   identity_poll(now);
 }
 
@@ -1135,7 +1152,7 @@ static void toolbar(void) {
   for (int i = 0; i < COUNT(TOOLS); i++) {
     const Tool *t = &TOOLS[i];
     float cx = i * w + w / 2;
-    bool on = U.panel == t->panel || (t->panel == P_ME && (U.panel == P_LOOK || U.panel == P_MOVE));
+    bool on = U.panel == t->panel || (t->panel == P_ME && (U.panel == P_LOOK || U.panel == P_MOVE || U.panel == P_IDENTITY));
     if (on) fill_round(i * w + 3, BAR_Y + 2, w - 6, BAR_H - 4, 4, sk_rgba(0xffffff, 40));
     int iw = 0, ih = 0;
     if (t->icon && sk_sprite_size(t->icon, &iw, &ih)) {
@@ -1374,12 +1391,12 @@ bool ui_input(u32 down, u32 held, u64 now) {
     if ((down & KEY_Y) && cd && cd->kind == KIND_DICE && ctx.item->state >= 1 && ctx.item->state <= 6) send_use_op(ctx.item->id, 1);
     else if (down & KEY_Y) send_gesture(GESTURE_DANCE);
     if (down & KEY_B) send_gesture(GESTURE_SIT);
-  } else if (K.b && U.panel != P_LOOK && U.panel != P_GAME) {
-    // B closes the window (the wardrobe returns to Me from its own panel).
+  } else if (K.b && U.panel != P_LOOK && U.panel != P_IDENTITY && U.panel != P_GAME) {
+    // B closes the window (the wardrobe and the character code return to Me from their own panel).
     if (U.panel == P_ENT) scene_select(0);
     ui_close();
     K.b = false;
-  } else if (K.b && U.panel == P_LOOK) ui_open(P_ME);
+  } else if (K.b && (U.panel == P_LOOK || U.panel == P_IDENTITY)) ui_open(P_ME);
   // The Circle Pad always walks; the D-Pad only when no window is open.
   if (U.panel != P_CASINO && U.panel != P_GAME) stick_walk(held, !window, now);
   return true;
@@ -1476,6 +1493,7 @@ void ui_draw(u64 now) {
     case P_HAND: hand_draw(now); break;
     case P_ME: panel_me(now); break;
     case P_MOVE: panel_move(now); break;
+    case P_IDENTITY: identity_draw(now); break;
     case P_FRIENDS: friends_draw(now); break;
     case P_CHAT: panel_chat(now); break;
     case P_SETTINGS: panel_settings(now); break;

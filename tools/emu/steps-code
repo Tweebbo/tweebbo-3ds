@@ -1,0 +1,14 @@
+# The private character code (Me > Character code) must be fully visible above the bottom bar.
+# Against the local server (NET=host and server.txt = ws://127.0.0.1:8092).
+# Bottom bar at y=712: Me 503, Navigator 549, Catalogue 594, Hand 640, Friends 686, Chat 731, Help 777.
+wait 30
+shot 01-room
+click 503 712
+wait 3
+shot 02-me
+click 640 675
+wait 3
+shot 03-code-hidden
+click 640 571
+wait 2
+shot 04-code-shown

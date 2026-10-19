@@ -28,7 +28,7 @@ A console with custom firmware (Luma3DS) is required. `tweebbo.3dsx` works from 
   - *Hand*: grouped inventory and **place in room**.
   - **Build mode**: Circle Pad / D-Pad moves the ghost furniture (green when it fits, red when it does not, same rules as the web), L/R rotate, A places, B cancels; wall items slide along the wall and L/R lower or raise them. Tapping the minimap jumps to that tile.
   - Furniture panel: sit or lie down, use (switches, dice, teleporters, gates), choose a drink at dispensers, move, rotate, pick up and redeem.
-  - *Me*: gestures, drinks, the full wardrobe (category tabs, real clothing previews, colours and gender filters), renaming and **Save / restore character**.
+  - *Me*: gestures, drinks, the full wardrobe (category tabs, real clothing previews, colours and gender filters), renaming and the **character code** (save / restore).
   - *Friends Console*: friends with their room and *Visit*, requests, search, remove, ignore and private messages.
   - *Pets*: adopt (species, coat, color and name), place, commands and status; pets are drawn and walk in the room.
   - Rooms: the lobby, private rooms, Classic Park with its animated fountain and The Pool with swimming.
@@ -37,7 +37,7 @@ A console with custom firmware (Luma3DS) is required. `tweebbo.3dsx` works from 
   - *Casino*: five slot machines, roulette, blackjack, Casino Hold'em, Video Poker, Crash and the **VIP Dash** (climb the red carpet on one of four risk ladders and cash out before the trap, with the original furniture, figures, coin and trap animations), with the original cards and symbols. On the console every game plays with credits; chips (real money) are only in the PC edition. Bets and payouts are decided by the hotel.
   - **Trading**: *Trade* on another player's card offers up to twelve furniture slots from your hand; both players accept and then confirm again, any change to an offer resets both confirmations, and credits are never traded.
   - **Tweebbo Club**: Club members are marked on their card, and the Club and Club Gold badges show on profiles. Members get 100 credits instead of 10 for hanging out.
-  - **Support Tweebbo** (Me → *Support*): what a donation gives (Tweebbo Club for life, the VIP badge and 10,000 credits) and how chips work, with a QR code to tweebbo.lol, where donations and chips are available with the same character code.
+  - **Support Tweebbo** (Me → *Support*): what a donation gives (Tweebbo Club for life, the VIP badge and 10,000 credits) and how chips work, with a QR code to tweebbo.lol, where donations and chips are available with the same character code. A *Show code* shortcut opens your character code.
   - Password rooms: create a room with a password, lock or open your rooms from My Rooms, and enter locked rooms by typing the password.
   - Walls and floors, the expanded furniture and clothing, VIP/Staff/Club badges and the new lobby.
   - A touch keyboard for chat, names and passwords: the hotel keeps moving on the top screen while you type.
@@ -63,7 +63,7 @@ Touch screen: bottom bar (Me, Navigator, Catalogue, Hand, Friends, Chat, Help), 
 
 ## Saved progress
 
-Everything done on the console (credits, inventory, rooms, looks, name, friends, pets) is saved on the server, exactly like the web. The console only keeps the character key (`sdmc:/3ds/Tweebbo/token-<server>.txt`, **private**) and the last room, so reopening, updating or reinstalling keeps the same character. If the SD card is lost, *Me → Save / restore character* recovers the character with its private code (also from the web).
+Everything done on the console (credits, inventory, rooms, looks, name, friends, pets) is saved on the server, exactly like the web. The console only keeps the character key (`sdmc:/3ds/Tweebbo/token-<server>.txt`, **private**) and the last room, so reopening, updating or reinstalling keeps the same character. If the SD card is lost, *Me → Character code* → *Use a code* recovers the character with its private code (also from the web).
 
 ## Performance and compatibility
 

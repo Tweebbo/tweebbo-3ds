@@ -1,0 +1,17 @@
+# Support Tweebbo > Show code opens the character code window, fully above the bottom bar.
+# Against the local server (NET=host and server.txt = ws://127.0.0.1:8092).
+# Bottom bar at y=712: Me 503, Navigator 549, Catalogue 594, Hand 640, Friends 686, Chat 731, Help 777.
+wait 35
+shot 00-room
+click 503 712
+wait 3
+shot 01-me
+click 749 555
+wait 3
+shot 02-support
+click 753 665
+wait 3
+shot 03-code
+click 640 571
+wait 2
+shot 04-code-shown

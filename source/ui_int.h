@@ -19,6 +19,7 @@ typedef enum {
   P_ENT,      /* another character */
   P_PETS,     /* pets */
   P_MOVE,     /* one-time move of the character to another device */
+  P_IDENTITY, /* private character code: show it and restore another character */
   P_GAME, P_PROFILE, P_CASINO, P_SNOW, P_GAMES, P_RIGHTS,
   P_TRADE,    /* furniture trade with another player */
   P_SUPPORT,  /* donations, Tweebbo Club and chips: what the PC edition offers */
@@ -101,6 +102,7 @@ void profile_draw(u64 now);
 
 void trade_draw(u64 now);
 void support_draw(u64 now);
+void identity_draw(u64 now);
 
 void casino_poll(u64 now);
 void casino_draw(u64 now);

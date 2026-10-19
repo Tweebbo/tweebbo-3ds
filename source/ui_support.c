@@ -47,6 +47,7 @@ void support_draw(u64 now) {
     if (me && (me->flags & FLAG_CLUB)) sk_text("You are a Club member. Thank you!", tx, y + 1, 8.5f, SK_GO, 0, tw);
     sk_paragraph("Donate at tweebbo.lol from a PC or phone with your character code.", tx, foot_y, tw, 8.5f, SK_DIM, 2);
     qr_block(qx, IN_Y + 28);
+    if (sk_button(qx, IN_Y + IN_H - 34, 80, "Show code", true)) ui_open(P_IDENTITY);
   } else {
     fill_round(IN_X + 2, IN_Y + 22, IN_W - 4, IN_H - 22, 4, sk_rgb(0xf7ecec));
     sk_text("Chips: the PC Casino", tx, y, 11.5f, 0x70202a, 0, tw); y += 15;
@@ -54,5 +55,6 @@ void support_draw(u64 now) {
     sk_paragraph("On Nintendo 3DS every Casino game, the VIP Dash included, plays with free credits.", tx, y, tw, 9, SK_TEXT, 4);
     sk_paragraph("For chips, open tweebbo.lol with your character code (18+).", tx, foot_y, tw, 8.5f, SK_DIM, 2);
     qr_block(qx, IN_Y + 28);
+    if (sk_button(qx, IN_Y + IN_H - 34, 80, "Show code", true)) ui_open(P_IDENTITY);
   }
 }
