@@ -142,8 +142,18 @@ char look_gender(u64 look) {
            : wardrobe_tops[L.shirt_style < wardrobe_tops_count ? L.shirt_style : 0].sex;
 }
 
+#include "gen/character_skins.h"
 void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, int drink, bool sip,
                  float x, float y, float scale, u8 alpha) {
+  int skin = (int)((look >> 48) & 255);
+  if (skin >= 1 && skin <= CHARACTER_SKIN_COUNT) {
+    int p = pose <= POSE_DANCE ? pose : POSE_STD, d = dir & 7;
+    int f = (int)(now_ms() * (double)character_skin_fps[skin-1][p][d] / 1000) % character_skin_frames[skin-1][p][d];
+    char name[32];snprintf(name, sizeof name, "k_%d_%d_%d_%d", skin, p, d, f);
+    const PeopleSprite *s = find_sprite(name);
+    if (s) gfx_sprite(s->page,s->x,s->y,s->w,s->h,x+s->rx*scale,y+s->ry*scale,scale,false,abgr(0xffffff,alpha));
+    return;
+  }
   look = resolved_look(look);
   AvatarEntry *e = NULL, *victim = &av_cache[0];
   for (int i = 0; i < AV_CACHE; i++) {

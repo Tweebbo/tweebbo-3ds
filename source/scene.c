@@ -286,7 +286,15 @@ static json_t *owner_identity(u32 guest) {
 }
 
 static u64 appearance(const Ent *e) {
-  return pool_look(e, e->look) | (owner_identity(e->guest) ? AV_FOUNDER : (e->flags & 128) ? AV_FRANK : 0);
+  bool founder = owner_identity(e->guest) != NULL;
+  json_t *skins = json_object_get(owner_snapshot, "skins"), *entry;
+  size_t i;
+  json_array_foreach(skins, i, entry) {
+    int skin = (int)json_integer_value(json_object_get(entry, "skin"));
+    if ((u32)json_integer_value(json_object_get(entry, "guest")) == e->guest && skin >= 1 && skin <= 7)
+      return e->look | ((u64)skin << 48);
+  }
+  return pool_look(e, e->look) | (founder ? AV_FOUNDER : (e->flags & 128) ? AV_FRANK : 0);
 }
 
 static void founder_diamond(float x, float y, float width, u8 alpha) {

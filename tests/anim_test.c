@@ -8,6 +8,8 @@
 static char trace[4096];
 static int ops;
 static u64 test_look = 0x1234567ull;
+static u64 test_time;
+u64 now_ms(void) { return test_time; }
 static void rec(int page, int sx, int sy, int sw, int sh, float x, float y) {
   char b[64];
   snprintf(b, sizeof b, "%d:%d,%d,%d,%d@%.0f,%.0f;", page, sx, sy, sw, sh, x, y);
@@ -68,6 +70,16 @@ int main(void) {
   std = draw(POSE_STD, 0, 0, 0, false);
   assert(ops > 0);
   differs("later wardrobe walking", draw(POSE_WALK, 0, 0, 0, false), draw(POSE_WALK, 2, 0, 0, false));
+  for (int skin=1; skin<=7; skin++) {
+    test_look = (u64)skin << 48;
+    for (int pose=POSE_STD; pose<=POSE_DANCE; pose++) for (int dir=0; dir<8; dir++) {
+      trace[0]=0; ops=0;
+      avatar_draw(test_look,dir,pose,0,0,dir,0,false,0,0,1,255);
+      assert(ops==1 && trace[0]);
+    }
+    test_time=0;const char *first=draw(POSE_WALK,0,0,0,false);
+    test_time=125;differs("character skin walk",first,draw(POSE_WALK,0,0,0,false));
+  }
   printf("OK\n");
   return 0;
 }
