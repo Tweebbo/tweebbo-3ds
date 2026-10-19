@@ -6,7 +6,7 @@ convert_texture() {
   case "$file" in
     build/snow/*) target=romfs/snow/$name.t3x; case "$name" in gray*) format=la8;; esac ;;
     build/gfx/furni/*) target=romfs/furni/$name.t3x ;;
-    *) target=romfs/gfx/$name.t3x; case "$name" in atlasg*|font*) format=la8;; esac ;;
+    *) target=romfs/gfx/$name.t3x; case "$name" in atlasg*|font*) format=la8;; scene_*) format=rgba5551;; esac ;;
   esac
   if [ ! "$target" -nt "$file" ]; then
     tex3ds -f "$format" -z auto -o "$target.tmp" "$file" >/dev/null && mv "$target.tmp" "$target"

@@ -17,6 +17,7 @@ static C2D_TextBuf text_buf;
 static C3D_Tex font_texture;
 static bool linear;
 static void scene_free(void);
+static bool furni_release_all(void);
 static void draw_tex(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float scale, bool flip, u32 color);
 static void draw_tex_xy(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool flip, u32 color);
 static C3D_Tex snow_pages[12];
@@ -255,10 +256,14 @@ const Scene *gfx_scene(const char *model) {
   C2D_Flush();
   scene_free();
   if (!want) return NULL;
+  // The scene pages are the room (up to 2x 1024x1024): they take priority over the previous
+  // room background and the cached furniture, both of which load again on demand. Without
+  // this, a two-page Lido scene does not fit in the linear heap and the room stays black.
+  gfx_room_release();
   for (int i = 0; i < want->pages && i < SCENE_PAGES; i++) {
     char path[64];
     snprintf(path, sizeof path, "romfs:/gfx/scene_%s_%d.t3x", want->model, i);
-    if (!load_t3x(path, &scene_tex[i])) { scene_free(); return NULL; }
+    if (!load_t3x(path, &scene_tex[i]) && !(furni_release_all() && load_t3x(path, &scene_tex[i]))) { scene_free(); return NULL; }
     if (linear) C3D_TexSetFilter(&scene_tex[i], GPU_LINEAR, GPU_LINEAR);
     scene_tex_n = i + 1;
   }
