@@ -447,8 +447,29 @@ static void tick(u64 now) {
 
 // ---------------------------------------------------------------- API
 
+/** Public slug of a room model, as the server exposes it (lobby, park, pool…). */
+static const char *model_slug(const char *model) {
+  if (!strcmp(model, "newbie_lobby")) return "lobby";
+  if (!strcmp(model, "park_a")) return "park";
+  if (!strcmp(model, "pool_a")) return "pool";
+  if (!strcmp(model, "pool_b")) return "diving";
+  if (!strcmp(model, "md_a")) return "rooftop";
+  return model;
+}
+
+/** Accepts either a public slug or the packed model key. */
+static const char *model_key(const char *room) {
+  if (!strcmp(room, "lobby")) return "newbie_lobby";
+  if (!strcmp(room, "park")) return "park_a";
+  if (!strcmp(room, "pool")) return "pool_a";
+  if (!strcmp(room, "diving")) return "pool_b";
+  if (!strcmp(room, "rooftop")) return "md_a";
+  return room;
+}
+
 void sim_start(const char *room_key, u64 now) {
   memset(&S, 0, sizeof S);
+  room_key = model_key(room_key ? room_key : "lobby");
   S.model = &room_models[0];
   for (int i = 0; i < room_model_count; i++) if (!strcmp(room_models[i].key, room_key)) S.model = &room_models[i];
   const char *p = S.model->rows;
@@ -503,7 +524,7 @@ static void join(const char *token, u64 now) {
   static Writer snapshot;
   Writer *room = &snapshot;
   w_begin_into(room, S_ROOM, big, sizeof big);
-  w_str(room, "lobby"); w_str(room, "Tweebbo Lobby"); w_str(room, S.model->key);
+  w_str(room, model_slug(S.model->key)); w_str(room, S.model->name); w_str(room, S.model->key);
   w_u8(room, S.w); w_u8(room, S.h); w_str(room, rows);
   w_u8(room, S.model->door_x); w_u8(room, S.model->door_y);
   w_var(room, 0); w_str(room, "");

@@ -15,6 +15,8 @@ void gfx_furni_icon(u16 def, float cx, float cy, float box);
 void gfx_furni_icon_scaled(u16 def, float cx, float cy, float k);
 /** Preloads a furniture texture (when entering a room). */
 void gfx_furni_preload(u16 def);
+/** Furniture texture loads and evictions since the last call, and the cache size and budget. */
+void gfx_perf_take(u32 *loads, u32 *evictions, u32 *bytes, u32 *budget);
 /** Pet part with its breed palette; `solid` paints it a single color (shadow). */
 void gfx_pet(int palette, const PetPart *p, float x, float y, float scale, bool flip, u32 color, bool solid);
 /** Call once per frame: frees old textures when over budget. */

@@ -23,6 +23,7 @@
 #define SLOT_MS 2000
 #define FIRST_CHANNEL 8
 #define CACHE_DIR "sdmc:/3ds/Tweebbo/trax"
+#define MUSIC_RESERVE (4u * 1024 * 1024)
 
 typedef struct { u16 sample, start; } Clip;
 typedef struct { char provider[12], title[80]; int duration, slots; u8 clip_n[4]; Clip clips[4][MAX_CLIPS]; } Track;
@@ -110,7 +111,10 @@ static void load_sample(int id) {
       }
     }
   }
-  s8 *data = g.len ? linearAlloc((size_t)g.len) : NULL;
+  // Samples live in linear memory (the DSP reads them), which room textures also need: never
+  // let the music take the last MUSIC_RESERVE bytes.
+  s8 *data = g.len && linearSpaceFree() > (u32)g.len + MUSIC_RESERVE ? linearAlloc((size_t)g.len) : NULL;
+  if (g.len && !data) dbg_log("music: sample %d skipped (linear free %lu KB)", id, (unsigned long)(linearSpaceFree() / 1024));
   if (data) { memcpy(data, g.buf, (size_t)g.len); DSP_FlushDataCache(data, (u32)g.len); }
   free(g.buf);
   samples[id].data = data;
@@ -202,8 +206,26 @@ static void silence(void) {
   for (int c = 0; c < 4; c++) { if (M.dsp) ndspChnWaveBufClear(FIRST_CHANNEL + c); M.clip_on[c] = -1; }
 }
 
+/** Frees the samples the given track does not use (all of them for NULL). Call after
+ *  silence(): no channel plays them any more. Samples being downloaded are left alone. */
+static void release_samples(const Track *keep) {
+  for (int id = 1; id < MAX_SAMPLE; id++) {
+    if (samples[id].state != S_READY && samples[id].state != S_FAILED) continue;
+    bool used = false;
+    for (int c = 0; keep && c < 4 && !used; c++)
+      for (int i = 0; i < keep->clip_n[c] && !used; i++) used = keep->clips[c][i].sample == id;
+    if (used) continue;
+    if (samples[id].data) linearFree(samples[id].data);
+    samples[id].data = NULL;
+    samples[id].n = 0;
+    __sync_synchronize();
+    samples[id].state = S_NONE;
+  }
+}
+
 void music_room_changed(void) {
   silence();
+  release_samples(NULL);
   M.known = M.playing = false;
   M.active = M.machine = 0;
   M.track_n = M.song_n = 0;
@@ -244,9 +266,9 @@ static bool dsp_ready(void) {
 
 void music_poll(u64 now) {
   const Track *t = playing_track();
-  if (!t || strcmp(t->provider, "trax") || !M.listening) { if (M.heard_key) { silence(); M.heard_key = 0; } return; }
+  if (!t || strcmp(t->provider, "trax") || !M.listening) { if (M.heard_key) { silence(); release_samples(NULL); M.heard_key = 0; } return; }
   u64 key = M.revision * 64 + (u64)M.index;
-  if (key != M.heard_key) { silence(); M.heard_key = key; }
+  if (key != M.heard_key) { silence(); release_samples(t); M.heard_key = key; }
   s64 elapsed = M.position + ((s64)now + M.offset - M.started);
   if (elapsed < 0) elapsed = 0;
   for (int c = 0; c < 4; c++) {

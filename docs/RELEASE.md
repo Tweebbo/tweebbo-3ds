@@ -1,8 +1,12 @@
-Tweebbo for Nintendo 3DS: the same hotel as [tweebbo.lol](https://tweebbo.lol), on your console. Play with people on the web, on X and on PC.
+Tweebbo for Nintendo 3DS: the same hotel as [tweebbo.lol](https://tweebbo.lol), on your console. Play with people on the web, on PC and on Nintendo Switch and PlayStation Vita.
 
 > Tweebbo is in development and may be unstable.
 
-**Fixed in 1.1.1:** the private character code is no longer hidden behind the bottom bar. In *Me* it now opens in its own *Character code* window, large and easy to read, so you can copy it and use the same character on tweebbo.lol (PC, phone or X) to donate or buy chips. The *Support Tweebbo* windows also have a *Show code* shortcut.
+**New in 1.2.0**
+- Offline play now includes the Classic Lobby, Classic Park, both pool areas, Rooftop Rumble, Casino and After Hours Bar, with bots.
+- Support and chips payment by QR code from the console.
+- Player cards now show the correct console (Nintendo 3DS, Nintendo Switch or PlayStation Vita).
+- In-game updates resume interrupted downloads instead of sending you to FBI.
 
 **Install (CFW with Luma3DS required)**
 1. On the console, open **FBI** → *Remote Install* → *Scan QR Code* and scan the QR code below (`qr.png` in this release), or download `tweebbo.cia` and install it with FBI.

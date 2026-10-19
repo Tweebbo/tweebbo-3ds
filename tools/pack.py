@@ -32,13 +32,28 @@ def save_png(image, path):
     if not path.exists() or path.read_bytes() != raw: path.write_bytes(raw)
 
 
-# Rooms included in the offline mode: public model key.
-ROOMS = ['newbie_lobby']
+# Rooms included in the offline mode: public room model keys, in navigator order.
+ROOMS = ['newbie_lobby', 'park_a', 'pool_a', 'pool_b', 'md_a', 'casino', 'afterhours']
 # Private room backgrounds that are packed (classic models).
 # Classic icons the interface draws scaled down (name, maximum side in pixels).
 SMALL_ICONS = [('building_icon', 24), ('brochure_icon', 24), ('hand_icon', 26), ('help_icon', 24), ('mes_lite_icon', 24),
                ('credits_icon', 14), ('mes_smallbuddy_head', 13), ('building_icon', 18),
-               ('door_password', 18), ('bar_cigar_icon', 18)]
+               ('door_password', 18), ('bar_cigar_icon', 18), ('mes_dark_icon', 24)]
+# Classic 9-slice chrome drawn at 1:1 by the Switch client (the 3DS draws it with primitives).
+# The generic "only names used by the 3DS source" filter below would drop them.
+EXTRA_UI = [
+    'window.top.left', 'window.top.middle', 'window.top.right',
+    'window.middle.left', 'window.middle.middle', 'window.middle.right',
+    'window.bottom.left', 'window.bottom.middle', 'window.bottom.right',
+    'content.top.left', 'content.top.middle', 'content.top.right',
+    'content.middle.left', 'content.middle.middle', 'content.middle.right',
+    'content.bottom.left', 'content.bottom.middle', 'content.bottom.right',
+    'button.a.left.active', 'button.a.middle.active', 'button.a.right.active',
+    'button.a.left.pressed', 'button.a.middle.pressed',
+    'button.b.left.active', 'button.b.middle.active', 'button.b.right.active',
+    'button.b.left.pressed', 'button.b.middle.pressed', 'button.b.right.pressed',
+    'field.left', 'field.middle', 'field.right',
+]
 # Public rooms with their own layers.
 SCENES = ['park_a', 'pool_a', 'pool_b', 'md_a']
 # Layer roles (SceneSprite.role) of the Lido rooms: drawn under the floor, and the two states
@@ -118,6 +133,12 @@ def pack_def(images):
     return canvas, rects
 
 
+def has_soft_alpha(img):
+    """True when some pixel is partly transparent: RGBA5551 would lose it."""
+    hist = img.getchannel('A').histogram()
+    return any(hist[1:255])
+
+
 def c_str(s):
     s = s.replace('\\', '\\\\').replace('"', '\\"').replace('\r', '').replace('\n', '\\n').replace('\t', ' ')
     # "??" followed by certain characters would form a trigraph.
@@ -127,16 +148,27 @@ def c_str(s):
 def main():
     GFX.mkdir(parents=True, exist_ok=True)
     GEN.mkdir(parents=True, exist_ok=True)
-    # Two groups: grey parts (tinted on the GPU) on LA8 pages at half the memory, the rest in RGBA8.
-    color_packer, gray_packer = Packer(), Packer()
+    # Linear memory is the 3DS's scarcest resource, so each sprite goes to the cheapest page
+    # format that shows it exactly:
+    #   'c' colour with on/off alpha  -> atlas<i>,  RGBA5551 (16 bpp)
+    #   's' colour with soft alpha    -> atlass<i>, RGBA8 (32 bpp)
+    #   'g' grey, tinted on the GPU   -> atlasg<i>, LA8 (16 bpp)
+    #   'k' character skins           -> atlask<i>, RGBA8, loaded only while a skin is on screen
+    color_packer, soft_packer, gray_packer, skin_packer = Packer(), Packer(), Packer(), Packer()
+    # Textures that must stay RGBA8 (tools/convert-textures.sh reads build/gfx/soft-alpha.txt).
+    soft_alpha = []
 
     class Dual:
-        def add(self, img):
+        def add(self, img, skin=False):
             img = img.convert('RGBA')
+            if skin:
+                return ('k',) + skin_packer.add(img)
             px = [q for q in img.get_flattened_data() if q[3]] if hasattr(img, 'get_flattened_data') else [q for q in img.getdata() if q[3]]
             gray = all(q[0] == q[1] == q[2] for q in px)
-            r = (gray_packer if gray else color_packer).add(img)
-            return ('g' if gray else 'c',) + r
+            if gray:
+                return ('g',) + gray_packer.add(img)
+            soft = any(q[3] < 255 for q in px)
+            return ('s',) + soft_packer.add(img) if soft else ('c',) + color_packer.add(img)
     packer = Dual()
 
     # Pets: the same layout in every texture, one texture per breed palette.
@@ -264,7 +296,8 @@ def main():
     rects = {}
     for i in order:
         s = people[i]
-        rects[i] = packer.add(extra_images[s['name']] if s['name'] in extra_images else Image.open(SRC / 'people' / f"{s['name']}.png"))
+        rects[i] = packer.add(extra_images[s['name']] if s['name'] in extra_images else Image.open(SRC / 'people' / f"{s['name']}.png"),
+                              skin=s['name'].startswith('k_'))
 
     # --- furniture: one texture per definition (romfs:/furni/d<id>.t3x), loaded on demand ---
     catalogue = json.loads((SRC / 'data/models/catalogue.json').read_text())
@@ -311,7 +344,11 @@ def main():
             print(f'Furniture {def_id}: {len(canvases)} texture pages (original resolution)')
         for page, canvas in enumerate(canvases):
             save_png(canvas, FURNI / f'd{def_id}_{page}.png')
-            textures.append((def_id, page, canvas.width * canvas.height * 4))
+            # RGBA5551 (half the memory) unless the art has soft alpha (glass, shadows, glows).
+            soft = has_soft_alpha(canvas)
+            if soft:
+                soft_alpha.append(f'd{def_id}_{page}')
+            textures.append((def_id, page, canvas.width * canvas.height * (4 if soft else 2)))
         for v in variants:
             for p in v['parts']:
                 p['rect'] = def_rects[p['img']]
@@ -331,6 +368,8 @@ def main():
     # Only graphics the interface uses (named in the C code): saves linear memory.
     used_src = ' '.join(f.read_text() for f in (ROOT / 'source').glob('*.c'))
     ui_names = [n for n in ui_names if f'"{n}"' in used_src]
+    # Chrome the Switch client draws with the original 9-slice art.
+    ui_names = sorted(set(ui_names) | set(EXTRA_UI), key=lambda n: n.encode())
     ui_rects = {}
     for n in ui_names:
         f = SRC / 'data/classic' / classic_ui[n]['file']
@@ -394,20 +433,29 @@ def main():
     ui_names.sort(key=lambda n: n.encode())
 
     page_files = []
-    for group, pk in (('c', color_packer), ('g', gray_packer)):
+    first_page = {}
+    # Resident groups first; the skin pages come last and load on demand (atlas_page_resident).
+    for group, pk, prefix in (('c', color_packer, 'atlas'), ('s', soft_packer, 'atlass'), ('g', gray_packer, 'atlasg'), ('k', skin_packer, 'atlask')):
+        first_page[group] = len(page_files)
+        if not pk.seen:
+            continue
         for i, page in enumerate(pk.pages):
             if i == len(pk.pages) - 1:
                 # The last page only takes the used height (power of two): saves linear memory.
                 used = pk.y + pk.shelf
                 page = page.crop((0, 0, PAGE, max(8, 1 << (used - 1).bit_length())))
-            name = f'atlas{i}' if group == 'c' else f'atlasg{i}'
+            name = f'{prefix}{i}'
             save_png(page, GFX / f'{name}.png')
             page_files.append(name)
+    for stale in GFX.glob('atlas*.png'):
+        if stale.stem not in page_files:
+            stale.unlink()
     n_color = len(color_packer.pages)
+    resident_pages = first_page['k']
 
     def fix(r):
         group, page, x, y, w_, h_ = r
-        return (page if group == 'c' else n_color + page, x, y, w_, h_)
+        return (first_page[group] + page, x, y, w_, h_)
     rects = {k: fix(v) for k, v in rects.items()}
     swim_rects = [fix(r) for r in swim_rects]
     ui_rects = {k: fix(v) for k, v in ui_rects.items()}
@@ -431,6 +479,8 @@ def main():
                 canvas.paste(cut, (0, 0))
                 file = f'room_{name}_{len(tiles)}'
                 save_png(canvas, GFX / f'{file}.png')
+                if has_soft_alpha(canvas):
+                    soft_alpha.append(file)
                 tiles.append((file, tx, ty, cut.width, cut.height))
         backgrounds.append((name, room, img.size, tiles))
 
@@ -461,7 +511,10 @@ def main():
     w('// Generated by tools/pack.py. Do not edit by hand.')
     w('#include "assets.h"')
     w('')
+    (GFX / 'soft-alpha.txt').write_text(''.join(f'{n}\n' for n in sorted(soft_alpha)))
     w(f'const int atlas_page_count = {len(page_files)};')
+    w(f'/** Pages before this index stay loaded; the rest (character skins) load on demand. */')
+    w(f'const int atlas_page_resident = {resident_pages};')
     w('const char *const atlas_page_files[] = {' + ', '.join(c_str(n) for n in page_files) + '};')
     w('')
     w(f'const PeopleSprite people_sprites[{len(people)}] = {{')
@@ -553,7 +606,9 @@ def main():
         drinks = ','.join(str(x) for x in (d.get('drinks') or []))
         games = ['slot', 'roulette', 'blackjack', 'crash', 'poker', 'videopoker', 'dash']
         casino = next((i + 1 for i, name in enumerate(games) if 'casino_' + name in d['flags']), 0)
-        w(f"  {{{d['id']}, {d['kind']}, {d['width']}, {d['height']}, {d['seatHeight']}, {d['states']}, {bits}, {rots}, {drink}, {c_str(d['name'])}, {tex}, {ix}, {iy}, {iw}, {ih}, {c_str(drinks)}, {c_str(d.get('description') or '')}, {ip}, {casino}}},")
+        # Chip tokens of the Tweebbo Exchange (CHIP_<value>_token): redeemed for chips, not credits.
+        chips = int(d['sprite'].split('_')[1]) if 'redeemable_chips' in d['flags'] else 0
+        w(f"  {{{d['id']}, {d['kind']}, {d['width']}, {d['height']}, {d['seatHeight']}, {d['states']}, {bits}, {rots}, {drink}, {c_str(d['name'])}, {tex}, {ix}, {iy}, {iw}, {ih}, {c_str(drinks)}, {c_str(d.get('description') or '')}, {ip}, {casino}, {chips}}},")
     w('};')
     w(f'const int furni_def_count = {len(defs)};')
     w('')
@@ -566,7 +621,9 @@ def main():
         w(f"  {{{c_str(pg['id'])}, {c_str(pg['name'])}, {c_str(pg['layout'])}, {c_str(body)}}},")
     w('};')
     w(f'const int cat_page_count = {len(pages)};')
-    offers = sorted((o for o in catalogue['offers'] if not o.get('hidden') and o['contents']), key=lambda o: (o['order'], o['id']))
+    # Chip tokens cost chips, which consoles do not spend: they reach a console only by trading.
+    offers = sorted((o for o in catalogue['offers'] if not o.get('hidden') and o['contents'] and o.get('currency') != 'chips'),
+                    key=lambda o: (o['order'], o['id']))
     w(f'const CatOffer cat_offers[{len(offers)}] = {{')
     for o in offers:
         c = o['contents'][0]
@@ -781,7 +838,9 @@ def main():
         if old.resolve() not in GENERATED_PNGS and not old.name.startswith('font'): old.unlink()
     (GEN / 'assets.c').write_text('\n'.join(out) + '\n')
     src = json.loads((SRC / 'source.json').read_text())
-    print(f"atlas pages: {n_color} RGBA8 + {len(gray_packer.pages)} LA8, unique sprites: {len(color_packer.seen) + len(gray_packer.seen)}, "
+    print(f"atlas pages: {n_color} RGBA5551 + {len(soft_packer.pages) if soft_packer.seen else 0} RGBA8 + {len(gray_packer.pages)} LA8 + "
+          f"{len(skin_packer.pages) if skin_packer.seen else 0} skin RGBA8 on demand, unique sprites: "
+          f"{len(color_packer.seen) + len(soft_packer.seen) + len(gray_packer.seen) + len(skin_packer.seen)}, "
           f"avatar parts: {len(people)}, furniture variants: {len(furni)}, definitions: {len(defs)}")
     print(f"source: {src['web']} ({src['exportedAt']})")
 

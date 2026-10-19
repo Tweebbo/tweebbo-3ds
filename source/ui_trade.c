@@ -179,7 +179,12 @@ void trade_draw(u64 now) {
   float sy = y + 106;
   sk_text(T_.ok_peer ? "They confirmed." : "Not confirmed yet.", IN_X + 4, sy, 9.5f, T_.ok_peer ? SK_GO : SK_DIM, 0, half);
   sk_text(T_.ok_mine ? "You confirmed." : "Not confirmed yet.", IN_X + 8 + half, sy, 9.5f, T_.ok_mine ? SK_GO : SK_DIM, 0, half);
-  sk_text(T_.confirming?"Review the final offers and confirm again.":T_.mine_n?"Tap your furniture to take it back.":"", IN_X + 4, sy + 13, 9, SK_DIM, 0, IN_W - 8);
+  bool tokens = false;
+  for (int i = 0; i < T_.mine_n; i++) { const FurniDef *d = def_get(T_.mine[i].def); tokens |= d && d->chips; }
+  for (int i = 0; i < T_.theirs_n; i++) { const FurniDef *d = def_get(T_.theirs[i].def); tokens |= d && d->chips; }
+  // Same rule as the web (server db.rs CHIP_TRADE_LOCK_SECS): said before anyone confirms.
+  if (tokens) sk_text("Received chip tokens: 24 h before redeeming (trading is fine).", IN_X + 4, sy + 13, 9, 0x9c1d23, 0, IN_W - 8);
+  else sk_text(T_.confirming?"Review the final offers and confirm again.":T_.mine_n?"Tap your furniture to take it back.":"", IN_X + 4, sy + 13, 9, SK_DIM, 0, IN_W - 8);
   float by = IN_Y + IN_H - 26;
   if (sk_button(IN_X + 4, by, 96, "Add (X)", T_.mine_n < TRADE_MAX) || (K.x && T_.mine_n < TRADE_MAX)) { T_.picking = true; T_.sel = 0; }
   if (sk_button(IN_X + 106, by, 110, T_.ok_mine ? "Accepted" : T_.confirming?"Confirm (A)":"Accept (A)", !T_.ok_mine && (T_.mine_n || T_.theirs_n)) || (K.a && !T_.ok_mine && (T_.mine_n || T_.theirs_n))) act(T_.confirming?"confirm":"ready", 0, 0);

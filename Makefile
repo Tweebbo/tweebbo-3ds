@@ -24,7 +24,7 @@ TARGET      := tweebbo-showcase
 BUILD       := obj-showcase
 OUTPUT_DIR  := out/showcase
 endif
-SOURCES     := source source/gen vendor/quickjs
+SOURCES     := source source/gen vendor/quickjs vendor/qrcodegen
 INCLUDES    := source vendor/quickjs
 ROMFS       := romfs
 APP_TITLE   := Tweebbo

@@ -267,7 +267,7 @@ static bool split_url(const char *url, Endpoint *ep, char *path, int cap) {
   return true;
 }
 
-int http_download(const char *url, HttpSink sink, void *ctx, long *total, char *err, int err_cap) {
+int http_download_from(const char *url, long from, HttpSink sink, void *ctx, long *total, char *err, int err_cap) {
   // Signed redirect URLs (GitHub release assets) are close to 1 KB.
   static char current[2048], next[2048], path[2048], req[2600];
   snprintf(current, sizeof current, "%s", url);
@@ -279,8 +279,10 @@ int http_download(const char *url, HttpSink sink, void *ctx, long *total, char *
     Conn *c = conn_open(&ep, 20000, err, err_cap);
     if (!c) return 0;
     // HTTP/1.0: no chunked encoding, the body arrives as-is until the connection closes.
-    int n = snprintf(req, sizeof req, "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: Tweebbo-3DS\r\nAccept: */*\r\nConnection: close\r\n\r\n",
-                     path, ep.host);
+    char range[48] = "";
+    if (from > 0) snprintf(range, sizeof range, "Range: bytes=%ld-\r\n", from);
+    int n = snprintf(req, sizeof req, "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: Tweebbo-3DS\r\nAccept: */*\r\n%sConnection: close\r\n\r\n",
+                     path, ep.host, range);
     if (!conn_write(c, req, n, 15000)) { conn_close(c); snprintf(err, (size_t)err_cap, "Connection lost."); return 0; }
     u8 *head = NULL;
     int len = 0, cap = 0;
@@ -309,25 +311,44 @@ int http_download(const char *url, HttpSink sink, void *ctx, long *total, char *
       continue;
     }
     char *cl = header((char *)head, "Content-Length");
-    if (cl) *total = atol(cl);
+    long body = cl ? atol(cl) : -1;
+    // 206 continues at `from`; a server that ignores Range sends everything again (200): skip
+    // what the caller already has, so the sink always receives the bytes after `from`.
+    long skip = status == 200 ? from : 0;
+    if (body >= 0) *total = status == 206 ? from + body : body;
     head[end - 1] = (u8)saved;
-    bool ok = true;
-    if (status == 200 && len > end) ok = sink(head + end, len - end, ctx);
-    free(head);
-    if (status != 200) { conn_close(c); snprintf(err, (size_t)err_cap, "The server answered %d.", status); return status; }
+    bool ok = status == 200 || (status == 206 && from > 0);
+    if (!ok) { free(head); conn_close(c); snprintf(err, (size_t)err_cap, "The server answered %d.", status); return status; }
+    long got = 0;
     u8 *buf = malloc(32768);
     int idle = 0;
+    u8 *data = head + end;
+    int r = len - end;
     while (ok && buf) {
-      int r = conn_read(c, buf, 32768, 200);
+      if (r > 0) {
+        got += r;
+        int drop = skip > r ? r : (int)skip;
+        skip -= drop;
+        if (r > drop) ok = sink(data + drop, r - drop, ctx);
+      }
+      if (!ok) break;
+      r = conn_read(c, buf, 32768, 200);
+      data = buf;
       if (r < 0) break;
       if (r == 0) { if ((idle += 200) > 30000) { snprintf(err, (size_t)err_cap, "The download stalled."); ok = false; } continue; }
       idle = 0;
-      ok = sink(buf, r, ctx);
     }
+    free(head);
     free(buf);
     conn_close(c);
+    // HTTP/1.0 ends at the close: a body shorter than Content-Length was cut off.
+    if (ok && body >= 0 && got < body) { snprintf(err, (size_t)err_cap, "The download was interrupted."); ok = false; }
     return ok ? status : 0;
   }
   snprintf(err, (size_t)err_cap, "Too many redirects.");
   return 0;
+}
+
+int http_download(const char *url, HttpSink sink, void *ctx, long *total, char *err, int err_cap) {
+  return http_download_from(url, 0, sink, ctx, total, err, err_cap);
 }

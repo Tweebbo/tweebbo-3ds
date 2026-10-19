@@ -39,7 +39,13 @@ int version_cmp(const char *a, const char *b) {
   return 0;
 }
 
-UpdateState update_state(void) { return U.state; }
+static bool sleep_blocked;
+
+UpdateState update_state(void) {
+  // Sleep was blocked for the download; give it back on the main thread once it is over.
+  if (sleep_blocked && U.state != UPD_DOWNLOADING) { sleep_blocked = false; aptSetSleepAllowed(true); }
+  return U.state;
+}
 const char *update_version(void) { return U.version; }
 
 #ifdef TWEEBBO_DEBUG
@@ -65,7 +71,14 @@ const char *update_current(void) {
 }
 const char *update_notes(void) { return U.notes; }
 const char *update_error(void) { return U.error; }
-float update_progress(void) { return U.size > 0 ? (float)U.done / (float)U.size : 0; }
+static volatile bool installing;
+
+/** Downloading fills the bar to 90%; installing from the SD card does the rest. */
+float update_progress(void) {
+  float p = U.size > 0 ? (float)U.done / (float)U.size : 0;
+  if (p > 1) p = 1;
+  return installing ? 0.9f + 0.1f * p : 0.9f * p;
+}
 
 /** http(s) form of the configured server (ws→http, wss→https); offline: production. */
 static void base_url(char *out, int cap) {
@@ -199,32 +212,27 @@ void update_check(void) { start_check(false); }
 void update_check_quiet(void) { start_check(true); }
 
 // ---------------------------------------------------------------- installation
+//
+// The CIA (tens of MB) is first downloaded to the SD card, resuming after Wi-Fi drops, and only
+// then installed through AM from the file. A flaky connection costs time, never the install.
 
 #define CHUNK (128 * 1024)
+#define CIA_PART DATA_DIR "/update.cia"
+#define DOWNLOAD_ATTEMPTS 10
 
 typedef struct {
-  Handle cia;   /* AM install in progress, or 0 */
-  FILE *file;   /* file on the SD card (.3dsx or fallback CIA), or NULL */
-  u64 offset;   /* bytes already written */
-  u8 *buf;      /* pending block: AM receives 128 KB blocks, like FBI */
+  FILE *file;
+  u64 offset;   /* bytes already in the file */
+  u8 *buf;      /* pending block, written 128 KB at a time */
   int fill;
-  Result fail;
+  bool write_failed;
   mbedtls_sha256_context sha;
 } Sink;
 
 static bool flush_chunk(Sink *s) {
   if (!s->fill) return true;
-  if (s->cia) {
-    u32 written = 0;
-    Result r = FSFILE_Write(s->cia, &written, s->offset, s->buf, (u32)s->fill, 0);
-    if (R_FAILED(r) || written != (u32)s->fill) {
-      s->fail = R_FAILED(r) ? r : -1;
-      dbg_log("update: AM write failed at %llu (0x%08lX, %lu/%d)", (unsigned long long)s->offset, (unsigned long)r,
-              (unsigned long)written, s->fill);
-      return false;
-    }
-  } else if (s->file && fwrite(s->buf, 1, (size_t)s->fill, s->file) != (size_t)s->fill) {
-    s->fail = -2;
+  if (fwrite(s->buf, 1, (size_t)s->fill, s->file) != (size_t)s->fill) {
+    s->write_failed = true;
     dbg_log("update: SD write failed at %llu", (unsigned long long)s->offset);
     return false;
   }
@@ -233,7 +241,7 @@ static bool flush_chunk(Sink *s) {
   return true;
 }
 
-static bool install_sink(const u8 *data, int len, void *ctx) {
+static bool file_sink(const u8 *data, int len, void *ctx) {
   Sink *s = ctx;
   mbedtls_sha256_update_ret(&s->sha, data, (size_t)len);
   while (len > 0) {
@@ -248,24 +256,111 @@ static bool install_sink(const u8 *data, int len, void *ctx) {
   return true;
 }
 
-/** Downloads `url` into the sink; true when it arrived complete with the expected SHA-256. */
-static bool fetch(const char *url, const char *want, Sink *s, char *err, int cap) {
+static bool file_text(const char *path, char *out, int cap) {
+  FILE *f = fopen(path, "r");
+  if (!f) return false;
+  bool ok = fgets(out, cap, f) != NULL;
+  fclose(f);
+  return ok;
+}
+
+/** Downloads `url` into `path` until it is complete with SHA-256 `want`. What an earlier attempt
+ *  (or an earlier session) left in the file is kept and the download resumes after it; network
+ *  errors retry with growing pauses. On failure the partial file stays for the next try. */
+static bool download_file(const char *url, const char *path, const char *want, long expect, Sink *s, char *err, int cap) {
+  char side[300], had[80] = "";
+  snprintf(side, sizeof side, "%s.sha", path);
+  // A partial file of another build is useless: start over.
+  if (!file_text(side, had, sizeof had) || strcasecmp(had, want)) {
+    remove(path);
+    FILE *f = fopen(side, "w");
+    if (f) { fputs(want, f); fclose(f); }
+  }
   mbedtls_sha256_init(&s->sha);
   mbedtls_sha256_starts_ret(&s->sha, 0);
-  U.done = 0;
-  long total;
-  int status = http_download(url, install_sink, s, &total, err, cap);
-  if (total > 0) U.size = total;
-  bool ok = status == 200 && flush_chunk(s);
+  s->offset = 0;
+  s->fill = 0;
+  s->write_failed = false;
+  FILE *old = fopen(path, "rb");
+  if (old) {
+    size_t n;
+    while ((n = fread(s->buf, 1, CHUNK, old)) > 0) { mbedtls_sha256_update_ret(&s->sha, s->buf, n); s->offset += n; }
+    fclose(old);
+    if (s->offset) dbg_log("update: resuming at %llu", (unsigned long long)s->offset);
+  }
+  U.done = (long)s->offset;
+  s->file = fopen(path, "ab");
+  bool ok = false;
+  if (!s->file) snprintf(err, (size_t)cap, "Could not save the update on the SD card. Is it full or locked?");
+  for (int attempt = 0; s->file && attempt < DOWNLOAD_ATTEMPTS; attempt++) {
+    if (attempt) svcSleepThread((attempt < 5 ? attempt * 2 : 10) * 1000000000LL);
+    // Already complete (a session that ended right before installing): nothing left to fetch.
+    if (expect > 0 && (long)s->offset >= expect) { ok = true; break; }
+    long total;
+    err[0] = 0;
+    int status = http_download_from(url, (long)s->offset, file_sink, s, &total, err, cap);
+    if (total > 0) U.size = expect = total;
+    bool flushed = flush_chunk(s);
+    fflush(s->file);
+    dbg_log("update: attempt %d status %d, %llu bytes, err '%s'", attempt, status, (unsigned long long)s->offset, err);
+    if (!flushed || s->write_failed) { snprintf(err, (size_t)cap, "Could not save the update on the SD card. Is it full?"); break; }
+    if (status == 200 || status == 206) { ok = true; break; }
+    if (status == 416) { ok = true; break; }  // nothing after our offset: the checksum decides
+    if (status == 403 || status == 404 || status == 410) break;  // gone: re-read the list instead
+  }
+  if (s->file) { fclose(s->file); s->file = NULL; }
   u8 digest[32];
   mbedtls_sha256_finish_ret(&s->sha, digest);
   mbedtls_sha256_free(&s->sha);
+  if (!ok) {
+    if (!err[0]) snprintf(err, (size_t)cap, "The download was interrupted.");
+    return false;
+  }
   char hex[65];
   for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
-  dbg_log("update: download %s status %d, %llu bytes, err '%s'", url, status, (unsigned long long)(s->offset), err);
-  if (ok && want[0] && strcasecmp(hex, want)) { snprintf(err, (size_t)cap, "The download is damaged (checksum mismatch)."); ok = false; }
-  if (!ok && !err[0]) snprintf(err, (size_t)cap, s->fail ? "Could not write the update (0x%08lX)." : "The download was interrupted.", (unsigned long)s->fail);
-  return ok;
+  if (strcasecmp(hex, want)) {
+    dbg_log("update: checksum mismatch (%s)", hex);
+    remove(path);
+    remove(side);
+    snprintf(err, (size_t)cap, "The download is damaged (checksum mismatch).");
+    return false;
+  }
+  return true;
+}
+
+static void forget_file(const char *path) {
+  char side[300];
+  snprintf(side, sizeof side, "%s.sha", path);
+  remove(path);
+  remove(side);
+}
+
+/** Installs the verified CIA file through AM, the way FBI does (128 KB blocks). */
+static Result install_cia(const char *path, u8 *buf) {
+  FILE *f = fopen(path, "rb");
+  if (!f) return -1;
+  Handle h = 0;
+  Result r = AM_StartCiaInstall(MEDIATYPE_SD, &h);
+  dbg_log("update: AM start 0x%08lX", (unsigned long)r);
+  u64 offset = 0;
+  U.done = 0;
+  while (R_SUCCEEDED(r)) {
+    size_t n = fread(buf, 1, CHUNK, f);
+    if (!n) break;
+    u32 written = 0;
+    r = FSFILE_Write(h, &written, offset, buf, (u32)n, 0);
+    if (R_SUCCEEDED(r) && written != n) r = -1;
+    if (R_FAILED(r)) dbg_log("update: AM write failed at %llu (0x%08lX)", (unsigned long long)offset, (unsigned long)r);
+    offset += n;
+    U.done = (long)offset;
+  }
+  fclose(f);
+  if (h) {
+    Result fr = R_SUCCEEDED(r) ? AM_FinishCiaInstall(h) : AM_CancelCIAInstall(h);
+    dbg_log("update: AM %s 0x%08lX", R_SUCCEEDED(r) ? "finish" : "cancel", (unsigned long)fr);
+    if (R_SUCCEEDED(r)) r = fr;
+  }
+  return r;
 }
 
 static void install_thread(void *arg) {
@@ -274,68 +369,58 @@ static void install_thread(void *arg) {
   // against the old SHA-256 (it would look damaged).
   UpdateState fresh = read_manifest();
   if (fresh != UPD_AVAILABLE) {
-    if (fresh == UPD_LATEST) { U.state = UPD_LATEST; return; }
-    U.state = UPD_FAILED;
+    U.state = fresh == UPD_LATEST ? UPD_LATEST : UPD_FAILED;
     return;
   }
   bool homebrew = U.launch[0] != 0;
-  const char *url = homebrew ? U.tdsx : U.cia;
   char err[160] = "";
   bool ok = false;
   Sink s = {0};
   s.buf = malloc(CHUNK);
   if (!s.buf) { snprintf(U.error, sizeof U.error, "Not enough memory to update."); U.state = UPD_FAILED; return; }
-  if (!url[0]) snprintf(err, sizeof err, "No download for this kind of install.");
-  else if (homebrew) {
-    char tmp[280];
-    snprintf(tmp, sizeof tmp, "%s.new", U.launch);
-    s.file = fopen(tmp, "wb");
-    if (!s.file) snprintf(err, sizeof err, "Could not write to the SD card.");
-    else {
-      ok = fetch(url, U.tdsx_sha, &s, err, sizeof err);
-      fclose(s.file);
-      if (ok) { remove(U.launch); ok = rename(tmp, U.launch) == 0; if (!ok) snprintf(err, sizeof err, "Could not replace the .3dsx file."); }
-      else remove(tmp);
-    }
-  } else {
+  char path[280];
+  if (homebrew) snprintf(path, sizeof path, "%s.new", U.launch);
+  else { mkdir("sdmc:/3ds", 0777); mkdir(DATA_DIR, 0777); snprintf(path, sizeof path, "%s", CIA_PART); }
+  for (int round = 0; round < 2 && !ok; round++) {
+    const char *url = homebrew ? U.tdsx : U.cia, *want = homebrew ? U.tdsx_sha : U.sha;
+    if (!url[0]) { snprintf(err, sizeof err, "No download for this kind of install."); break; }
+    // The manifest's size is the CIA's; the .3dsx size is learnt from the server.
+    if (homebrew) U.size = 0;
+    ok = download_file(url, path, want, homebrew ? 0 : U.size, &s, err, sizeof err);
+    // A build published during the download fails the checksum or vanishes: re-read the list once.
+    if (!ok && (round > 0 || read_manifest() != UPD_AVAILABLE)) break;
+  }
+  if (!ok && !strstr(err, "SD card") && !strstr(err, "damaged") && !strstr(err, "No download"))
+    snprintf(err, sizeof err, "The connection dropped too many times. The download is saved: choose Update again to continue where it stopped.");
+  if (ok && homebrew) {
+    remove(U.launch);
+    ok = rename(path, U.launch) == 0;
+    if (ok) forget_file(path);
+    else snprintf(err, sizeof err, "Could not replace the .3dsx file.");
+  } else if (ok) {
+    installing = true;
     Result r = amInit();
-    if (R_SUCCEEDED(r)) r = AM_StartCiaInstall(MEDIATYPE_SD, &s.cia);
-    dbg_log("update: AM start 0x%08lX", (unsigned long)r);
-    for (int attempt = 0; attempt < 3 && R_SUCCEEDED(r) && !ok; attempt++) {
-      if (attempt) {
-        // Retry an interrupted download with a fresh install.
-        svcSleepThread(2000000000LL);
-        s.offset = 0; s.fill = 0; s.fail = 0;
-        err[0] = 0;
-        r = AM_StartCiaInstall(MEDIATYPE_SD, &s.cia);
-        dbg_log("update: retry %d, AM start 0x%08lX", attempt, (unsigned long)r);
-        if (R_FAILED(r)) break;
-      }
-      ok = fetch(url, U.sha, &s, err, sizeof err);
-      Result fr = ok ? AM_FinishCiaInstall(s.cia) : AM_CancelCIAInstall(s.cia);
-      dbg_log("update: AM %s 0x%08lX", ok ? "finish" : "cancel", (unsigned long)fr);
-      if (ok && R_FAILED(fr)) { ok = false; snprintf(err, sizeof err, "Install failed (0x%08lX).", (unsigned long)fr); break; }
-      // A build published during the download fails the checksum: re-read the list once and retry.
-      if (strstr(err, "damaged") && (attempt > 0 || read_manifest() != UPD_AVAILABLE)) break;
+    if (R_SUCCEEDED(r)) {
+      r = install_cia(path, s.buf);
+      // AM sometimes refuses right after a title was used: one more try before giving up.
+      if (R_FAILED(r)) { svcSleepThread(2000000000LL); r = install_cia(path, s.buf); }
+      amExit();
     }
-    if (R_FAILED(r)) snprintf(err, sizeof err, "The console refused the install (0x%08lX).", (unsigned long)r);
-    amExit();
-    if (!ok && strstr(err, "damaged") == NULL && strstr(err, "reach") == NULL) {
-      // Fallback: save the CIA on the SD card to install it with FBI.
+    ok = R_SUCCEEDED(r);
+    if (ok) forget_file(path);
+    else {
+      // Last resort: the verified CIA is already on the SD card; move it where FBI looks.
       mkdir("sdmc:/cias", 0777);
-      char path[96];
-      snprintf(path, sizeof path, "sdmc:/cias/tweebbo-%s.cia", U.version);
-      Sink f = {0};
-      f.buf = s.buf;
-      f.file = fopen(path, "wb");
-      char err2[160] = "";
-      if (f.file) {
-        bool saved = fetch(url, U.sha, &f, err2, sizeof err2);
-        fclose(f.file);
-        if (saved) snprintf(err, sizeof err, "Could not install automatically. Saved to SD:/cias/tweebbo-%s.cia: install it with FBI.", U.version);
-        else remove(path);
-      }
+      char cia[96];
+      snprintf(cia, sizeof cia, "sdmc:/cias/tweebbo-%s.cia", U.version);
+      remove(cia);
+      if (rename(path, cia) == 0) {
+        forget_file(path);
+        snprintf(err, sizeof err, "The console refused the install (0x%08lX). The update is in SD:/cias/tweebbo-%s.cia: install it with FBI.",
+                 (unsigned long)r, U.version);
+      } else snprintf(err, sizeof err, "The console refused the install (0x%08lX).", (unsigned long)r);
     }
+    installing = false;
   }
   free(s.buf);
   dbg_log("update %s: %s %s", U.version, ok ? "installed" : "failed", ok ? "" : err);
@@ -349,6 +434,8 @@ void update_start(void) {
   U.done = 0;
   U.error[0] = 0;
   U.state = UPD_DOWNLOADING;
+  // Closing the lid would put the console to sleep and cut the Wi-Fi mid-download.
+  if (!sleep_blocked && aptIsSleepAllowed()) { aptSetSleepAllowed(false); sleep_blocked = true; }
   s32 prio = 0x30;
   svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
   U.thread = threadCreate(install_thread, NULL, 48 * 1024, prio + 1, -2, false);

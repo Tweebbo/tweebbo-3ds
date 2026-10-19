@@ -47,6 +47,28 @@ static struct {
 
 static const char *SCOPES[] = {"all", "public", "mine"};
 
+// Public rooms packed into the offline simulation (tools/pack.py ROOMS).
+static const struct { const char *slug, *title; } OFFLINE_ROOMS[] = {
+  {"lobby", "Classic Lobby"},
+  {"park", "Classic Park"},
+  {"pool", "The Pool"},
+  {"diving", "Diving Deck"},
+  {"rooftop", "Rooftop Rumble"},
+  {"casino", "Casino"},
+  {"afterhours", "After Hours Bar"},
+};
+
+static void offline_rows(void) {
+  NV.n = 0; NV.error[0] = 0;
+  for (int i = 0; i < (int)COUNT(OFFLINE_ROOMS) && NV.n < MAX_ROOMS; i++) {
+    RoomRow *row = &NV.rooms[NV.n++];
+    snprintf(row->slug, sizeof row->slug, "%s", OFFLINE_ROOMS[i].slug);
+    utf8_copy(row->title, sizeof row->title, OFFLINE_ROOMS[i].title);
+    row->pub = true;
+  }
+  NV.loaded = true;
+}
+
 static void nav_refresh(void) {
   if (NV.job || net_state() == NET_OFFLINE) return;
   char path[48];
@@ -58,6 +80,7 @@ static void nav_refresh(void) {
 void nav_opened(void) {
   NV.creating = false;
   NV.list.focus = -1;
+  if (net_state() == NET_OFFLINE) { offline_rows(); return; }
   nav_refresh();
 }
 
@@ -225,21 +248,22 @@ void nav_draw(u64 now) {
   nav_poll();
   if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Navigator")) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
-  if (net_state() == NET_OFFLINE) {
-    sk_paragraph("Offline practice: only the lobby is available. Open Help to connect to tweebbo.lol or a local server.",
-                 IN_X + 8, IN_Y + 10, IN_W - 16, 11, SK_TEXT, 5);
-    return;
+  bool offline = net_state() == NET_OFFLINE;
+  if (offline && !NV.n) offline_rows();
+  if (!offline && NV.creating) { nav_create_view(); return; }
+  if (!offline) {
+    static const char *TABS[] = {"All Rooms", "Public Rooms", "My Rooms"};
+    float tw = (IN_W - 8) / 3;
+    for (int i = 0; i < 3; i++)
+      if (sk_tab(IN_X + 2 + i * (tw + 2), IN_Y + 2, tw, 16, TABS[i], NV.tab == i) && NV.tab != i) {
+        NV.tab = i; NV.n = 0; NV.loaded = false; NV.list.scroll = 0; nav_refresh();
+      }
+    if (K.left || K.right) { NV.tab = (NV.tab + (K.right ? 1 : 2)) % 3; NV.n = 0; NV.loaded = false; nav_refresh(); }
+    // An open navigator refreshes every 15 s, like the web.
+    if (now - NV.refreshed > 15000) nav_refresh();
+  } else {
+    sk_text("Offline practice · public rooms with bots", IN_X + 4, IN_Y + 4, 10.5f, SK_DIM, 0, IN_W - 8);
   }
-  if (NV.creating) { nav_create_view(); return; }
-  static const char *TABS[] = {"All Rooms", "Public Rooms", "My Rooms"};
-  float tw = (IN_W - 8) / 3;
-  for (int i = 0; i < 3; i++)
-    if (sk_tab(IN_X + 2 + i * (tw + 2), IN_Y + 2, tw, 16, TABS[i], NV.tab == i) && NV.tab != i) {
-      NV.tab = i; NV.n = 0; NV.loaded = false; NV.list.scroll = 0; nav_refresh();
-    }
-  if (K.left || K.right) { NV.tab = (NV.tab + (K.right ? 1 : 2)) % 3; NV.n = 0; NV.loaded = false; nav_refresh(); }
-  // An open navigator refreshes every 15 s, like the web.
-  if (now - NV.refreshed > 15000) nav_refresh();
   const float row = 26;
   // Whole rows only: a half-clipped last row made its icon look broken.
   float ly = IN_Y + 22, lh = (float)((int)((IN_H - 48) / row)) * row;
@@ -275,18 +299,22 @@ void nav_draw(u64 now) {
       snprintf(inside, sizeof inside, "%d inside", r->online);
       sk_text(inside, IN_X + IN_W - 50, y + 7, 9, SK_DIM, 2, 60);
     }
-    if (sk_go(IN_X + IN_W - 44, y + 4, 34, 18, here ? "Here" : "Go", r->online > 0) || (focus && K.a)) {
+    if (sk_go(IN_X + IN_W - 44, y + 4, 34, 18, here ? "Here" : "Go", offline || r->online > 0) || (focus && K.a)) {
       // A locked room asks for its password on the status screen (owners enter without one).
       if (!here) { net_goto(r->slug, ""); ui_close(); }
     }
   }
   sk_list_end();
-  if (!NV.n) sk_text(NV.error[0] ? NV.error : NV.job ? "Loading rooms…" : NV.tab == 2 ? "You have not created any rooms yet." : "No rooms.",
+  if (!NV.n) sk_text(NV.error[0] ? NV.error : NV.job ? "Loading rooms…" : offline ? "No rooms packed for offline play." : NV.tab == 2 ? "You have not created any rooms yet." : "No rooms.",
                      BOT_W / 2, ly + 30, 10.5f, NV.error[0] ? SK_DANGER : SK_DIM, 1, IN_W - 20);
   float by = IN_Y + IN_H - 22;
-  sk_text(NV.tab == 2 ? "Most populated rooms first." : "Featured rooms first.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
-  if (sk_button(IN_X + IN_W - 182, by, 76, NV.job ? "Loading…" : "Refresh", !NV.job)) nav_refresh();
-  if (sk_button(IN_X + IN_W - 102, by, 100, "Create a room", true) || K.x) { NV.creating = true; NV.new_title[0] = 0; memset(NV.new_password, 0, sizeof NV.new_password); }
+  if (offline) {
+    sk_text("Help changes the server or returns online.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, IN_W - 8);
+  } else {
+    sk_text(NV.tab == 2 ? "Most populated rooms first." : "Featured rooms first.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
+    if (sk_button(IN_X + IN_W - 182, by, 76, NV.job ? "Loading…" : "Refresh", !NV.job)) nav_refresh();
+    if (sk_button(IN_X + IN_W - 102, by, 100, "Create a room", true) || K.x) { NV.creating = true; NV.new_title[0] = 0; memset(NV.new_password, 0, sizeof NV.new_password); }
+  }
 }
 
 // ================================================================ catalogue
@@ -644,9 +672,17 @@ void item_draw(u64 now) {
         col++;
       }
     }
-    if (it->owner == W.guest_id && (d->flags & DEF_REDEEM)) {
-      if (sk_button(NEXT_X, NEXT_Y, bw, "Redeem", true))
-        ui_confirm("Redeem this item for credits? It will disappear from the room.", "Redeem", redeem_confirmed, (void *)(uintptr_t)it->id);
+    if (it->owner == W.guest_id && ((d->flags & DEF_REDEEM) || d->chips)) {
+      if (sk_button(NEXT_X, NEXT_Y, bw, "Redeem", true)) {
+        // Chip tokens (Tweebbo Exchange) pay chips, the PC Casino's currency; the server keeps a
+        // token received in a trade locked for 24 hours and says how long is left.
+        static char question[200];
+        if (d->chips)
+          snprintf(question, sizeof question, "Redeem this token for %lu chips? Chips play in the PC Casino at tweebbo.lol. "
+                   "Tokens received in a trade cannot be redeemed for 24 hours (they can still be traded).", (unsigned long)d->chips);
+        else snprintf(question, sizeof question, "Redeem this item for credits? It will disappear from the room.");
+        ui_confirm(question, "Redeem", redeem_confirmed, (void *)(uintptr_t)it->id);
+      }
       col++;
     }
   }

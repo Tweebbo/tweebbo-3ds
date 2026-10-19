@@ -80,7 +80,7 @@ static struct {
   bool started, offline, quit;
   Mutex mu;
   ThreadHandle thread, http_thread;
-  char server[128];
+  char server[128], session_server[128];
   Endpoint ep;
   // Protected by mu:
   char slug[64], arrival[80], token[80], password[65];
@@ -293,21 +293,24 @@ static void http_thread(void *arg) {
 
 void sim_deliver(const u8 *data, int len) { world_handle(data, len); }
 
-static void start_offline(u64 now) {
+static void start_offline_room(const char *slug, u64 now) {
   N.offline = true;
   N.state = NET_OFFLINE;
-  snprintf(N.slug, sizeof N.slug, "lobby");
-  sim_start("newbie_lobby", now);
+  snprintf(N.slug, sizeof N.slug, "%s", slug && *slug ? slug : "lobby");
+  sim_start(N.slug, now);
   Writer w;
   w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, PLATFORM_3DS);
   net_send(w.buf, w.len);
 }
 
+static void start_offline(u64 now) { start_offline_room("lobby", now); }
+
 void net_start(u64 now) {
   if (!N.started) mutex_init(&N.mu);
   N.started = true;
   N.quit = false;
-  if (!store_load("server", N.server, sizeof N.server) || !N.server[0]) snprintf(N.server, sizeof N.server, DEFAULT_SERVER);
+  if (N.session_server[0]) snprintf(N.server, sizeof N.server, "%s", N.session_server);
+  else if (!store_load("server", N.server, sizeof N.server) || !N.server[0]) snprintf(N.server, sizeof N.server, DEFAULT_SERVER);
   if (!net_server_allowed(N.server)) snprintf(N.server, sizeof N.server, DEFAULT_SERVER);
 #ifdef TWEEBBO_SHOWCASE
   // Proof of concept: every launch tries the hotel of the local network first; offline is
@@ -359,15 +362,25 @@ bool net_server_allowed(const char *url) {
   if (!endpoint_parse(url, &ep) || ep.tls || sscanf(ep.host, "%u.%u.%u.%u%c", &a, &b, &c, &d, &extra) != 4 || a > 255 || b > 255 || c > 255 || d > 255) return false;
   return a == 10 || a == 127 || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31) || (a == 169 && b == 254);
 #else
-  (void)url; return true;
+  // Public build: only tweebbo.lol, or offline. A LAN address saved by a showcase or debug
+  // build would otherwise keep the console away from the public hotel for good.
+  return !strcmp(url, "offline") || !strcmp(url, DEFAULT_SERVER);
 #endif
 }
 
 void net_set_server(const char *url) {
-  if (!net_server_allowed(url)) { on_notice("This build connects to private LAN addresses only."); return; }
+  if (!net_server_allowed(url)) {
+#if defined(TWEEBBO_DEBUG) || defined(TWEEBBO_SHOWCASE)
+    on_notice("This build connects to private LAN addresses only.");
+#else
+    on_notice("This build connects to tweebbo.lol only. Use Offline to play without a hotel.");
+#endif
+    return;
+  }
   net_stop();
-  store_save("server", url);
-  free(W.pets_json); free(W.pet_inv_json); free(W.owners_json);
+  snprintf(N.session_server, sizeof N.session_server, "%s", url);
+  if (strcmp(url, "offline")) store_save("server", url);
+  free(W.pets_json); free(W.pet_inv_json); free(W.owners_json); free(W.rights_json);
   memset(&W, 0, sizeof W);
   net_start(now_ms());
 }
@@ -430,7 +443,14 @@ const char *net_room(void) { return N.slug; }
 const char *net_token(void) { return N.token; }
 
 void net_goto(const char *slug, const char *arrival) {
-  if (N.offline) return;
+  if (N.offline) {
+    // Offline practice: the simulation hosts every public room, so changing rooms simply
+    // restarts it and rejoins with the saved local profile.
+    free(W.pets_json); free(W.pet_inv_json); free(W.owners_json); free(W.rights_json);
+    memset(&W, 0, sizeof W);
+    start_offline_room(slug, now_ms());
+    return;
+  }
   lock(&N.mu);
   N.replaced = false;
   N.blocked = 0;

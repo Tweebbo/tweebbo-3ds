@@ -44,7 +44,7 @@ A console with custom firmware (Luma3DS) is required. `tweebbo.3dsx` works from 
   - Catalogue preview: the selected item is shown large on the top screen, with its price.
 - **"Press A" (3DS only)**: next to a dispenser, seat, bed, dice, switch, gate or teleporter (or facing another player) the top screen shows "Ⓐ Get a drink · Mochamaster", "Ⓐ Sit", "Ⓐ Roll the dice"… and A does it. With nothing nearby, A talks.
 - **In-game updates**: when entering the hotel the game reads `latest.json` from the latest GitHub release. If there is a newer version it offers **Update now**, downloads the CIA (or the `.3dsx` when launched from the Homebrew Launcher), checks its SHA-256 and installs it through AM without FBI, then asks to restart. If the console refuses to install, the CIA is saved to `SD:/cias/` to install with FBI. Also available in *Help → Check for updates*.
-- **Offline practice**: a local simulation of the lobby with bots, only when chosen in *Help → Offline*.
+- **Offline practice**: a local simulation of the public rooms (lobby, park, both pools, rooftop, casino and After Hours Bar) with bots, only when chosen in *Help → Offline*.
 
 ## Controls
 

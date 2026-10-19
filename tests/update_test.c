@@ -20,6 +20,12 @@ static bool to_mem(const u8 *d, int n, void *ctx) {
   return true;
 }
 static bool to_hash(const u8 *d, int n, void *ctx) { Sink *s = ctx; mbedtls_sha256_update_ret(&s->sha, d, (size_t)n); s->bytes += n; return true; }
+static bool to_hash_capped(const u8 *d, int n, void *ctx) {
+  Sink *s = ctx;
+  if (s->bytes + n > s->cap) n = s->cap - (int)s->bytes;
+  if (n > 0) to_hash(d, n, ctx);
+  return s->bytes < s->cap;
+}
 static void field(const char *json, const char *key, char *out, int cap) {
   char pat[64]; snprintf(pat, sizeof pat, "\"%s\": \"", key);
   const char *p = strstr(json, pat); out[0] = 0;
@@ -48,5 +54,16 @@ int main(int argc, char **argv) {
   mbedtls_sha256_finish_ret(&c.sha, digest);
   for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
   printf("cia %d, %ld bytes in %llu ms, sha256 %s\n", st, c.bytes, (unsigned long long)(now_ms() - t0), strcmp(hex, sha) ? "MISMATCH" : "ok");
-  return st == 200 && !strcmp(hex, sha) ? 0 : 1;
+  if (st != 200 || strcmp(hex, sha)) return 1;
+  // Resume: stop after 3 MB (like a dropped connection), then continue from there with Range.
+  Sink r = {0};
+  r.cap = 3 << 20;
+  mbedtls_sha256_init(&r.sha); mbedtls_sha256_starts_ret(&r.sha, 0);
+  st = http_download(cia, to_hash_capped, &r, &total, err, sizeof err);
+  long cut = r.bytes;
+  st = http_download_from(cia, cut, to_hash, &r, &total, err, sizeof err);
+  mbedtls_sha256_finish_ret(&r.sha, digest);
+  for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
+  printf("resume %d after %ld bytes, total %ld, %ld bytes, sha256 %s\n", st, cut, total, r.bytes, strcmp(hex, sha) ? "MISMATCH" : "ok");
+  return (st == 206 || st == 200) && r.bytes == c.bytes && !strcmp(hex, sha) ? 0 : 1;
 }

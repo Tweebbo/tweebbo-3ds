@@ -21,13 +21,6 @@
 #include "bar.h"
 #include "music.h"
 
-#if defined(TWEEBBO_SHOWCASE)
-#define DATA_DIR "sdmc:/3ds/Tweebbo-showcase"
-#elif defined(TWEEBBO_DEBUG)
-#define DATA_DIR "sdmc:/3ds/Tweebbo-debug"
-#else
-#define DATA_DIR "sdmc:/3ds/Tweebbo"
-#endif
 #define PROFILE DATA_DIR "/profile.txt"
 
 // The default stack (32 KB) is too small for the nested simulation.
@@ -238,12 +231,16 @@ int main(int argc, char **argv) {
       showcase_top(now);
 #endif
     }
+    ui_prerender();
     C2D_TargetClear(bottom, C2D_Color32(0x1b, 0x25, 0x2c, 255));
     C2D_SceneBegin(bottom);
     gfx_filter(false);
     ui_draw(now);
     C3D_FrameEnd(0);
     // Real performance on the console: average CPU/GPU time per frame every 30 s in log.txt.
+#ifndef PERF_LOG_MS
+#define PERF_LOG_MS 30000
+#endif
     static float cpu_sum, gpu_sum, worst;
     static int frames;
     static u64 since;
@@ -251,9 +248,13 @@ int main(int argc, char **argv) {
     cpu_sum += cpu; gpu_sum += gpu; frames++;
     if (cpu > worst) worst = cpu;
     if (!since) since = now;
-    if (now - since > 30000) {
-      dbg_log("frame: cpu %.1f ms avg (worst %.1f), gpu %.1f ms, %d avatars, linear free %lu KB", cpu_sum / frames, worst,
-              gpu_sum / frames, scene_avatar_count(), (unsigned long)(linearSpaceFree() / 1024));
+    if (now - since > PERF_LOG_MS) {
+      u32 loads, evictions, bytes, budget;
+      gfx_perf_take(&loads, &evictions, &bytes, &budget);
+      dbg_log("frame: cpu %.1f ms avg (worst %.1f), gpu %.1f ms, %d fps, %d avatars, linear free %lu KB, furni %lu/%lu KB, %lu loads, %lu evictions",
+              cpu_sum / frames, worst, gpu_sum / frames, (int)(frames * 1000 / (now - since)), scene_avatar_count(),
+              (unsigned long)(linearSpaceFree() / 1024), (unsigned long)(bytes / 1024), (unsigned long)(budget / 1024),
+              (unsigned long)loads, (unsigned long)evictions);
       cpu_sum = gpu_sum = worst = 0; frames = 0; since = now;
     }
   }

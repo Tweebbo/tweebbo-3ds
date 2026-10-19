@@ -42,3 +42,6 @@ typedef bool (*HttpSink)(const u8 *data, int len, void *ctx);
  * `total` receives Content-Length (or -1). Returns the final HTTP status (0 if there was no answer).
  */
 int http_download(const char *url, HttpSink sink, void *ctx, long *total, char *err, int err_cap);
+/** Same, resuming at byte `from` (Range): the sink gets the bytes after `from`, `total` is the whole
+ *  size, and a body cut short of Content-Length returns 0. Status 206 or 200. */
+int http_download_from(const char *url, long from, HttpSink sink, void *ctx, long *total, char *err, int err_cap);

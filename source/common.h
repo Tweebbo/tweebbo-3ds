@@ -21,6 +21,15 @@ u64 now_ms(void);
 /** Random integer in [lo, hi). */
 int rnd_range(int lo, int hi);
 
+/** Folder for the log, profile and update downloads on the SD card. */
+#if defined(TWEEBBO_SHOWCASE)
+#define DATA_DIR "sdmc:/3ds/Tweebbo-showcase"
+#elif defined(TWEEBBO_DEBUG)
+#define DATA_DIR "sdmc:/3ds/Tweebbo-debug"
+#else
+#define DATA_DIR "sdmc:/3ds/Tweebbo"
+#endif
+
 #define COUNT(a) ((int)(sizeof(a) / sizeof((a)[0])))
 
 /** Diagnostic log in sdmc:/3ds/Tweebbo/log.txt (cleared on start). */

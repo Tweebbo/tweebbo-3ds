@@ -418,8 +418,53 @@ static bool corner_tool(float x, float y, float w, float h, const char *icon, co
   return enabled && sk_hit(x, y, w, h);
 }
 
-static void panel_room(u64 now) {
+// The floor and furniture of the minimap change only when the room or its furniture does, so
+// they are drawn into a VRAM texture once and the panel draws that texture as one quad
+// (the Casino alone is ~800 triangles a frame otherwise). Falls back to drawing directly.
+#define MM_TEX_W 512
+#define MM_TEX_H 256
+static C3D_Tex mm_tex;
+static C3D_RenderTarget *mm_target;
+static bool mm_cached, mm_unavailable;
+static u32 mm_key;
+static const Tex3DS_SubTexture mm_sub = {BOT_W, BOT_H, 0.0f, 1.0f, BOT_W / (float)MM_TEX_W, 1.0f - BOT_H / (float)MM_TEX_H};
+
+static void minimap_static(void);
+
+static u32 minimap_key(void) {
+  u32 h = 2166136261u;
+#define MIX(v) (h = (h ^ (u32)(v)) * 16777619u)
+  MIX(W.w); MIX(W.h); MIX(W.door_x); MIX(W.door_y); MIX(U.mm_ox * 64); MIX(U.mm_oy * 64); MIX(U.mm_tile * 64);
+  MIX(U.panel == P_ITEM ? U.item : 0);
+  for (int y = 0; y < W.h; y++) for (int x = 0; x < W.w; x++) MIX(world_tile(x, y) | scene_water_tile(x, y) << 1);
+  for (int i = 0; i < MAX_ITEMS; i++) {
+    const Item *it = &W.items[i];
+    if (!it->used) continue;
+    MIX(it->id); MIX(it->def); MIX(it->x | it->y << 8 | it->rot << 16);
+  }
+#undef MIX
+  return h;
+}
+
+void ui_prerender(void) {
+  if (!W.in_room || mm_unavailable) return;
   minimap_fit();
+  u32 key = minimap_key();
+  if (mm_cached && key == mm_key) return;
+  if (!mm_target) {
+    if (!C3D_TexInitVRAM(&mm_tex, MM_TEX_W, MM_TEX_H, GPU_RGBA8)) { mm_unavailable = true; return; }
+    mm_target = C3D_RenderTargetCreateFromTex(&mm_tex, GPU_TEXFACE_2D, 0, -1);
+    if (!mm_target) { C3D_TexDelete(&mm_tex); mm_unavailable = true; return; }
+  }
+  C2D_TargetClear(mm_target, C2D_Color32(0, 0, 0, 0));
+  C2D_SceneBegin(mm_target);
+  minimap_static();
+  if (!mm_cached) dbg_log("minimap cached in a %dx%d VRAM texture", MM_TEX_W, MM_TEX_H);
+  mm_cached = true;
+  mm_key = key;
+}
+
+static void minimap_static(void) {
   // Background like the room floor, with the original grid.
   u32 floor_a = sk_rgb(0x989865), floor_b = sk_rgb(0x9f9f6c);
   for (int y = 0; y < W.h; y++)
@@ -438,6 +483,12 @@ static void panel_room(u64 now) {
     for (int ty = it->y; ty < it->y + h; ty++)
       for (int tx = it->x; tx < it->x + w; tx++) mm_diamond(tx, ty, 2.5f, sk_rgb(c));
   }
+}
+
+static void panel_room(u64 now) {
+  minimap_fit();
+  if (mm_cached && mm_key == minimap_key()) C2D_DrawImageAt((C2D_Image){&mm_tex, &mm_sub}, 0, 0, 0.5f, NULL, 1, 1);
+  else minimap_static();
   if (G.on && !G.wall) {
     int w, h;
     def_size(G.def, (u8)G.rot, &w, &h);
@@ -865,10 +916,14 @@ static void panel_ent(u64 now) {
     }
     note_y = IN_Y + 138;
   }
-  if (e->flags & FLAG_3DS) {
-    // Same as the web: note that they play from a console.
-    console_badge(IN_X + 6, note_y, 2);
-    sk_paragraph("This person is connected through a Nintendo 3DS system.", IN_X + 36, note_y + 2, IN_W - 42, 10.5f, SK_TEXT, 2);
+  int dev = e->device ? e->device : (e->flags & FLAG_3DS ? DEVICE_3DS : 0);
+  if (dev) {
+    // Same as the web: device badge and where that player is connected from.
+    device_badge(dev, IN_X + 6, note_y, 2);
+    const char *system = dev == DEVICE_SWITCH ? "Nintendo Switch" : dev == DEVICE_VITA ? "PlayStation Vita" : "Nintendo 3DS";
+    char note[96];
+    snprintf(note, sizeof note, e->id == W.me ? "You are connected through a %s system." : "This person is connected through a %s system.", system);
+    sk_paragraph(note, IN_X + 36, note_y + 2, IN_W - 42, 10.5f, SK_TEXT, 2);
   }
 }
 
@@ -1024,12 +1079,20 @@ void look_top(u64 now) {
 
 // ---------------------------------------------------------------- Help panel
 
+#if defined(TWEEBBO_DEBUG) || defined(TWEEBBO_SHOWCASE)
 static void local_done(const char *url, void *ctx) {
   (void)ctx;
   {
     Endpoint ep;
     if (!endpoint_parse(url, &ep)) { ui_toast("Use ws://host:port or wss://host.", now_ms()); return; }
-    if (!net_server_allowed(url)) { ui_toast("Use a private LAN address for this build.", now_ms()); return; }
+    if (!net_server_allowed(url)) {
+#if defined(TWEEBBO_DEBUG) || defined(TWEEBBO_SHOWCASE)
+      ui_toast("Use a private LAN address for this build.", now_ms());
+#else
+      ui_toast("This build connects to tweebbo.lol only.", now_ms());
+#endif
+      return;
+    }
     net_set_server(url);
     ui_close();
   }
@@ -1039,6 +1102,7 @@ static void choose_local(void *ctx) {
   (void)ctx;
   osk_open("Server address, e.g. ws://192.168.1.20:8092", strncmp(net_server(), "ws", 2) ? "ws://" : net_server(), 100, local_done, NULL);
 }
+#endif
 
 static void panel_settings(u64 now) {
   (void)now;
@@ -1058,13 +1122,17 @@ static void panel_settings(u64 now) {
 #if defined(TWEEBBO_SHOWCASE)
   // The proof of concept only knows the hotel of the local network it was built for.
   if (sk_button(x, y, (w - 8) / 3, "LAN hotel", strcmp(server, DEFAULT_SERVER) != 0)) { net_set_server(DEFAULT_SERVER); ui_close(); }
-#elif !defined(TWEEBBO_DEBUG)
-  if (sk_button(x, y, (w - 8) / 3, "tweebbo.lol", strcmp(server, PROD_SERVER) != 0)) { net_set_server(PROD_SERVER); ui_close(); }
-#else
-  sk_button(x, y, (w - 8) / 3, "Local debug", false);
-#endif
   if (sk_button(x + (w - 8) / 3 + 4, y, (w - 8) / 3, "Local server…", true)) choose_local(NULL);
   if (sk_button(x + ((w - 8) / 3 + 4) * 2, y, (w - 8) / 3, "Offline", strcmp(server, "offline") != 0)) { net_set_server("offline"); ui_close(); }
+#elif defined(TWEEBBO_DEBUG)
+  sk_button(x, y, (w - 8) / 3, "Local debug", false);
+  if (sk_button(x + (w - 8) / 3 + 4, y, (w - 8) / 3, "Local server…", true)) choose_local(NULL);
+  if (sk_button(x + ((w - 8) / 3 + 4) * 2, y, (w - 8) / 3, "Offline", strcmp(server, "offline") != 0)) { net_set_server("offline"); ui_close(); }
+#else
+  // Public build: tweebbo.lol or offline only (a saved LAN address cannot hijack it).
+  if (sk_button(x, y, (w - 8) / 2, "tweebbo.lol", strcmp(server, PROD_SERVER) != 0)) { net_set_server(PROD_SERVER); ui_close(); }
+  if (sk_button(x + (w - 8) / 2 + 4, y, (w - 8) / 2, "Offline", strcmp(server, "offline") != 0)) { net_set_server("offline"); ui_close(); }
+#endif
   y += 22;
   static int check_job;
   static char check_text[96];

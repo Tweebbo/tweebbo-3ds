@@ -272,28 +272,45 @@ static void draw_item_part(const Item *it, const FurniPart *p) {
   if (add) gfx_additive(false);
 }
 
-static json_t *owner_identity(u32 guest) {
-  if (owner_revision != W.owners_rev) {
-    json_decref(owner_snapshot);
-    owner_snapshot = W.owners_json ? json_loads(W.owners_json, 0, NULL) : NULL;
-    owner_revision = W.owners_rev;
-  }
-  json_t *visible = json_object_get(owner_snapshot, "visible"), *entry;
+// The owner snapshot (founders on show and character skins) is JSON; it is parsed into these
+// small tables once per revision instead of walking the JSON for every avatar on every frame.
+#define MAX_OWNERS 16
+#define MAX_SKINS 64
+static struct { u32 guest; bool presence; } owners[MAX_OWNERS];
+static struct { u32 guest; u8 skin; } skins[MAX_SKINS];
+static int owner_n, skin_n;
+
+static void owners_refresh(void) {
+  if (owner_revision == W.owners_rev) return;
+  json_decref(owner_snapshot);
+  owner_snapshot = W.owners_json ? json_loads(W.owners_json, 0, NULL) : NULL;
+  owner_revision = W.owners_rev;
+  owner_n = skin_n = 0;
+  json_t *entry;
   size_t i;
-  json_array_foreach(visible, i, entry)
-    if ((u32)json_integer_value(json_object_get(entry, "guest")) == guest) return entry;
-  return NULL;
+  json_array_foreach(json_object_get(owner_snapshot, "visible"), i, entry)
+    if (owner_n < MAX_OWNERS) {
+      owners[owner_n].guest = (u32)json_integer_value(json_object_get(entry, "guest"));
+      owners[owner_n++].presence = json_is_true(json_object_get(entry, "presence"));
+    }
+  json_array_foreach(json_object_get(owner_snapshot, "skins"), i, entry) {
+    int skin = (int)json_integer_value(json_object_get(entry, "skin"));
+    if (skin_n < MAX_SKINS && skin >= 1 && skin <= 7)
+      skins[skin_n].guest = (u32)json_integer_value(json_object_get(entry, "guest")), skins[skin_n++].skin = (u8)skin;
+  }
+}
+
+/** The founder entry of this guest (-1 when they are not a founder on show). */
+static int owner_index(u32 guest) {
+  owners_refresh();
+  for (int i = 0; i < owner_n; i++) if (owners[i].guest == guest) return i;
+  return -1;
 }
 
 static u64 appearance(const Ent *e) {
-  bool founder = owner_identity(e->guest) != NULL;
-  json_t *skins = json_object_get(owner_snapshot, "skins"), *entry;
-  size_t i;
-  json_array_foreach(skins, i, entry) {
-    int skin = (int)json_integer_value(json_object_get(entry, "skin"));
-    if ((u32)json_integer_value(json_object_get(entry, "guest")) == e->guest && skin >= 1 && skin <= 7)
-      return e->look | ((u64)skin << 48);
-  }
+  bool founder = owner_index(e->guest) >= 0;
+  for (int i = 0; i < skin_n; i++)
+    if (skins[i].guest == e->guest) return e->look | ((u64)skins[i].skin << 48);
   return pool_look(e, e->look) | (founder ? AV_FOUNDER : (e->flags & 128) ? AV_FRANK : 0);
 }
 
@@ -329,7 +346,8 @@ static void draw_ent(const Ent *e, u64 now) {
   static u32 arrival_id[MAX_ENTS];
   static u64 arrival_at[MAX_ENTS];
   int slot = (int)(e - W.ents);
-  bool presence = json_is_true(json_object_get(owner_identity(e->guest), "presence"));
+  int owner = owner_index(e->guest);
+  bool presence = owner >= 0 && owners[owner].presence;
   if (slot >= 0 && slot < MAX_ENTS && presence && p.pose != POSE_LAY) {
     if (arrival_id[slot] != e->id) { arrival_id[slot] = e->id; arrival_at[slot] = now; }
     u64 age = now - arrival_at[slot];
@@ -379,14 +397,19 @@ static const BadgeColor PAL_SWITCH[] = {{'K',0x14,0x18,0x1c},{'B',0x00,0xc3,0xe3
 static const BadgeColor PAL_VITA[] = {{'K',0x14,0x18,0x1c},{'W',0x2c,0x35,0x3d},{'B',0x1b,0x5b,0x91},{'L',0x2d,0x7f,0xc4},{'c',0x0f,0x14,0x17},{'w',0x8f,0xd9,0xff}};
 
 static void badge_draw(const char *const *art, int rows, const BadgeColor *pal, int pal_n, float x, float y, float k) {
+  // One rectangle per run of equal pixels in a row (not one per pixel): far fewer quads.
   for (int r = 0; r < rows; r++)
-    for (int c = 0; art[r][c]; c++) {
-      if (art[r][c] == '.') continue;
-      for (int p = 0; p < pal_n; p++)
-        if (pal[p].ch == art[r][c]) {
-          C2D_DrawRectSolid(x + c * k, y + r * k, 0.5f, k, k, C2D_Color32(pal[p].r, pal[p].g, pal[p].b, 255));
-          break;
-        }
+    for (int c = 0; art[r][c];) {
+      char ch = art[r][c];
+      int run = 1;
+      while (art[r][c + run] == ch) run++;
+      if (ch != '.')
+        for (int p = 0; p < pal_n; p++)
+          if (pal[p].ch == ch) {
+            C2D_DrawRectSolid(x + c * k, y + r * k, 0.5f, k * run, k, C2D_Color32(pal[p].r, pal[p].g, pal[p].b, 255));
+            break;
+          }
+      c += run;
     }
 }
 
@@ -587,8 +610,12 @@ void scene_draw(u64 now) {
   for (int i = 0; i < MAX_ENTS && n < COUNT(list); i++) {
     const Ent *e = &W.ents[i];
     if (!e->used || pool_hides(e)) continue;
-    float px, py;
+    float px, py, sx, sy;
     ent_pos(e, now, &px, &py);
+    // Off-screen avatars cost a dozen sprites each and draw nothing: skip them.
+    iso(px, py, &sx, &sy);
+    float ax = scr_x(sx), ay = scr_y(sy);
+    if (ax < -80 * V.zoom || ax > TOP_W + 80 * V.zoom || ay < -40 * V.zoom || ay > TOP_H + 140 * V.zoom) continue;
     PoseInfo p = pose_of(e, now, ent_moving(e, now));
     list[n] = (Drawable){px + py + .002f + p.depth + ent_height(e, now) / 1024, n, NULL, NULL, e, NULL, NULL};
     n++;
