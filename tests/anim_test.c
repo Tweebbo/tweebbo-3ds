@@ -4,6 +4,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
+#include "../source/gen/character_skins.h"
 
 static char trace[4096];
 static int ops;
@@ -79,6 +81,24 @@ int main(void) {
     }
     test_time=0;const char *first=draw(POSE_WALK,0,0,0,false);
     test_time=125;differs("character skin walk",first,draw(POSE_WALK,0,0,0,false));
+    for (int pose=POSE_STD; pose<=POSE_DANCE; pose++) for (int dir=0; dir<8; dir++) {
+      int count=character_skin_frames[skin-1][pose][dir];
+      double fps=character_skin_fps[skin-1][pose][dir];
+      // An exact number of cycles at every exported frame rate, near the 3DS calendar clock.
+      u64 period=(u64)count*4000;
+      u64 cycles=period*(4000000000000ull/period);
+      for (int frame=0; frame<count; frame++) {
+        test_time=(u64)ceil(frame*1000/fps);
+        trace[0]=0; ops=0;
+        avatar_draw(test_look,dir,pose,0,0,dir,0,false,0,0,1,255);
+        assert(ops==1 && trace[0]);
+        char expected[4096]; snprintf(expected,sizeof expected,"%s",trace);
+        test_time+=cycles;
+        trace[0]=0; ops=0;
+        avatar_draw(test_look,dir,pose,0,0,dir,0,false,0,0,1,255);
+        assert(ops==1 && !strcmp(expected,trace));
+      }
+    }
   }
   printf("OK\n");
   return 0;
