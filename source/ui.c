@@ -240,7 +240,7 @@ static bool context_find(Context *c, u64 now) {
     else if (it->def == BAR_EIGHT_BALL) verb = "Ask the 8-Ball";
     else if (it->def == BAR_DICE) verb = "Pull the lever";
     else if (d->drinks && d->drinks[0]) verb = (me->drink && now < me->drink_until) ? NULL : "Get a drink";
-    else if (d->kind == KIND_DICE) verb = "Roll the dice";
+    else if (d->kind == KIND_DICE) verb = it->state >= 1 && it->state <= 6 ? "Roll the dice (Y closes it)" : "Roll the dice";
     else if (d->flags & DEF_TELEPORTER) verb = "Enter the teleporter";
     else if (d->flags & DEF_GATE) verb = it->state ? "Close the gate" : "Open the gate";
     else if (d->kind == KIND_TOGGLE) verb = it->state ? "Switch off" : "Switch on";
@@ -1369,7 +1369,10 @@ bool ui_input(u32 down, u32 held, u64 now) {
     scene_prompt(near ? ctx.label : NULL);
     if (down & KEY_A) { if (near) context_run(&ctx, now); else talk(); }
     if (down & KEY_X) send_gesture(GESTURE_WAVE);
-    if (down & KEY_Y) send_gesture(GESTURE_DANCE);
+    // E-Dice Class: next to a die showing a face, Y closes it instead of dancing.
+    const FurniDef *cd = near && ctx.item ? def_get(ctx.item->def) : NULL;
+    if ((down & KEY_Y) && cd && cd->kind == KIND_DICE && ctx.item->state >= 1 && ctx.item->state <= 6) send_use_op(ctx.item->id, 1);
+    else if (down & KEY_Y) send_gesture(GESTURE_DANCE);
     if (down & KEY_B) send_gesture(GESTURE_SIT);
   } else if (K.b && U.panel != P_LOOK && U.panel != P_GAME) {
     // B closes the window (the wardrobe returns to Me from its own panel).

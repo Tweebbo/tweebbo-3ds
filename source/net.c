@@ -514,6 +514,7 @@ void send_walk(int x, int y) { SEND(w_begin(&w, C_WALK); w_u8(&w, (u32)x); w_u8(
 void send_chat(const char *text) { SEND(w_begin(&w, C_CHAT); w_str(&w, text)); }
 void send_gesture(int kind) { SEND(w_begin(&w, C_GESTURE); w_u8(&w, (u32)kind)); }
 void send_use(u32 item) { SEND(w_begin(&w, C_USE); w_var(&w, item)); }
+void send_use_op(u32 item, u8 op) { SEND(w_begin(&w, C_USE); w_var(&w, item); w_u8(&w, op)); }
 void send_look(u64 look) { SEND(w_begin(&w, C_SET_LOOK); w_var(&w, look)); }
 void send_name(const char *name) { SEND(w_begin(&w, C_SET_NAME); w_str(&w, name)); }
 void send_buy(u16 offer) { SEND(w_begin(&w, C_BUY); w_u16(&w, offer)); }

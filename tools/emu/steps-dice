@@ -1,0 +1,13 @@
+# Dice like Kepler Classic (room.txt = a room with a die at 5,5): A throws, Y closes it.
+wait 28
+click 618 564
+wait 10
+shot d01-prompt
+key a 100
+wait 1
+shot d02-rolling
+wait 3
+shot d03-face
+key x 100
+wait 2
+shot d04-closed

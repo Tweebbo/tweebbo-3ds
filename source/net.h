@@ -63,6 +63,8 @@ void send_walk(int x, int y);
 void send_chat(const char *text);
 void send_gesture(int kind);
 void send_use(u32 item);
+/** USE with an operation: 1 closes a die (Kepler DICE_OFF; servers since 2026-10-18). */
+void send_use_op(u32 item, u8 op);
 void send_look(u64 look);
 void send_name(const char *name);
 void send_buy(u16 offer);

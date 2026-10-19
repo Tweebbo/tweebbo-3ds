@@ -622,9 +622,15 @@ void item_draw(u64 now) {
       col++;
     }
     if (d->casino || d->kind == KIND_TOGGLE || d->kind == KIND_DICE || (d->flags & (DEF_TELEPORTER | DEF_GATE))) {
-      const char *label = d->casino ? "Play" : d->kind == KIND_DICE ? "Roll" : (d->flags & DEF_TELEPORTER) ? "Join" : "Use";
-      if (sk_button(NEXT_X, NEXT_Y, bw, label, true)) send_use(it->id);
+      bool rolling = d->kind == KIND_DICE && it->state == 7;
+      const char *label = d->casino ? "Play" : d->kind == KIND_DICE ? (rolling ? "Rolling…" : "Roll") : (d->flags & DEF_TELEPORTER) ? "Join" : "Use";
+      if (sk_button(NEXT_X, NEXT_Y, bw, label, !rolling)) send_use(it->id);
       col++;
+      // Kepler DICE_OFF: close a die that shows a face (the server checks you stand next to it).
+      if (d->kind == KIND_DICE && it->state >= 1 && it->state <= 6) {
+        if (sk_button(NEXT_X, NEXT_Y, bw, "Close", true)) send_use_op(it->id, 1);
+        col++;
+      }
     }
     // Players with rights move and rotate anything here; picking up stays with the item's owner
     // and the room's owner (Kepler's room rights).
