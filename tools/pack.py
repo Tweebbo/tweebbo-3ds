@@ -9,6 +9,7 @@ Output:
 build.sh converts every PNG in build/gfx into romfs/gfx/*.t3x with tex3ds.
 """
 import hashlib
+import os
 import math
 import struct
 import io
@@ -21,8 +22,16 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'build/export'
-GFX = ROOT / 'build/gfx'
-GEN = ROOT / 'source/gen'
+# PACK_OUT packs into another tree (the Switch/Vita fetch their own); PACK_HD=1 keeps the whole
+# classic interface at its original size (catalogue headlines and every icon) for the consoles
+# with memory to spare, instead of only the graphics the 3DS source names.
+OUT = Path(os.environ['PACK_OUT']) if os.environ.get('PACK_OUT') else None
+HD = os.environ.get('PACK_HD') == '1'
+# Switch/Vita keep the original item state in the offline public rooms; the 3DS output
+# keeps its historical six-field RoomItem until its source adopts the field.
+WITH_STATE = os.environ.get('PACK_STATE') == '1'
+GFX = OUT / 'gfx' if OUT else ROOT / 'build/gfx'
+GEN = OUT / 'gen' if OUT else ROOT / 'source/gen'
 PAGE = 1024
 GAP = 1
 GENERATED_PNGS = set()
@@ -38,7 +47,7 @@ ROOMS = ['newbie_lobby', 'park_a', 'pool_a', 'pool_b', 'md_a', 'casino', 'afterh
 # Classic icons the interface draws scaled down (name, maximum side in pixels).
 SMALL_ICONS = [('building_icon', 24), ('brochure_icon', 24), ('hand_icon', 26), ('help_icon', 24), ('mes_lite_icon', 24),
                ('credits_icon', 14), ('mes_smallbuddy_head', 13), ('building_icon', 18),
-               ('door_password', 18), ('bar_cigar_icon', 18), ('mes_dark_icon', 24)]
+               ('door_password', 18), ('bar_cigar_icon', 18), ('mes_dark_icon', 24), ('credits_icon', 18)]
 # Classic 9-slice chrome drawn at 1:1 by the Switch client (the 3DS draws it with primitives).
 # The generic "only names used by the 3DS source" filter below would drop them.
 EXTRA_UI = [
@@ -53,6 +62,8 @@ EXTRA_UI = [
     'button.b.left.active', 'button.b.middle.active', 'button.b.right.active',
     'button.b.left.pressed', 'button.b.middle.pressed', 'button.b.right.pressed',
     'field.left', 'field.middle', 'field.right',
+    # Catalogue product slot (Switch/Vita catalogue grid, like the PC edition).
+    'catalog_bg_icon_slot',
 ]
 # Public rooms with their own layers.
 SCENES = ['park_a', 'pool_a', 'pool_b', 'md_a']
@@ -66,6 +77,14 @@ SCENE_ART = {
     'pool_b': ['sh_', 'pelle_bg3', 'pomppulauta_4', 'pilvi', 'big_splash_', 'splash_'],
     'md_a': ['shp_', 'paalu hit ', 'startcount ', 'splash_'],
 }
+# The Switch/Vita changing booth uses the original ph_swimsuit.window pieces, so they
+# must be in the scene pages of every Lido room with a booth (pool_a, pool_b, md_a).
+if HD:
+    for _scene in ('pool_a', 'pool_b', 'md_a'):
+        SCENE_ART.setdefault(_scene, []).extend([
+            'pelle1', 'ph_biggerbutton_', 'ph_smallerbutton_',
+            'char.button.', 'char.part.viewer',
+        ])
 CLASSIC = ['model_a', 'model_b', 'model_c', 'model_d', 'model_e', 'model_f', 'casino_hall', 'lobby_hall', 'bar_hall']
 # Catalogue flag bits used by the simulation and the renderer.
 FLAG_BITS = ['can_sit_on_top', 'can_lay_on_top', 'can_stack_on_top', 'teleporter', 'gate', 'solid', 'redeemable']
@@ -367,9 +386,13 @@ def main():
                        and classic_ui[n]['w'] <= 320 and classic_ui[n]['h'] <= 240), key=lambda n: n.encode())
     # Only graphics the interface uses (named in the C code): saves linear memory.
     used_src = ' '.join(f.read_text() for f in (ROOT / 'source').glob('*.c'))
-    ui_names = [n for n in ui_names if f'"{n}"' in used_src]
+    if not HD:
+        ui_names = [n for n in ui_names if f'"{n}"' in used_src]
     # Chrome the Switch client draws with the original 9-slice art.
-    ui_names = sorted(set(ui_names) | set(EXTRA_UI), key=lambda n: n.encode())
+    # Original catalogue page icons (ctlg_icon_*) for the Switch/Vita catalogue index.
+    page_icons = {p['icon'] for p in json.loads((SRC / 'data/models/catalogue.json').read_text())['pages']
+                  if p.get('visible') and p.get('icon') in classic_ui}
+    ui_names = sorted(set(ui_names) | set(EXTRA_UI) | page_icons, key=lambda n: n.encode())
     ui_rects = {}
     for n in ui_names:
         f = SRC / 'data/classic' / classic_ui[n]['file']
@@ -485,7 +508,7 @@ def main():
         backgrounds.append((name, room, img.size, tiles))
 
     spaces = json.loads((SRC / 'data/spaces/index.json').read_text())
-    spaces_dir = ROOT / 'romfs/spaces'
+    spaces_dir = OUT / 'spaces' if OUT else ROOT / 'romfs/spaces'
     spaces_dir.mkdir(parents=True, exist_ok=True)
     for model in CLASSIC:
         mask = Image.open(SRC / 'data/spaces' / f'{model}.mask.png').convert('RGBA')
@@ -618,7 +641,9 @@ def main():
     w(f'const CatPage cat_pages[{len(pages)}] = {{')
     for pg in pages:
         body = (pg.get('body') or '').replace('\r', '\n')
-        w(f"  {{{c_str(pg['id'])}, {c_str(pg['name'])}, {c_str(pg['layout'])}, {c_str(body)}}},")
+        head = pg.get('headline') or ''
+        head = head if head in classic_ui else ''
+        w(f"  {{{c_str(pg['id'])}, {c_str(pg['name'])}, {c_str(pg['layout'])}, {c_str(body)}, {c_str(pg.get('icon') or '')}, {c_str(pg.get('group') or '')}, {c_str(head)}}},")
     w('};')
     w(f'const int cat_page_count = {len(pages)};')
     # Chip tokens cost chips, which consoles do not spend: they reach a console only by trading.
@@ -821,7 +846,10 @@ def main():
         items = r.get('furniture', [])
         w(f'static const RoomItem room_items_{key}[] = {{')
         for it in items:
-            w(f"  {{{it['id']}u, {it['def']}, {it['x']}, {it['y']}, {it['rot']}, {it['z']}}},")
+            if WITH_STATE:
+                w(f"  {{{it['id']}u, {it['def']}, {it['x']}, {it['y']}, {it['rot']}, {it['z']}, {it.get('state', 0)}}},")
+            else:
+                w(f"  {{{it['id']}u, {it['def']}, {it['x']}, {it['y']}, {it['rot']}, {it['z']}}},")
         if not items:
             w('  {0},')
         w('};')
