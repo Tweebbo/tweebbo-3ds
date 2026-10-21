@@ -1,0 +1,11 @@
+# Screenshots for the autumn plan: lobby, overview zoom and the Me panel.
+wait 30
+shot p01-room
+key q
+wait 3
+shot p02-overview
+key q
+wait 2
+click 503 712
+wait 3
+shot p03-me

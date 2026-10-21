@@ -1,0 +1,9 @@
+wait 30
+click 503 712
+wait 3
+click 749 555
+wait 4
+shot 01-support
+click 750 665
+wait 5
+shot 02-donation-qr

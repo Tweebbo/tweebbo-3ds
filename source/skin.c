@@ -219,7 +219,10 @@ static void scissor_off(void) {
 int sk_list_begin(ListState *ls, float x, float y, float w, float h, int n, float row_h) {
   L.ls = ls; L.x = x; L.y = y; L.w = w; L.h = h; L.n = n; L.row_h = row_h; L.content = n * row_h;
   bool inside = T.x0 >= x && T.x0 < x + w && T.y0 >= y && T.y0 < y + h;
-  if (T.held && T.dragging && inside) ls->scroll -= (float)T.dy;
+  if (T.held && T.dragging && inside) {
+    ls->scroll -= (float)T.dy;
+    ls->focus = -1;
+  }
   if (ls->focus >= 0 && ls->focus < n) {
     // The D-Pad keeps the focused row visible.
     float top = ls->focus * row_h;

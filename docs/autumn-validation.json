@@ -1,0 +1,34 @@
+{
+  "measuredAt": "2026-10-18T05:44:34.889637+00:00",
+  "environment": "Local native host tests, isolated PostgreSQL hotels and Azahar. No physical-device or public-release claim.",
+  "sourceSha256": "80839ed227122f1701379a380c40e2b374445146e123eb5368081646e85d89dd",
+  "debugBuild": 28,
+  "hotel": "ws://192.168.1.156:8092",
+  "files": [
+    {
+      "file": "out/debug/tweebbo-debug.cia",
+      "bytes": 31597504,
+      "sha256": "2b5efd1264bc838a859059d7b3b7e43a1bfd00318a65397ff01dd7d77b40631e"
+    },
+    {
+      "file": "out/debug/tweebbo-debug.3dsx",
+      "bytes": 36621132,
+      "sha256": "5fe66cc041ce9be81990a659a159b728ae3ca609dfea53e0edda5d2a24e64036"
+    }
+  ],
+  "tests": {
+    "hostSimulationGraphicsAnimationsProtocol": "passed after asset export and packing",
+    "transport": "passed",
+    "nativeOnlineBrowserCrossplayAndTakeover": "passed",
+    "nativeCasinoAllSevenGamesIncludingDash": "passed",
+    "browserNativeSnowStormTurnsAndReplay": "passed",
+    "nodeQuickJSDeterminism": "12 complete matches passed",
+    "emulatorWardrobe": "original categories, clothing previews, pages and colors checked",
+    "emulatorFurnitureAndOverview": "piano keyboard, lamp shades and fixed half scale checked",
+    "emulatorDash": "real stake, step amount and cashout checked",
+    "emulatorTrade": "real browser peer, offer on left, own offer on right, both final confirmations and completed transfer checked"
+  },
+  "globalModeratorTool": false,
+  "remotePublication": false,
+  "captures": "../Tweebbo-Vercel/docs/visual/autumn-local/"
+}

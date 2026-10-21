@@ -1,0 +1,6 @@
+# Performance: enter the Casino (room.txt = casino) and stay 75 s; log.txt gets two
+# "frame:" lines (CPU/GPU per frame, fps, texture loads and evictions).
+wait 40
+shot 90-perf-casino
+wait 45
+shot 91-perf-casino-later

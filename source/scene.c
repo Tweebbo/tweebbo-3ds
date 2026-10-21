@@ -1,4 +1,5 @@
 #include "scene.h"
+#include "igloo.h"
 #include "avatar.h"
 #include <jansson.h>
 #include "catalog.h"
@@ -332,6 +333,7 @@ static void draw_ent(const Ent *e, u64 now) {
   bool moving = ent_moving(e, now);
   PoseInfo p = pose_of(e, now, moving);
   float h = ent_height(e, now);
+  if (igloo_draw(e, body_dir(e, moving), p.pose, now, scr_x(roundf(sx)), scr_y(roundf(sy + HALF_H) - h), V.zoom)) return;
   bool swim = p.pose == POSE_SWIM || p.pose == POSE_FLOAT;
   if (swim) {
     bool talking = now < e->talk_until && (now / 140) % 2 == 0;

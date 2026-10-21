@@ -1,0 +1,27 @@
+wait 25
+shot 01-igloo
+click 731 712
+wait 10
+shot 02-chat-latest
+down 620 555
+move 620 575
+wait 1
+move 620 600
+wait 1
+move 620 640
+wait 1
+up
+shot 03-chat-stylus-history
+key t 100
+key t 100
+key t 100
+shot 04-chat-dpad-history
+wait 4
+shot 05-chat-incoming-anchor
+key h 100
+key h 100
+key h 100
+shot 06-chat-return-latest
+click 549 712
+wait 2
+shot 07-navigator

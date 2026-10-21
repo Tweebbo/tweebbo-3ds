@@ -26,7 +26,7 @@
 #include "world.h"
 #include "update.h"
 
-#define LOG_MAX 48
+#define LOG_MAX 160
 
 Keys K;
 
@@ -40,6 +40,7 @@ static struct {
   LogLine log[LOG_MAX];
   int log_n;
   ListState chat_list;
+  bool chat_reading;
   char last_slug[64];
   // Wardrobe
   Look draft;
@@ -121,6 +122,8 @@ void ui_room_changed(void) {
   // A connection renewal sends ROOM again: the chat is only cleared when the room changes.
   if (strcmp(U.last_slug, W.slug)) {
     U.log_n = 0;
+    U.chat_reading = false;
+    U.chat_list = (ListState){.focus = -1};
     snprintf(U.last_slug, sizeof U.last_slug, "%s", W.slug);
     if (U.panel == P_ITEM || U.panel == P_ENT || U.panel == P_GAME || U.panel == P_PROFILE) U.panel = P_ROOM;
     build_cancel();
@@ -130,16 +133,33 @@ void ui_room_changed(void) {
 
 void ui_chat(u32 eid, const char *text) {
   Ent *e = world_ent(eid);
-  if (U.log_n == LOG_MAX) { memmove(U.log, U.log + 1, sizeof(LogLine) * (LOG_MAX - 1)); U.log_n--; }
+  const char *remaining=text;
+  bool first=true;
+  do {
+  if (U.log_n == LOG_MAX) {
+    memmove(U.log, U.log + 1, sizeof(LogLine) * (LOG_MAX - 1)); U.log_n--;
+    if (U.chat_reading) U.chat_list.scroll = fmaxf(0, U.chat_list.scroll - 15);
+  }
   LogLine *l = &U.log[U.log_n++];
-  snprintf(l->name, sizeof l->name, "%s", e ? e->name : "?");
-  snprintf(l->text, sizeof l->text, "%s", text);
+  snprintf(l->name, sizeof l->name, "%s", first ? (e ? e->name : "?") : "");
+  char prefix[32];snprintf(prefix,sizeof prefix,"%s:",l->name);
+  float available=IN_W-22-(first?fminf(110,text_width(prefix,10.5f)):0);
+  size_t used=0;l->text[0]=0;
+  while(*remaining){
+    size_t n=1;while(((unsigned char)remaining[n]&0xc0)==0x80)n++;
+    if(used+n>=sizeof l->text)break;
+    memcpy(l->text+used,remaining,n);l->text[used+n]=0;
+    if(used&&text_width(l->text,10.5f)>available){l->text[used]=0;break;}
+    used+=n;remaining+=n;
+  }
   u32 c = e ? look_shirt_rgb(e->look) : SK_DIM;
   // On the light-grey panel, very light shirts are darkened to stay readable.
   int r = c >> 16 & 255, g = c >> 8 & 255, b = c & 255;
   if (r + g + b > 480) { r = r * 5 / 10; g = g * 5 / 10; b = b * 5 / 10; }
   l->color = (u32)r << 16 | (u32)g << 8 | (u32)b;
-  U.chat_list.scroll = 1e9f;
+  first=false;
+  }while(*remaining);
+  if (!U.chat_reading) U.chat_list.scroll = fmaxf(0, U.log_n * 15 - (IN_H - 28));
 }
 
 bool ui_chat_blocked(u32 eid) {
@@ -575,13 +595,19 @@ static void panel_chat(u64 now) {
   if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Chat")) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H - 24);
   const float row = 15;
+  U.chat_list.focus = -1;
+  if (K.up) U.chat_list.scroll -= row;
+  if (K.dn) U.chat_list.scroll += row;
+  if (K.left) U.chat_list.scroll -= IN_H - 28;
+  if (K.right) U.chat_list.scroll += IN_H - 28;
   int first = sk_list_begin(&U.chat_list, IN_X + 2, IN_Y + 2, IN_W - 4, IN_H - 28, U.log_n, row);
+  U.chat_reading = U.chat_list.scroll + IN_H - 28 < U.log_n * row - 1;
   for (int i = first; i < U.log_n; i++) {
     float y = sk_list_row_y(i);
     if (y > IN_Y + IN_H) break;
     LogLine *l = &U.log[i];
     char name[32];
-    snprintf(name, sizeof name, "%s:", l->name);
+    snprintf(name, sizeof name, l->name[0]?"%s:":"%s", l->name);
     float nw = sk_text(name, IN_X + 6, y + 1, 10.5f, l->color, 0, 110);
     text_draw(name, IN_X + 6.6f, y + 1, 10.5f, sk_rgb(l->color), 0);
     sk_text(l->text, IN_X + 10 + nw, y + 1, 10.5f, SK_TEXT, 0, IN_W - 22 - nw);
@@ -660,18 +686,17 @@ static void panel_me(u64 now) {
     float sx = x + w - 76, sy = IN_Y + 19;
     fill_round(sx, sy, 76, 16, 4, sk_rgb(0x7a5600));
     fill_round(sx + 1, sy + 1, 74, 14, 3, sk_rgb(0xf2bf2c));
-    text_draw("Support", sx + 38, sy + 1, 10, sk_rgb(0x4a3000), 1);
+    text_draw("Donate", sx + 38, sy + 1, 10, sk_rgb(0x4a3000), 1);
     if (sk_click(sx, sy, 76, 16)) ui_open(P_SUPPORT);
   }
   sk_text("Nintendo 3DS player", x, IN_Y + 36, 11, SK_DIM, 0, w - 14);
   console_badge(x + w - 12, IN_Y + 34, 1);
   float bw = (w - 6) / 2, y = IN_Y + 52;
   bool sitting = me && (me->flags & FLAG_SIT), dancing = me && (me->flags & FLAG_DANCE), lying = me && (me->flags & FLAG_LAY);
-  if (lying) sk_text("Select the floor to stand up.", x, y + 3, 10, SK_DIM, 0, w);
-  else {
+  {
     if (sk_button(x, y, bw, "Wave", true)) send_gesture(GESTURE_WAVE);
     if (sk_button(x + bw + 6, y, bw, dancing ? "Stop dancing" : "Dance", true)) send_gesture(GESTURE_DANCE);
-    if (sk_button(x, y + 22, bw, sitting ? "Stand up" : "Sit down", true)) send_gesture(GESTURE_SIT);
+    if (sk_button(x, y + 22, bw, sitting || lying ? "Stand up" : "Sit down", true)) send_gesture(GESTURE_SIT);
   }
   if (sk_button(x + bw + 6, y + 22, bw, me && me->drink && now < me->drink_until ? "Put drink away" : "Get a drink", true)) {
     if (me && me->drink && now < me->drink_until) send_drink(0, 0);
@@ -1379,6 +1404,7 @@ static void modal(void) {
 static u32 down_keys, held_keys;
 
 bool ui_input(u32 down, u32 held, u64 now) {
+  if(down)net_activity();
   // START quits, except while the touch keyboard is open: there it sends the text.
   if (((down & KEY_START) && !osk_active()) || quit_requested) return false;
   scene_prompt(NULL);
@@ -1505,10 +1531,11 @@ void ui_draw(u64 now) {
   }
   if (net_state() == NET_REPLACED) {
     // Same character on another device: wait until the player takes it back.
+    U.alert=false;U.alert_n=0;
     header();
     sk_status_window(20, 60, BOT_W - 40, 90, "Tweebbo");
     sk_content(25, 79, BOT_W - 50, 66);
-    sk_paragraph("Tweebbo is open on another device or browser.", 34, 92, BOT_W - 68, 11, SK_TEXT, 3);
+    sk_paragraph(net_status(), 34, 92, BOT_W - 68, 11, SK_TEXT, 3);
     if (sk_button(BOT_W / 2 - 60, 160, 120, "Play here (A)", true)) net_resume();
     return;
   }

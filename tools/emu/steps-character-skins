@@ -1,0 +1,10 @@
+# Isolated hotel on 18118. The test operator assigns Penguin, Pepe, then normal.
+wait 35
+shot skin-penguin-room
+click 503 712
+wait 5
+shot skin-penguin-profile
+wait 20
+shot skin-pepe-profile
+wait 20
+shot skin-normal-profile

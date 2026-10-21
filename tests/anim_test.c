@@ -1,6 +1,7 @@
 // Avatar animations really change the drawn parts:
 // talking (mouth), blinking, waving, dancing, walking, holding and sipping, sitting, swimming.
 #include "../source/avatar.h"
+#include "../source/assets.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,8 +12,12 @@ static char trace[4096];
 static int ops;
 static u64 test_look = 0x1234567ull;
 static u64 test_time;
+static const PeopleSprite *tracked;
+static bool tracked_drawn;
+static float tracked_y;
 u64 now_ms(void) { return test_time; }
 static void rec(int page, int sx, int sy, int sw, int sh, float x, float y) {
+  if(tracked&&tracked->page==page&&tracked->x==sx&&tracked->y==sy&&tracked->w==sw&&tracked->h==sh){tracked_drawn=true;tracked_y=y+tracked->ry;}
   char b[64];
   snprintf(b, sizeof b, "%d:%d,%d,%d,%d@%.0f,%.0f;", page, sx, sy, sw, sh, x, y);
   strncat(trace, b, sizeof trace - strlen(trace) - 1);
@@ -72,6 +77,18 @@ int main(void) {
   std = draw(POSE_STD, 0, 0, 0, false);
   assert(ops > 0);
   differs("later wardrobe walking", draw(POSE_WALK, 0, 0, 0, false), draw(POSE_WALK, 2, 0, 0, false));
+  int glasses=-1;
+  for(int i=0;i<wardrobe_faces_count;i++)if(wardrobe_faces[i].layers&&!strcmp(wardrobe_faces[i].layers,"ea:2:0")){glasses=i;break;}
+  assert(glasses>=0);later.face_style=glasses;test_look=look_encode(&later);
+  float glasses_y[2];
+  for(int frame=0;frame<2;frame++){
+    tracked=NULL;
+    const char *name=frame?"x_std_ea_2_3_0":"x_std_ea_2_2_0";
+    for(int i=0;i<people_sprite_count;i++)if(!strcmp(people_sprites[i].name,name)){tracked=&people_sprites[i];break;}
+    assert(tracked);tracked_drawn=false;draw(POSE_DANCE,frame?2:0,0,0,false);
+    assert(tracked_drawn);glasses_y[frame]=tracked_y;
+  }
+  assert(glasses_y[1]==glasses_y[0]-1);tracked=NULL;
   for (int skin=1; skin<=7; skin++) {
     test_look = (u64)skin << 48;
     for (int pose=POSE_STD; pose<=POSE_DANCE; pose++) for (int dir=0; dir<8; dir++) {

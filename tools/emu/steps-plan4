@@ -1,0 +1,7 @@
+wait 34
+shot z01-park
+key q
+wait 3
+shot z02-park-overview
+key q
+wait 1

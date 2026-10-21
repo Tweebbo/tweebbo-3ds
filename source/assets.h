@@ -19,7 +19,9 @@ extern const FurniAnimation furni_animations[];
 extern const int furni_animation_count;
 typedef struct { u8 id; const char *name; } DrinkName;
 typedef struct { const char *name; u8 breeds, color_count; u32 colors[40]; } PetKind;
-typedef struct { const char *id, *name, *layout, *body; } CatPage;
+/** `icon`: original catalogue page icon (ctlg_icon_*) or ""; `group`: index group of the page;
+ *  `headline`: the page's classic headline graphic (packed only in the HD profile). */
+typedef struct { const char *id, *name, *layout, *body, *icon, *group, *headline; } CatPage;
 /** `pages`: comma-separated page ids with commas at both ends (",3,5,"). */
 typedef struct { u16 id, def; u16 amount; u8 available; u32 price; const char *name, *desc, *pages; } CatOffer;
 enum { DEF_SIT = 1, DEF_LAY = 2, DEF_STACK = 4, DEF_TELEPORTER = 8, DEF_GATE = 16, DEF_SOLID = 32, DEF_REDEEM = 64, DEF_HOLO = 128 };

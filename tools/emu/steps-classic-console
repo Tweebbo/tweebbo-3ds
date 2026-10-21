@@ -1,0 +1,25 @@
+wait 25
+click 549 712
+wait 2
+click 740 540
+wait 2
+shot 01-owned-room-rename
+click 686 712
+wait 4
+click 752 540
+wait 2
+shot 02-my-info-mission
+click 518 540
+wait 2
+click 762 564
+wait 3
+shot 03-private-letter
+click 740 656
+wait 1
+shot 04-letter-page-two
+click 740 656
+wait 1
+shot 05-letter-page-three
+click 740 656
+wait 1
+shot 06-letter-end

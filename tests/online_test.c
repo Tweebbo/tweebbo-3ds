@@ -96,7 +96,7 @@ static void browser_pump(Ws *ws, int ms) {
 static void crossplay_games(Endpoint *ep) {
   Ws peer; Writer w; char err[128];
   assert(ws_connect(&peer, ep, "/ws/lobby", 15000, err, sizeof err));
-  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 6); /* browser build marker (WEB_CLIENT_BUILD) */
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 12); /* browser build marker (WEB_CLIENT_BUILD) */
   assert(ws_send(&peer, w.buf, w.len)); browser_pump(&peer, 1500);
   assert(browser_id && world_ent(browser_id));
   assert(!(world_ent(browser_id)->flags & FLAG_3DS));
@@ -188,7 +188,7 @@ int main(int argc, char **argv) {
   char err[128];
   assert(ws_connect(&other, &ep, "/ws/lobby", 15000, err, sizeof err));
   Writer w;
-  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 6); /* browser build marker (WEB_CLIENT_BUILD) */
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 12); /* browser build marker (WEB_CLIENT_BUILD) */
   assert(ws_send(&other, w.buf, w.len));
   assert(pump_until(paused, 10000) && "the console was not told it was replaced");
   for (u64 stop = now_ms() + 4000; now_ms() < stop;) {

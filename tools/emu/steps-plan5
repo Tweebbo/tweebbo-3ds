@@ -1,0 +1,26 @@
+# Wardrobe prototype: the later clothing (layered pieces) on the last pages.
+wait 30
+key q
+wait 3
+shot x00-lobby-overview
+key q
+wait 2
+click 503 712
+wait 3
+click 545 650
+wait 3
+click 638 535
+wait 2
+key q
+wait 2
+shot x01-tops-last
+key q
+wait 2
+shot x02-tops-prev
+click 577 535
+wait 2
+key q
+wait 2
+shot x03-hair-last
+key s
+wait 2

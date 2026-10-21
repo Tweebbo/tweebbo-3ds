@@ -1,0 +1,8 @@
+# Chip tokens (Tweebbo Exchange) placed by a web player: room.txt names that room.
+wait 40
+key g 1800
+wait 3
+shot 92-chip-tokens
+key h 1200
+wait 3
+shot 93-chip-tokens-closer

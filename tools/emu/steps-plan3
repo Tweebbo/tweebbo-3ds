@@ -1,0 +1,6 @@
+wait 36
+shot d01-dash
+wait 1
+shot d02-dash
+key s
+wait 2

@@ -1,6 +1,6 @@
 // Support Tweebbo: what donating and chips give, and how to pay for them. The console shows
 // a pay link as a QR code (paylink.c): a phone or PC opens it and pays for this character,
-// and the hotel credits it; without a code the QR simply opens tweebbo.lol.
+// and the hotel credits it; no QR is shown before a payment code is ready.
 #include "ui_int.h"
 #include "gfx.h"
 #include "net.h"
@@ -13,11 +13,11 @@ static int tab;
 
 static const char *const kinds[] = {"club", "chips"};
 
-// The live pay code when there is one, else the QR to tweebbo.lol; top right of the body.
+// Only a live checkout code belongs in this panel.
 static void qr_block(float x, float y, u64 now) {
   fill_round(x - 3, y - 3, 80, 80, 4, sk_rgb(SK_WHITE));
   int n = paylink_qr_size();
-  if (n) {
+  if (n && paylink_state() == PAY_READY) {
     float m = (float)(74 / n), o = (74 - m * n) / 2;
     for (int qy = 0; qy < n; qy++)
       for (int qx = 0; qx < n; qx++)
@@ -28,14 +28,14 @@ static void qr_block(float x, float y, u64 now) {
     sk_text(left, x + 37, y + 82, 9, SK_TEXT, 1, 86);
     return;
   }
-  if (!sk_sprite("qr-site", x, y, 0.85f)) sk_text("tweebbo.lol", x + 37, y + 34, 12, SK_TEXT, 1, 74);
-  sk_text("tweebbo.lol", x + 37, y + 82, 9.5f, SK_TEXT, 1, 78);
+  sk_text("Create a code", x + 37, y + 32, 10, SK_DIM, 1, 74);
+  sk_text("Use phone", x + 37, y + 82, 9, SK_TEXT, 1, 78);
 }
 
 // The button under the QR: make a pay code, or show where the last one stands.
 static void pay_button(float x, float y, float w, u64 now) {
   PayState st = paylink_state();
-  const char *label = st == PAY_LOADING ? "Wait..." : st == PAY_READY ? "New code" : "Pay with phone";
+  const char *label = st == PAY_LOADING ? "Wait..." : st == PAY_READY ? "New code" : "Pay / QR";
   if ((sk_button(x, y, w, label, st != PAY_LOADING) || K.a) && st != PAY_LOADING) paylink_open(kinds[tab], now);
 }
 
@@ -49,7 +49,7 @@ static void pay_status(float tx, float y, float tw) {
 
 void support_draw(u64 now) {
   paylink_poll(now);
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Support Tweebbo")) { paylink_close(); ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Donate")) { paylink_close(); ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   if (sk_tab(IN_X + 4, IN_Y + 2, 100, 16, "Donate", tab == 0)) tab = 0;
   if (sk_tab(IN_X + 108, IN_Y + 2, 100, 16, "Chips", tab == 1)) tab = 1;
@@ -66,17 +66,17 @@ void support_draw(u64 now) {
   if (tab == 0) {
     fill_round(IN_X + 2, IN_Y + 22, IN_W - 4, IN_H - 22, 4, sk_rgb(0xfff8dc));
     sk_text("Keep the hotel open", tx, y, 11.5f, 0x6b4a00, 0, tw); y += 15;
-    y += sk_paragraph("A one-time $5.00 donation helps pay for the servers. Every donor gets:", tx, y, tw, 9, SK_TEXT, 3);
+    y += sk_paragraph("Donate $5+ for these benefits:", tx, y, tw, 9, SK_TEXT, 2);
     static const char *perks[] = {
-      "- Tweebbo Club for life (gold badge)",
+      "- Tweebbo Club for life",
       "- VIP badge on your profile",
-      "- 100 credits (not 10) for hanging out",
-      "- 10,000 credits on your first donation",
+      "- 100 credits for hanging out",
+      "- 10,000 credits the first time",
     };
     y += 2;
     for (int i = 0; i < 4; i++) { sk_text(perks[i], tx, y, 9, SK_TEXT, 0, tw); y += 12; }
     if (me && (me->flags & FLAG_CLUB)) sk_text("You are a Club member. Thank you!", tx, y + 1, 8.5f, SK_GO, 0, tw);
-    if (paylink_state() == PAY_IDLE) sk_paragraph("Press A for a code: scan it with your phone to donate for this character.", tx, foot_y, tw, 8.5f, SK_DIM, 2);
+    if (paylink_state() == PAY_IDLE) sk_paragraph("A: Pay by phone. Crypto and custom amounts available.", tx, foot_y, tw, 8.5f, SK_DIM, 2);
     else pay_status(tx, foot_y, tw);
     qr_block(qx, IN_Y + 28, now);
     pay_button(qx - 4, IN_Y + IN_H - 34, 88, now);

@@ -131,7 +131,6 @@ void pet_draw(const Pet *p, u64 now, float sx, float sy, float zoom) {
   int frame = (int)(now / 125) & 3;
   int dir = DIR_MAP[p->dir & 7], index = dir == 7 ? 4 : dir;
   bool mirror = p->dir >= 4 && p->dir <= 6;
-  const char *act_base = !strcmp(action, "eat") ? "std" : action;
   const char *order3[3];
   if (p->dir == 7) { order3[0] = "hd"; order3[1] = "bd"; order3[2] = "tl"; }
   else if (p->dir == 0 || p->dir == 6) { order3[0] = "bd"; order3[1] = "hd"; order3[2] = "tl"; }
@@ -141,26 +140,28 @@ void pet_draw(const Pet *p, u64 now, float sx, float sy, float zoom) {
   for (int k = 0; k < 3; k++) {
     const char *name = order3[k];
     const char *model = !strcmp(name, "bd") ? "round" : !strcmp(name, "hd") ? pet_kind_keys[kind] : TAILS[kind % 3];
-    const char *act = "std";
-    if (!strcmp(name, "bd")) act = !strcmp(act_base, "slp") ? "lay" : act_base;
-    else if (!strcmp(name, "hd") && (!strcmp(act_base, "slp") || !strcmp(act_base, "beg"))) act = act_base;
-    else if (!strcmp(name, "hd") && !strcmp(action, "eat")) act = "eat";
+    // Original pet parts: the body takes walk/sit/lay/jump/play/dead, the head eat/sleep/beg/
+    // speak/smile/dead, the tail dead; anything a part does not have falls back to standing.
+    const char *act;
+    if (!strcmp(name, "bd")) act = !strcmp(action, "slp") ? "lay" : (!strcmp(action, "spk") || !strcmp(action, "sml")) ? "std" : action;
+    else act = action;
     int f = 0;
-    if (!strcmp(name, "bd") && (!strcmp(act_base, "wlk") || !strcmp(act_base, "jmp") || !strcmp(act_base, "scr"))) f = frame;
-    else if (!strcmp(act, "eat")) f = frame % 2;
+    if (!strcmp(name, "bd") && (!strcmp(action, "wlk") || !strcmp(action, "jmp") || !strcmp(action, "scr") || !strcmp(action, "pla"))) f = frame;
+    else if (!strcmp(act, "eat") || !strcmp(act, "spk")) f = frame % 2;
     char full[48];
     bool flip;
     snprintf(full, sizeof full, "p_%s_%s_%s_%d_%d", act, name, model, dir, f);
     const PetPart *part = resolve(full, &flip);
+    if (!part && f) { snprintf(full, sizeof full, "p_%s_%s_%s_%d_0", act, name, model, dir); part = resolve(full, &flip); }
     if (!part) { snprintf(full, sizeof full, "p_std_%s_%s_%d_0", name, model, dir); part = resolve(full, &flip); }
     if (!part) continue;
     int offx = 0, offy = 0;
     if (strcmp(name, "bd")) {
       const char *group = kind == 2 ? "croco.large" : "dogcat.large";
       char key[48];
-      snprintf(key, sizeof key, "%s/%s_%s_%d", group, name, act_base, frame);
+      snprintf(key, sizeof key, "%s/%s_%s_%d", group, name, action, frame);
       const PetOffset *o = find_offset(key);
-      if (!o) { snprintf(key, sizeof key, "%s/%s_%s", group, name, act_base); o = find_offset(key); }
+      if (!o) { snprintf(key, sizeof key, "%s/%s_%s", group, name, action); o = find_offset(key); }
       if (!o) { snprintf(key, sizeof key, "%s/%s_std", group, name); o = find_offset(key); }
       if (o) { offx = o->x[index]; offy = o->y[index]; }
     }

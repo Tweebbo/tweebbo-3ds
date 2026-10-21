@@ -22,6 +22,7 @@ typedef enum { NET_OFFLINE, NET_CONNECTING, NET_ONLINE, NET_RETRYING, NET_REPLAC
 void net_start(u64 now);
 void net_stop(void);
 void net_send(const u8 *data, int len);
+void net_activity(void);
 /** Hands received messages to the world and advances the offline simulation. */
 void net_update(u64 now);
 bool net_online(void);

@@ -80,6 +80,12 @@ static const PeopleSprite *find_sprite(const char *name) {
 }
 
 static const DanceTrack *dance_track(int part) {
+  switch (part) {
+    case FA: case EA: case HRB: case HA: case HE: part = HD; break;
+    case CP: case CC: case WA: case CA: part = CH; break;
+    case LC: part = LS; break;
+    case RC: part = RS; break;
+  }
   for (int i = 0; i < dance_track_count; i++)
     if (dance_tracks[i].index == 1 && !strcmp(dance_tracks[i].part, PART[part])) return &dance_tracks[i];
   return NULL;

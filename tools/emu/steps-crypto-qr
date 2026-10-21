@@ -1,0 +1,8 @@
+wait 30
+click 503 712
+wait 2
+click 752 550
+wait 2
+click 750 665
+wait 5
+shot payment-qr-private

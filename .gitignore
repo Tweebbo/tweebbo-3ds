@@ -15,6 +15,7 @@ tests/update_test
 obj-debug/
 tests/protocol_test
 tests/transport_test
+tests/input-latency
 tests/snow_host
 __pycache__/
 obj-showcase/

@@ -2,6 +2,12 @@ Tweebbo for Nintendo 3DS: the same hotel as [tweebbo.lol](https://tweebbo.lol), 
 
 > Tweebbo is in development and may be unstable.
 
+**New in 1.2.1**
+- Payment screens no longer show a generic website QR before a code exists. Donate / Pay by phone now offers crypto and custom donation amounts on the phone, and the Pay / QR button and text fit completely.
+- The catalogue is re-exported from the current PC hotel: 2,097 definitions, including the Exchange chip tokens and the newest furniture ranges.
+- The hotel now supports the Igloo with its penguin visitors, room names and personal missions, the 30-minute AFK pause, room deletion and the other recent PC features.
+- Input, chat history, beds, casino panels and network polling follow the current shared console code.
+
 **New in 1.2.0**
 - Offline play now includes the Classic Lobby, Classic Park, both pool areas, Rooftop Rumble, Casino and After Hours Bar, with bots.
 - Support and chips payment by QR code from the console.

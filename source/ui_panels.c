@@ -30,11 +30,11 @@ static bool online_or_toast(void) {
 #define MAX_MODELS 16
 
 // Titles hold 40 characters of up to 4 UTF-8 bytes each (the server's limit).
-typedef struct { char slug[48], title[164], owner[64], activity[64]; int online; bool pub, mine, locked, featured, credits, bar; } RoomRow;
+typedef struct { char slug[48], title[164], owner[64], activity[64]; int online; bool pub, mine, locked, featured, credits, bar, igloo; } RoomRow;
 
 static struct {
   int tab; /* 0 all, 1 public, 2 mine */
-  int job, create_job, lock_job;
+  int job, create_job, lock_job, rename_job, delete_job;
   RoomRow rooms[MAX_ROOMS];
   int n;
   struct { char key[24], name[48]; } models[MAX_MODELS];
@@ -56,6 +56,7 @@ static const struct { const char *slug, *title; } OFFLINE_ROOMS[] = {
   {"rooftop", "Rooftop Rumble"},
   {"casino", "Casino"},
   {"afterhours", "After Hours Bar"},
+  {"igloo", "Igloo"},
 };
 
 static void offline_rows(void) {
@@ -65,6 +66,7 @@ static void offline_rows(void) {
     snprintf(row->slug, sizeof row->slug, "%s", OFFLINE_ROOMS[i].slug);
     utf8_copy(row->title, sizeof row->title, OFFLINE_ROOMS[i].title);
     row->pub = true;
+    row->mine=false;row->locked=false;row->credits=!strcmp(row->slug,"casino");row->bar=!strcmp(row->slug,"afterhours");row->igloo=!strcmp(row->slug,"igloo");row->featured=row->credits||row->bar;
   }
   NV.loaded = true;
 }
@@ -111,6 +113,7 @@ static void nav_poll(void) {
         row->credits = row->featured && accent && !strcmp(accent, "credits");
         const char *icon = json_string_value(json_object_get(featured, "icon"));
         row->bar = row->featured && icon && !strcmp(icon, "bar_cigar_icon");
+        row->igloo = row->featured && icon && !strcmp(icon, "igloo_icon");
         utf8_copy(row->activity, sizeof row->activity, row->featured ? json_string_value(json_object_get(featured, "label")) : NULL);
       }
       NV.model_n = 0;
@@ -127,6 +130,22 @@ static void nav_poll(void) {
     }
     if (j) json_decref(j);
     free(r.body);
+  }
+  if (NV.rename_job && net_http_result(NV.rename_job, &r)) {
+    NV.rename_job=0;
+    json_t *j=r.body?json_loads(r.body,0,NULL):NULL;
+    const char *message=j?json_string_value(json_object_get(j,"error")):NULL;
+    ui_toast(r.status==200?"Room name saved.":message?message:"Could not rename the room.",now_ms());
+    if(r.status==200)nav_refresh();
+    json_decref(j);free(r.body);
+  }
+  if (NV.delete_job && net_http_result(NV.delete_job, &r)) {
+    NV.delete_job=0;
+    json_t *j=r.body?json_loads(r.body,0,NULL):NULL;
+    const char *message=j?json_string_value(json_object_get(j,"error")):NULL;
+    ui_toast(r.status==200?"Room deleted.":message?message:"Could not delete the room.",now_ms());
+    if(r.status==200)nav_refresh();
+    json_decref(j);free(r.body);
   }
   if (NV.lock_job && net_http_result(NV.lock_job, &r)) {
     NV.lock_job = 0;
@@ -204,6 +223,32 @@ static void nav_lock(const RoomRow *r) {
   else osk_open_secret("New room password (4-32 characters)", 32, nav_lock_done, NULL);
 }
 
+static char rename_slug_pending[48];
+static char delete_slug_pending[48];
+static void nav_delete_confirmed(void *ctx) {
+  (void)ctx;
+  json_t *j=json_pack("{s:s}","slug",delete_slug_pending);
+  char *body=json_dumps(j,JSON_COMPACT);json_decref(j);
+  if(body){NV.delete_job=net_http("POST","/api/rooms/delete",body,true);free(body);}
+}
+static void nav_delete(const RoomRow *r) {
+  utf8_copy(delete_slug_pending,sizeof delete_slug_pending,r->slug);
+  ui_confirm("Delete this room? Everyone leaves. Items and pets return to their owners.","Delete",nav_delete_confirmed,NULL);
+}
+static void nav_rename_done(const char *text, void *ctx) {
+  (void)ctx;
+  if(NV.rename_job)return;
+  json_t *j=json_pack("{s:s,s:s}","slug",rename_slug_pending,"title",text);
+  char *body=j?json_dumps(j,JSON_COMPACT):NULL;json_decref(j);
+  NV.rename_job=body?net_http("POST","/api/rooms/rename",body,true):0;
+  free(body);
+  if(!NV.rename_job)ui_toast("Could not rename the room.",now_ms());
+}
+static void nav_rename(const RoomRow *r) {
+  utf8_copy(rename_slug_pending,sizeof rename_slug_pending,r->slug);
+  osk_open("New room name (3-40 characters)",r->title,40,nav_rename_done,NULL);
+}
+
 static void room_name_done(const char *text, void *ctx) { (void)ctx; utf8_copy(NV.new_title, sizeof NV.new_title, text); }
 static void room_password_done(const char *text, void *ctx) {
   (void)ctx;
@@ -236,7 +281,7 @@ static void nav_create_view(void) {
     osk_open_secret("Room password (4-32 characters)", 32, room_password_done, NULL);
   if (locked && sk_button(x + w - 68, y + 11, 68, "Remove", true)) memset(NV.new_password, 0, sizeof NV.new_password);
   y += 30;
-  sk_text(locked ? "Only people who know the password can enter." : "Up to five rooms. Only you can decorate them.", x, y, 8.5f, SK_DIM, 0, w);
+  sk_text(locked ? "Only people who know the password can enter." : "Create your own rooms. Only you can decorate them.", x, y, 8.5f, SK_DIM, 0, w);
   float by = IN_Y + IN_H - 24, bw = (w - 8) / 2;
   if (sk_button(x, by, bw, "Back", true)) NV.creating = false;
   if (sk_button_big(x + bw + 8, by - 3, bw, NV.create_job ? "Creating…" : "Create room (A)",
@@ -281,17 +326,19 @@ void nav_draw(u64 now) {
     fill_rect(IN_X + 2, y + row - 1, IN_W - 4, 1, sk_rgb(SK_LINE));
     if (r->credits && !r->locked) sk_icon_coin(IN_X + 8, y + 5);
     else if (r->bar && !r->locked) sk_sprite("bar_cigar_icon@18", IN_X + 5, y + 4, 1);
+    else if (r->igloo && !r->locked) sk_sprite("igloo_icon@18", IN_X + 5, y + 4, 1);
     else sk_sprite(r->locked ? "door_password@18" : "building_icon@18", IN_X + 5, y + 4, 1);
-    sk_text(r->title, IN_X + 28, y + 2, 10.5f, r->credits ? SK_CREDITS_INK : SK_TEXT, 0, IN_W - 120);
+    sk_text(r->title, IN_X + 28, y + 2, 10.5f, r->credits ? SK_CREDITS_INK : SK_TEXT, 0, r->mine && NV.tab==2?IN_W-180:IN_W-120);
     char sub[96];
     if (r->featured) snprintf(sub, sizeof sub, "Featured · %s", r->activity);
     else if (r->pub) snprintf(sub, sizeof sub, "Public room");
     else snprintf(sub, sizeof sub, r->locked ? "by %s · locked" : "by %s", r->owner);
-    sk_text(sub, IN_X + 28, y + 13, 9, SK_DIM, 0, IN_W - 120);
+    sk_text(sub, IN_X + 28, y + 13, 9, SK_DIM, 0, r->mine && NV.tab==2?IN_W-180:IN_W-120);
     bool here = !strcmp(public_slug(W.slug), r->slug);
     if (r->mine && NV.tab == 2) {
       // Owners lock their room with a password or open it again, as in the web's My Rooms.
-      bool busy = NV.lock_job != 0;
+      bool busy = NV.lock_job != 0 || NV.rename_job != 0 || NV.delete_job != 0;
+      if(sk_go(IN_X + IN_W - 145,y+4,48,18,"Rename",!busy) || (focus && K.y && !busy))nav_rename(r);
       if (sk_go(IN_X + IN_W - 94, y + 4, 46, 18, busy && !strcmp(NV.lock_slug, r->slug) ? "…" : r->locked ? "Open" : "Lock", !busy))
         nav_lock(r);
     } else {
@@ -311,7 +358,9 @@ void nav_draw(u64 now) {
   if (offline) {
     sk_text("Help changes the server or returns online.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, IN_W - 8);
   } else {
-    sk_text(NV.tab == 2 ? "Most populated rooms first." : "Featured rooms first.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
+    if(NV.tab==2&&NV.list.focus>=0&&NV.list.focus<NV.n&&NV.rooms[NV.list.focus].mine){
+      if(sk_button(IN_X+4,by,108,"Delete room",!NV.delete_job&&!NV.rename_job&&!NV.lock_job))nav_delete(&NV.rooms[NV.list.focus]);
+    }else sk_text(NV.tab == 2 ? "Select a room to edit." : "Featured rooms first.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
     if (sk_button(IN_X + IN_W - 182, by, 76, NV.job ? "Loading…" : "Refresh", !NV.job)) nav_refresh();
     if (sk_button(IN_X + IN_W - 102, by, 100, "Create a room", true) || K.x) { NV.creating = true; NV.new_title[0] = 0; memset(NV.new_password, 0, sizeof NV.new_password); }
   }

@@ -1,0 +1,23 @@
+# Wardrobe prototype screenshots for the autumn plan.
+wait 30
+click 503 712
+wait 3
+click 545 650
+wait 3
+shot w01-face
+click 577 535
+wait 2
+shot w02-hair
+click 638 535
+wait 2
+shot w03-tops
+key h
+wait 1
+key h
+wait 2
+shot w04-tops-next
+click 699 535
+wait 2
+shot w05-trousers
+key s
+wait 2

@@ -119,7 +119,7 @@ try {
     await mkdir(join(outDir, 'data', f, '..'), { recursive: true });
     await cp(join(snapshot, 'public', f), join(outDir, 'data', f));
   }
-  for (const name of ['character-skins', 'wardrobe-extras', 'frank', 'spaces', 'status', 'badges', 'casino', 'activities'])
+  for (const name of ['character-skins', 'wardrobe-extras', 'frank', 'spaces', 'status', 'badges', 'casino', 'activities', 'igloo'])
     await cp(join(snapshot, 'public', name), join(outDir, 'data', name), { recursive: true });
   await cp(join(snapshot, 'public/classic'), join(outDir, 'data/classic'), { recursive: true });
   // Catalogue and inventory icons (the same PNGs the web uses).

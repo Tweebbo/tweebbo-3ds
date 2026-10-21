@@ -1,0 +1,32 @@
+{
+  "measuredAt": "2026-10-18T06:19:10.527885+00:00",
+  "environment": "Native debug build, isolated local PostgreSQL hotel, online crossplay and Azahar. No physical hardware or remote release claim.",
+  "debugBuild": 29,
+  "sourceFiles": {
+    "source/ui_panels.c": "dd3fd623e727211edde1e422d0694f7a8a9972a1f2249bb92208c6db7c9ffead",
+    "source/skin.h": "5d473af848734450dee4adcc2c75a606fa4d595a9592ed2fbe140a503a9fa071"
+  },
+  "serverSourceFingerprint": "1492f4c2560e7a6b76f685631dd38e138d0ea60a2acdc7f066c869016d14382c",
+  "files": [
+    {
+      "file": "out/debug/tweebbo-debug.cia",
+      "bytes": 31597504,
+      "sha256": "7d1c3c4087fb133bbfd10e1d29b2049ce9cefbd2d97a593a9ce4586c7817708e"
+    },
+    {
+      "file": "out/debug/tweebbo-debug.3dsx",
+      "bytes": 36621752,
+      "sha256": "4e24ad01a4cc7846cd2d4903e530d75db50010f07b8f561d20bd49c00e66c5c4"
+    }
+  ],
+  "checks": {
+    "hostMake": "passed; host targets unchanged by this UI-only change",
+    "nativeOnlineAndBrowserCrossplay": "passed against isolated hotel on port 18092",
+    "emulatorAllRooms": "featured order, original credits bag, ochre Casino row and activity labels inspected",
+    "emulatorPublicRooms": "same featured order and decoration inspected",
+    "emulatorMyRooms": "owner-filtered empty state inspected",
+    "emulatorSettingsRestored": true
+  },
+  "captures": "../Tweebbo-Vercel/docs/visual/autumn-local/3ds-navigator-*.png",
+  "remotePublication": false
+}

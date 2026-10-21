@@ -23,7 +23,7 @@ host_test: host_test.c $(OBJS)
 SERVER ?= ws://127.0.0.1:8092
 NET_OBJS := $(SRC)/net.c $(SRC)/ws.c $(SRC)/conn.c $(SRC)/proto.c $(SRC)/world.c $(SRC)/catalog.c $(SRC)/gen/assets.c
 online_test: online_test.c $(NET_OBJS)
-	cc $(CFLAGS) -DNO_TLS -pthread -o $@ $^ -lm
+	cc $(CFLAGS) -DNO_TLS -DTWEEBBO_DEBUG -pthread -o $@ $^ -lm
 
 online: online_test
 	./online_test $(SERVER)
@@ -63,8 +63,11 @@ protocol_test: protocol_test.c $(SRC)/world.c $(SRC)/proto.c $(SRC)/catalog.c $(
 	./protocol_test
 
 transport_test: transport_test.c $(NET_OBJS)
-	cc $(CFLAGS) -DNO_TLS -pthread -o $@ $^ -lm
+	cc $(CFLAGS) -DNO_TLS -DTWEEBBO_DEBUG -pthread -o $@ $^ -lm
 
 transport: transport_test
 	node transport-fixture.mjs
 .PHONY: transport
+
+input-latency: input-latency.c $(NET_OBJS)
+	cc $(CFLAGS) -DNO_TLS -DTWEEBBO_DEBUG -pthread -o $@ $^ -lm
