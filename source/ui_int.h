@@ -88,6 +88,8 @@ void build_tap_tile(int x, int y);
 /** The server confirmed (ITEM_ADD/UPDATE) or rejected (NOTICE) the placement. */
 void build_result(u32 item_id);
 void build_notice(void);
+/** Mirrors a typed :stackmode command for the placement preview (the server applies it). */
+void build_stack_command(const char *text);
 
 void spaces_reset(bool restore);
 

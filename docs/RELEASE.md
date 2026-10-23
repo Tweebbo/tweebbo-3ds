@@ -2,6 +2,10 @@ Tweebbo for Nintendo 3DS: the same hotel as [tweebbo.lol](https://tweebbo.lol), 
 
 > Tweebbo is in development and may be unstable.
 
+**New in 1.2.5**
+- Stack mode for room builders: type `:stackmode 1` in chat to stack furniture on top of anything, `:stackmode 2` to place items in the same floor space, and `:stackmode 0` to turn it off. Items can be picked up or moved from the middle of a stack.
+- Room layouts P, Q, R, S, X and Z show a proper doorway in the wall.
+
 **New in 1.2.4**
 - Catalogue: long pages scroll with the stylus again, so every item can be reached and bought. The Hand and trade lists scroll the same way.
 - The hotel now has favourite rooms and a public changelog at [tweebbo.lol/changelog](https://tweebbo.lol/changelog).

@@ -50,6 +50,24 @@ static int items_at(int x, int y, Item **out, int cap) {
   return n;
 }
 
+// Builder :stackmode (server room.rs): 0 normal, 1 stack on any item, 2 flat. It lasts while
+// the player stays in the room where it was typed, like on the server.
+static struct { int mode; char slug[32]; } STACK;
+
+void build_stack_command(const char *text) {
+  if (strncmp(text, ":stackmode", 10) || (text[10] && text[10] != ' ') || !world_can_decorate()) return;
+  const char *arg = text + 10;
+  while (*arg == ' ') arg++;
+  int mode = !strcmp(arg, "") ? STACK.mode == 0 && !strcmp(STACK.slug, W.slug) ? 1 : 0
+           : !strcmp(arg, "0") || !strcmp(arg, "off") ? 0 : !strcmp(arg, "1") || !strcmp(arg, "on") ? 1
+           : !strcmp(arg, "2") || !strcmp(arg, "flat") ? 2 : -1;
+  if (mode < 0) return;
+  STACK.mode = mode;
+  snprintf(STACK.slug, sizeof STACK.slug, "%s", W.slug);
+}
+
+static int stack_mode(void) { return strcmp(STACK.slug, W.slug) ? 0 : STACK.mode; }
+
 static bool can_place(Ghost *g) {
   const FurniDef *def = def_get(g->def);
   if (!world_can_decorate() || !def) return false;
@@ -63,7 +81,7 @@ static bool can_place(Ghost *g) {
       for (int dx = 0; dx < ow; dx++) {
         int x = original->x + dx, y = original->y + dy;
         if ((def->kind != KIND_FLOOR || def->seat > 0) && actor_at(x, y, false)) return false;
-        if (def->seat > 0) {
+        if (def->seat > 0 && !stack_mode()) {
           Item *list[16];
           int n = items_at(x, y, list, 16);
           for (int k = 0; k < n; k++) if (list[k]->id != original->id && list[k]->z >= original->z + def->seat) return false;
@@ -77,18 +95,19 @@ static bool can_place(Ghost *g) {
       int x = g->x + dx, y = g->y + dy;
       if (!world_tile(x, y) || (x == W.door_x && y == W.door_y)) return false;
       if (actor_at(x, y, def->kind == KIND_FLOOR && def->seat == 0)) return false;
-      int surface = 0;
+      int surface = 0, mode = stack_mode();
       Item *list[16];
-      int n = items_at(x, y, list, 16);
+      int n = mode == 2 ? 0 : items_at(x, y, list, 16);
       for (int k = 0; k < n; k++) {
         if (list[k]->id == g->ignore) continue;
         const FurniDef *support = def_get(list[k]->def);
-        if (!support || (support->kind != KIND_FLOOR && !(support->flags & DEF_STACK))) return false;
+        if (!support) return false;
+        if (!mode && support->kind != KIND_FLOOR && !(support->flags & DEF_STACK)) return false;
         int top = list[k]->z + support->seat;
         if (top > surface) surface = top;
       }
-      if (height >= 0 && height != surface) return false;
-      height = surface;
+      if (!mode && height >= 0 && height != surface) return false;
+      if (surface > height) height = surface;
     }
   g->z = height < 0 ? 0 : height;
   return g->z < 256;

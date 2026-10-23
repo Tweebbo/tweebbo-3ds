@@ -1,5 +1,7 @@
 # Tweebbo for Nintendo 3DS
 
+Release 1.2.5, 2026-10-23: builder stack mode (`:stackmode 0|1|2`, mirrored from the server for the placement preview in `source/build.c`) and Kepler-style doorways for room layouts P, Q, R, S, X and Z (regenerated room images and maps). Verified with host tests and a LAN-only Azahar run; physical-device checks remain pending.
+
 Release 1.2.4, 2026-10-23: the Catalogue, Hand and trade lists keep their position after a stylus drag (the D-Pad no longer snaps them back to the selected row), so long catalogue pages can be scrolled and every item bought. Verified with host tests and a LAN-only Azahar run; physical-device checks remain pending.
 
 Published follow-up, 2026-10-23: version 1.2.3 adds doorbell admission, profile badge selection and the Tweebbo Club catalogue shortcut, and fixes furniture animation and bear/terrier/pig rendering. The update is optional; existing clients remain admitted. Release builds and uploaded artifact hashes were verified. Physical-device checks remain pending. Older local-only notes below are historical.

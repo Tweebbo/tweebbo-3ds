@@ -206,7 +206,7 @@ void ui_name_changed(u32 eid) {
 
 // ---------------------------------------------------------------- actions
 
-static void chat_done(const char *text, void *ctx) { (void)ctx; send_chat(text); }
+static void chat_done(const char *text, void *ctx) { (void)ctx; build_stack_command(text); send_chat(text); }
 static void unlock_done(const char *text, void *ctx) { (void)ctx; net_unlock(text); }
 
 static void talk(void) {
