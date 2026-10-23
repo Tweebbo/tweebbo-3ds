@@ -80,33 +80,46 @@ int main(void) {
   Writer w;
   w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); send_msg(&w);
   assert(rooms == 1 && W.in_room && W.me);
-  assert(W.w == 18 && W.h == 17 && W.door_x == 0 && W.door_y == 7);
+  // The compact reception (11 x 11 inside its walls, door on the left wall at row 9).
+  assert(W.w == 13 && W.h == 14 && W.door_x == 0 && W.door_y == 9);
   printf("room %s (%s) %dx%d, me=%u %s, furniture=", W.title, W.model, W.w, W.h, W.me, W.name);
   int items = 0; for (int i = 0; i < MAX_ITEMS; i++) items += W.items[i].used; printf("%d\n", items);
-  assert(items == 53);
+  assert(items == 11);
 
   run(3000);
   Ent *me = world_ent(W.me);
-  assert(me && me->x == 2 && me->y == 7);
+  assert(me && me->x == 4 && me->y == 9);
   printf("arrival: (%d,%d)\n", me->x, me->y);
 
-  // Walk to a sofa: the avatar sits facing its rotation.
-  Item *sofa = NULL;
-  for (int i = 0; i < MAX_ITEMS; i++) if (W.items[i].used && W.items[i].def == 1016) { sofa = &W.items[i]; break; }
-  assert(sofa);
-  w_begin(&w, C_WALK); w_u8(&w, sofa->x); w_u8(&w, sofa->y); send_msg(&w);
-  run(8000);
-  me = world_ent(W.me);
-  printf("armchair (%d,%d) rot %d -> me (%d,%d) dir %d flags %d\n", sofa->x, sofa->y, sofa->rot, me->x, me->y, me->dir, me->flags);
-  if (!(me->x == sofa->x && me->y == sofa->y)) printf("  (taken by a bot; another seat is tried)\n");
-  else assert((me->flags & FLAG_SIT) && me->dir == sofa->rot * 2);
+  // The counter is drawn in the room: it cannot be walked through.
+  assert(public_blocked_count > 0);
+  {
+    const PublicBlock *b = &public_blocked[0];
+    w_begin(&w, C_WALK); w_u8(&w, b->x); w_u8(&w, b->y); send_msg(&w);
+    run(6000);
+    me = world_ent(W.me);
+    assert(!(me->x == b->x && me->y == b->y));
+  }
 
-  // Chat and greetings from the bots.
+  // F3 uses the actual catalogue chairs and sofas instead of drawn public seats.
+  PublicSeat seat_value={0};
+  for(int i=0;i<MAX_ITEMS;i++)if(W.items[i].used && def_get(W.items[i].def)->kind==KIND_SIT){
+    seat_value.x=W.items[i].x;seat_value.y=W.items[i].y;seat_value.dir=W.items[i].rot*2;break;
+  }
+  const PublicSeat *seat=&seat_value;
+  w_begin(&w, C_WALK); w_u8(&w, seat->x); w_u8(&w, seat->y); send_msg(&w);
+  run(9000);
+  me = world_ent(W.me);
+  printf("drawn seat (%d,%d) dir %d -> me (%d,%d) dir %d flags %d\n", seat->x, seat->y, seat->dir, me->x, me->y, me->dir, me->flags);
+  if (!(me->x == seat->x && me->y == seat->y)) printf("  (taken by a bot)\n");
+  else assert((me->flags & FLAG_SIT) && me->dir == seat->dir);
+
+  // Chat is echoed once; virtual residents never reply from a room.
   w_begin(&w, C_CHAT); w_str(&w, "hello everyone"); send_msg(&w);
   int before = chats;
   run(4000);
   printf("chats received after greeting: %d (last %s)\n", chats - before, last_chat);
-  assert(chats > before);
+  assert(chats == before);
 
   // Persistent look change.
   u64 look = 1 | 2 << 2 | 3 << 5 | 4 << 8 | 1 << 12 | 2 << 14 | 1 << 17 | (u64)3 << 32;
@@ -143,7 +156,7 @@ int main(void) {
         printf("  %s and %s overlap at (%d,%d)\n", e->name, W.ents[j].name, e->x, e->y);
   }
   printf("avatars in the room: %d (online=%d), chats=%d, notices=%d\n", ents, W.online, chats, notices);
-  assert(ents >= 4 && W.online == ents);
+  assert(ents == 1 && W.online == ents+5);
   puts("OK");
   return 0;
 }

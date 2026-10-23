@@ -30,7 +30,13 @@ static bool online_or_toast(void) {
 #define MAX_MODELS 16
 
 // Titles hold 40 characters of up to 4 UTF-8 bytes each (the server's limit).
-typedef struct { char slug[48], title[164], owner[64], activity[64]; int online; bool pub, mine, locked, featured, credits, bar, igloo; } RoomRow;
+typedef struct { char slug[48], title[164], owner[64], activity[64]; int online, priority; bool pub, mine, locked, featured, credits, bar, igloo; } RoomRow;
+
+static int room_order(const void *a,const void *b) {
+  const RoomRow *x=a,*y=b;
+  if(x->priority!=y->priority)return x->priority<y->priority?-1:1;
+  return x->online==y->online?strcmp(x->slug,y->slug):x->online>y->online?-1:1;
+}
 
 static struct {
   int tab; /* 0 all, 1 public, 2 mine */
@@ -57,6 +63,9 @@ static const struct { const char *slug, *title; } OFFLINE_ROOMS[] = {
   {"casino", "Casino"},
   {"afterhours", "After Hours Bar"},
   {"igloo", "Igloo"},
+  {"lobby-es", "Spanish Lobby"},
+  {"lobby-zh", "Chinese Lobby"},
+  {"lobby-ja", "Japanese Lobby"},
 };
 
 static void offline_rows(void) {
@@ -66,8 +75,11 @@ static void offline_rows(void) {
     snprintf(row->slug, sizeof row->slug, "%s", OFFLINE_ROOMS[i].slug);
     utf8_copy(row->title, sizeof row->title, OFFLINE_ROOMS[i].title);
     row->pub = true;
-    row->mine=false;row->locked=false;row->credits=!strcmp(row->slug,"casino");row->bar=!strcmp(row->slug,"afterhours");row->igloo=!strcmp(row->slug,"igloo");row->featured=row->credits||row->bar;
+    row->mine=false;row->locked=false;row->credits=!strcmp(row->slug,"casino");row->bar=!strcmp(row->slug,"afterhours");row->igloo=!strcmp(row->slug,"igloo");row->featured=row->credits||row->bar||!strcmp(row->slug,"lobby");
+    row->online=0;row->priority=!strcmp(row->slug,"lobby")?10:row->credits?20:row->bar?25:2147483647;
+    utf8_copy(row->activity,sizeof row->activity,row->credits?"Casino games":row->bar?"Drinks and smokes":row->featured?"Welcome":"");
   }
+  qsort(NV.rooms,NV.n,sizeof NV.rooms[0],room_order);
   NV.loaded = true;
 }
 
@@ -99,6 +111,7 @@ static void nav_poll(void) {
       json_t *v;
       json_array_foreach(json_object_get(j, "rooms"), i, v) {
         if (NV.n >= MAX_ROOMS) break;
+        const char *lang = json_string_value(json_object_get(json_object_get(v, "featured"), "lang"));
         RoomRow *row = &NV.rooms[NV.n++];
         snprintf(row->slug, sizeof row->slug, "%s", json_string_value(json_object_get(v, "slug")) ?: "");
         utf8_copy(row->title, sizeof row->title, json_string_value(json_object_get(v, "title")));
@@ -108,7 +121,8 @@ static void nav_poll(void) {
         row->mine = json_is_true(json_object_get(v, "mine"));
         row->locked = json_is_true(json_object_get(v, "locked"));
         json_t *featured = json_object_get(v, "featured");
-        row->featured = row->pub && json_is_object(featured);
+        row->featured = row->pub && json_integer_value(json_object_get(v,"ownerId"))==0 && json_is_object(featured) && (!lang || !strcmp(lang,"en"));
+        row->priority = row->featured ? (int)json_integer_value(json_object_get(featured,"order")) : 2147483647;
         const char *accent = json_string_value(json_object_get(featured, "accent"));
         row->credits = row->featured && accent && !strcmp(accent, "credits");
         const char *icon = json_string_value(json_object_get(featured, "icon"));
@@ -116,6 +130,7 @@ static void nav_poll(void) {
         row->igloo = row->featured && icon && !strcmp(icon, "igloo_icon");
         utf8_copy(row->activity, sizeof row->activity, row->featured ? json_string_value(json_object_get(featured, "label")) : NULL);
       }
+      qsort(NV.rooms,NV.n,sizeof NV.rooms[0],room_order);
       NV.model_n = 0;
       json_array_foreach(json_object_get(j, "models"), i, v) {
         if (NV.model_n >= MAX_MODELS) break;
@@ -465,26 +480,66 @@ void shop_draw(u64 now) {
   }
   if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Catalogue")) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
-  // Page column on the right, like the classic catalogue.
+  // Page column on the right, grouped like the web's catalogue tree: the sections (Furniture
+  // lines, Room building, Seasonal…) fold, only the open one lists its pages. L/R jump to the
+  // previous or next section; the D-Pad walks the visible rows.
   const float pw = 92, px = IN_X + IN_W - pw - 2, prow = 17;
   fill_rect(px, IN_Y + 2, pw, IN_H - 4, sk_rgb(SK_WHITE));
-  if (SH.page_focus) {
-    if (K.up) SH.page = SH.page > 0 ? SH.page - 1 : 0;
-    if (K.dn) SH.page = SH.page + 1 < cat_page_count ? SH.page + 1 : SH.page;
-    if (K.up || K.dn) { SH.offer = -1; SH.grid.scroll = 0; }
-    if (K.left || K.a) { SH.page_focus = false; K.a = false; }
+  static int page_rows[400], groups[32], group_n;
+  if (!group_n) {
+    for (int i = 0; i < cat_page_count && group_n < (int)COUNT(groups); i++) {
+      bool seen = false;
+      for (int g = 0; g < group_n; g++) if (!strcmp(cat_pages[groups[g]].group, cat_pages[i].group)) seen = true;
+      if (!seen) groups[group_n++] = i;
+    }
   }
-  SH.pages.focus = SH.page;
-  int first = sk_list_begin(&SH.pages, px, IN_Y + 2, pw, IN_H - 4, cat_page_count, prow);
-  for (int i = first; i < cat_page_count; i++) {
-    float y = sk_list_row_y(i);
+  const char *open = cat_pages[SH.page].group;
+  int open_g = 0;
+  for (int g = 0; g < group_n; g++) if (!strcmp(cat_pages[groups[g]].group, open)) open_g = g;
+  if (K.down & (KEY_L | KEY_R)) {
+    open_g = (open_g + ((K.down & KEY_R) ? 1 : group_n - 1)) % group_n;
+    SH.page = groups[open_g]; SH.offer = -1; SH.grid.scroll = 0;
+    open = cat_pages[SH.page].group;
+  }
+  // Visible rows: a section header is -(g + 1), a page is its index.
+  int row_n = 0, focus_row = 0;
+  for (int g = 0; g < group_n; g++) {
+    page_rows[row_n++] = -(g + 1);
+    if (g != open_g) continue;
+    for (int i = 0; i < cat_page_count && row_n < (int)COUNT(page_rows); i++)
+      if (!strcmp(cat_pages[i].group, open)) { if (i == SH.page) focus_row = row_n; page_rows[row_n++] = i; }
+  }
+  if (SH.page_focus && (K.up || K.dn)) {
+    int r = focus_row + (K.dn ? 1 : -1);
+    if (r >= 0 && r < row_n) {
+      int v = page_rows[r];
+      SH.page = v >= 0 ? v : groups[-v - 1];
+      SH.offer = -1; SH.grid.scroll = 0;
+      if (v < 0) open = cat_pages[SH.page].group;
+    }
+  }
+  if (SH.page_focus && (K.left || K.a)) { SH.page_focus = false; K.a = false; }
+  SH.pages.focus = focus_row;
+  int first = sk_list_begin(&SH.pages, px, IN_Y + 2, pw, IN_H - 4, row_n, prow);
+  for (int r = first; r < row_n; r++) {
+    float y = sk_list_row_y(r);
     if (y > IN_Y + IN_H) break;
-    bool on = i == SH.page;
+    int v = page_rows[r];
+    if (v < 0) {
+      const char *name = cat_pages[groups[-v - 1]].group;
+      bool here = !strcmp(name, open);
+      fill_rect(px, y, pw, prow - 1, sk_rgb(here ? SK_WINDOW : 0xd5dde1));
+      text_draw(here ? "-" : "+", px + 5, y + 2, 10, sk_rgb(here ? 0xffffff : SK_TEXT), 0);
+      sk_text(name, px + 14, y + 3, 9.5f, here ? 0xffffff : SK_TEXT, 0, pw - 18);
+      if (sk_list_row_clicked(r)) { SH.page = groups[-v - 1]; SH.offer = -1; SH.grid.scroll = 0; }
+      continue;
+    }
+    bool on = v == SH.page;
     fill_rect(px, y, pw, prow - 1, sk_rgb(on ? 0xe8eef1 : SK_WHITE));
     if (on) fill_rect(px, y, 3, prow - 1, sk_rgb(SK_WINDOW));
-    fill_rect(px + 4, y + prow - 1, pw - 8, 1, sk_rgb(SK_LINE));
-    sk_text(cat_pages[i].name, px + 7, y + 3, 9.5f, SK_TEXT, 0, pw - 12);
-    if (sk_list_row_clicked(i)) { SH.page = i; SH.offer = -1; SH.grid.scroll = 0; SH.page_focus = false; }
+    fill_rect(px + 8, y + prow - 1, pw - 12, 1, sk_rgb(SK_LINE));
+    sk_text(cat_pages[v].name, px + 10, y + 3, 9.5f, SK_TEXT, 0, pw - 14);
+    if (sk_list_row_clicked(r)) { SH.page = v; SH.offer = -1; SH.grid.scroll = 0; SH.page_focus = false; }
   }
   sk_list_end();
 

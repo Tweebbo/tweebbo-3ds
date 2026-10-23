@@ -20,6 +20,9 @@ enum { C_ACTIVE = 25 };
 /* Native device of a player: var count, then {var entity id, u8 device}. Added for cross-play
    (3DS, Nintendo Switch, PlayStation Vita); older servers never send it. */
 enum { S_DEVICE = 140 };
+/** Expressions and dance styles (4.. in GESTURE); 147 (avatar effects) is not drawn here. */
+enum { S_ACTION = 146 };
+enum { GESTURE_KISS = 4, GESTURE_LAUGH, GESTURE_SLEEP, GESTURE_THUMB, GESTURE_SIGN, GESTURE_STOP, GESTURE_DANCE_STYLE };
 /* Lido activity state (JSON, server room/activities.rs), for FEATURE_ACTIVITIES clients. */
 enum { S_ACTIVITY = 141, S_MUSIC = 142 };
 /* Chips balance (PC-only currency, ignored here) and a furniture trade (JSON, server room/trade.rs). */

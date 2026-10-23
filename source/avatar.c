@@ -79,7 +79,7 @@ static const PeopleSprite *find_sprite(const char *name) {
   return NULL;
 }
 
-static const DanceTrack *dance_track(int part) {
+static const DanceTrack *dance_track(int part, int style) {
   switch (part) {
     case FA: case EA: case HRB: case HA: case HE: part = HD; break;
     case CP: case CC: case WA: case CA: part = CH; break;
@@ -87,7 +87,7 @@ static const DanceTrack *dance_track(int part) {
     case RC: part = RS; break;
   }
   for (int i = 0; i < dance_track_count; i++)
-    if (dance_tracks[i].index == 1 && !strcmp(dance_tracks[i].part, PART[part])) return &dance_tracks[i];
+    if (dance_tracks[i].index == style && !strcmp(dance_tracks[i].part, PART[part])) return &dance_tracks[i];
   return NULL;
 }
 
@@ -248,12 +248,19 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
   if (founder || frank) snprintf(models[CC], 8, "2016");
   if (frank) { models[HR][0] = 0; snprintf(models[FA], 8, "4"); snprintf(models[HA], 8, "2207"); }
   if (drink && !lay) snprintf(models[RI], 8, "%s", drink_model(drink));
+  // Open coats of the later clothing have no shirt of their own: the plain T-shirt in white
+  // goes under them (avatar.ts), instead of a bare chest.
+  bool open_coat = false;
+  for (int j = 0; j < layer_n; j++) if (layers[j].part == CC) open_coat = true;
+  bool undershirt = !models[CH][0] && open_coat && !bathing;
+  if (undershirt) snprintf(models[CH], 8, "001");
 
   u32 colors[PARTS];
   for (int i = 0; i < PARTS; i++) colors[i] = 0xffffff;
   colors[BD] = colors[HD] = colors[FC] = colors[LH] = colors[RH] = SKIN[L.skin];
   colors[HR] = HAIR[L.hair_color];
   colors[CH] = colors[LS] = colors[RS] = SHIRT[L.shirt_color];
+  if (undershirt) colors[CH] = 0xececec;
   colors[LG] = PANTS[L.pants];
   colors[SH] = SHOES[L.shoes];
 
@@ -281,6 +288,14 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
     if (src[i] == HR) { order[n++] = HA; order[n++] = HE; }
   }
   bool seated = pose == POSE_SIT || pose == POSE_FLOOR;
+  Pose upper = pose;
+  if (seated) switch (expr >> EXPR_GESTURE_SHIFT) {
+    case 1: upper = POSE_WAVE; break;
+    case 4: upper = POSE_KISS; break;
+    case 5: upper = POSE_LAUGH; break;
+    case 7: upper = POSE_THUMB; break;
+    case 8: upper = POSE_SIGN; break;
+  }
   if (seated && FLIP[direction] != 0) {
     int a = -1, b = -1;
     for (int i = 0; i < n; i++) { if (order[i] == SH) a = i; if (order[i] == LG) b = i; }
@@ -295,11 +310,19 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
     const char *action = lay ? "lay" : seated ? "sit" : pose == POSE_WALK ? "wlk" : "std";
     int f = (!strcmp(action, "wlk") && !head && part != CH) ? frame & 3 : 0;
     int off_x = 0, off_y = 0;
-    if (pose == POSE_WAVE && (part == LH || part == LS)) { action = "wav"; f = frame & 1; }
+    if (upper == POSE_WAVE && (part == LH || part == LS || part == LC)) { action = "wav"; f = frame & 1; }
+    // Expressions, as avatar.ts: the right hand to the lips and out (kiss), smiling eyes with the
+    // mouth open and closed (laugh), the carrying forearm (thumb up), the left arm up (sign).
+    if ((upper == POSE_KISS || upper == POSE_LAUGH || upper == POSE_THUMB) && part == EY) { action = "sml"; f = 0; }
+    if (upper == POSE_LAUGH && part == FC) { action = frame & 1 ? "spk" : "sml"; f = 0; }
+    if (upper == POSE_KISS && (part == RH || part == RS || part == RC)) { action = frame & 1 ? "crr" : "drk"; f = 0; }
+    if (upper == POSE_THUMB && (part == RH || part == RS || part == RC)) { action = "crr"; f = 0; }
+    if (upper == POSE_SIGN && (part == LH || part == LS || part == LC)) { action = "wav"; f = 1; }
     if (pose == POSE_DANCE) {
-      const DanceTrack *t = dance_track(founder && part == CC ? CH : part);
+      const DanceTrack *t = dance_track(founder && part == CC ? CH : part, 1 + frame / DANCE_STYLE_STEP);
+      if (!t) t = dance_track(founder && part == CC ? CH : part, 1);
       if (t && t->n) {
-        int i = frame % t->n;
+        int i = (frame % DANCE_STYLE_STEP) % t->n;
         action = t->act[i]; f = t->frm[i]; off_x = t->offx[i]; off_y = t->offy[i];
         d = FLIP[(direction + t->offd[i] + 8) & 7];
       }

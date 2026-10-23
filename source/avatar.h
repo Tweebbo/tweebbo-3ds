@@ -2,8 +2,16 @@
 #pragma once
 #include "common.h"
 
-typedef enum { POSE_STD, POSE_WALK, POSE_SIT, POSE_FLOOR, POSE_WAVE, POSE_DANCE, POSE_LAY, POSE_SWIM, POSE_FLOAT } Pose;
+typedef enum { POSE_STD, POSE_WALK, POSE_SIT, POSE_FLOOR, POSE_WAVE, POSE_DANCE, POSE_LAY, POSE_SWIM, POSE_FLOAT,
+               /* Expressions (server ACTION): blown kiss, laugh, thumb up and the held sign. */
+               POSE_KISS, POSE_LAUGH, POSE_THUMB, POSE_SIGN } Pose;
+/** POSE_DANCE frames carry the dance style (1-4) in the thousands: frame + 1000 * (style - 1). */
+#define DANCE_STYLE_STEP 1000
 enum { EXPR_TALK = 1, EXPR_BLINK = 2 };
+#define EXPR_GESTURE_SHIFT 4
+static inline int avatar_seated_expr(int action, bool waving) {
+  return ((action == 4 || action == 5 || action == 7 || action == 8) ? action : waving ? 1 : 0) << EXPR_GESTURE_SHIFT;
+}
 
 typedef struct {
   int skin, hair_style, hair_color, shirt_color, shirt_style, pants, shoes, pants_style, shoe_style, face_style;

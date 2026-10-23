@@ -1,5 +1,9 @@
 # Tweebbo for Nintendo 3DS
 
+Header follow-up, 2026-10-23: the official T and yellow Donate button from the Smart+Classic proof of concept are now included. The T is packed at 10 × 16 pixels and drawn at 1:1 without a circular frame. Donate opens the existing support panel from the room or another panel. The classic two-screen layout is retained. Host checks and CIA/3DSX builds pass; a LAN-only Azahar run verifies opening and closing Donate without creating a payment code. Reference: the owner's `Tweebbo 3DS Smart+Classic.pdf` and `../Tweebbo-3DS-smart-poc/`.
+
+Local follow-up, 2026-10-23: Lia’s profile opens Suggestions using the existing bottom-screen layout and keyboard. Wave, kiss, laugh, thumbs-up and sign retain seated posture. The common server keeps five virtual residents outside rooms. A LAN-only Azahar run shows Lia, the form and validation; its closure was a scripted stop after a live-process check, with no crash reproduced. CIA/3DSX rebuilt locally; physical-device validation remains pending. Review: `../Tweebbo-Vercel/docs/reviews/console-polish-20261023/`.
+
 Native Nintendo 3DS client for [Tweebbo](https://tweebbo.lol) (C + libctru + citro2d + mbedTLS). It plays **in the same hotel as tweebbo.lol**: the same rooms, characters, credits, inventory, friends and pets as the web, the X player and PC. The top screen shows the room at native resolution (64×32 tiles, like the web) and the bottom screen is the classic interface of the web edition, adapted to touch and buttons.
 
 > Tweebbo is in development and may be unstable.

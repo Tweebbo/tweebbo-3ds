@@ -38,6 +38,7 @@ void sim_receive(const u8 *d, int l) { (void)d; (void)l; }
 void sim_update(u64 n) { (void)n; }
 
 static const char *server;
+static u8 browser_build;
 static char store_dir[] = "/tmp/tweebbo-3ds-online-XXXXXX";
 bool store_load(const char *key, char *out, int cap) {
   if (!strcmp(key, "server")) { snprintf(out, (size_t)cap, "%s", server); return true; }
@@ -96,7 +97,7 @@ static void browser_pump(Ws *ws, int ms) {
 static void crossplay_games(Endpoint *ep) {
   Ws peer; Writer w; char err[128];
   assert(ws_connect(&peer, ep, "/ws/lobby", 15000, err, sizeof err));
-  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 12); /* browser build marker (WEB_CLIENT_BUILD) */
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, ""); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, browser_build);
   assert(ws_send(&peer, w.buf, w.len)); browser_pump(&peer, 1500);
   assert(browser_id && world_ent(browser_id));
   assert(!(world_ent(browser_id)->flags & FLAG_3DS));
@@ -135,6 +136,14 @@ static void crossplay_games(Endpoint *ep) {
 }
 
 int main(int argc, char **argv) {
+  const char *build = getenv("TWEEBBO_WEB_BUILD");
+  char *marker_end = NULL;
+  long marker = build ? strtol(build, &marker_end, 10) : 0;
+  if (!build || marker_end == build || *marker_end || marker < 1 || marker > 255) {
+    fputs("Set TWEEBBO_WEB_BUILD to the test server's WEB_CLIENT_BUILD (make online reads the local web source).\n", stderr);
+    return 1;
+  }
+  browser_build = (u8)marker;
   server = argc > 1 ? argv[1] : "ws://127.0.0.1:8092";
   if (!mkdtemp(store_dir)) return 1;
   srand((unsigned)now_ms());
@@ -188,7 +197,7 @@ int main(int argc, char **argv) {
   char err[128];
   assert(ws_connect(&other, &ep, "/ws/lobby", 15000, err, sizeof err));
   Writer w;
-  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, 12); /* browser build marker (WEB_CLIENT_BUILD) */
+  w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, ""); w_u8(&w, 0); w_str(&w, ""); w_u8(&w, browser_build);
   assert(ws_send(&other, w.buf, w.len));
   assert(pump_until(paused, 10000) && "the console was not told it was replaced");
   for (u64 stop = now_ms() + 4000; now_ms() < stop;) {

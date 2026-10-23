@@ -56,6 +56,22 @@ int main(void) {
   differs("hold drink (coffee)", std, draw(POSE_STD, 0, 0, 8, false));
   differs("sip", draw(POSE_STD, 0, 0, 8, false), draw(POSE_STD, 0, 0, 8, true));
   differs("sit", std, draw(POSE_SIT, 0, 0, 0, false));
+  for (int pose = POSE_SIT; pose <= POSE_FLOOR; pose++) {
+    static const int gestures[] = {1,4,5,7,8};
+    for (int g = 0; g < 5; g++) {
+      int upper = avatar_seated_expr(gestures[g], gestures[g] == 1);
+      differs("seated gesture", draw(pose, 0, 0, 0, false), draw(pose, 0, upper, 0, false));
+      for (int dir = 0; dir < 8; dir+=2) {
+        char name[64]; snprintf(name, sizeof name, "h_sit_lg_001_%d_0", (int[]){0,1,2,3,2,1,0,7}[dir]);
+        tracked = NULL;
+        for (int i = 0; i < people_sprite_count; i++) if (!strcmp(people_sprites[i].name, name)) { tracked = &people_sprites[i]; break; }
+        assert(tracked); tracked_drawn = false;
+        avatar_draw(test_look, dir, pose, 0, upper, dir, 0, false, 0, 0, 1, 255);
+        assert(tracked_drawn); tracked = NULL;
+      }
+    }
+    differs("seated wave frames", draw(pose,0,avatar_seated_expr(0,true),0,false), draw(pose,1,avatar_seated_expr(0,true),0,false));
+  }
   // The cache returns exactly the same thing the second time.
   const char *again = draw(POSE_DANCE, 3, 0, 0, false), *again2 = draw(POSE_DANCE, 3, 0, 0, false);
   assert(!strcmp(again, again2));

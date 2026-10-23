@@ -42,7 +42,7 @@ def save_png(image, path):
 
 
 # Rooms included in the offline mode: public room model keys, in navigator order.
-ROOMS = ['newbie_lobby', 'park_a', 'pool_a', 'pool_b', 'md_a', 'casino', 'afterhours', 'igloo_waddle']
+ROOMS = ['newbie_lobby', 'newbie_lobby_es', 'newbie_lobby_zh', 'newbie_lobby_ja', 'park_a', 'pool_a', 'pool_b', 'md_a', 'casino', 'afterhours', 'igloo_waddle']
 # Private room backgrounds that are packed (classic models).
 # Classic icons the interface draws scaled down (name, maximum side in pixels).
 SMALL_ICONS = [('building_icon', 24), ('brochure_icon', 24), ('hand_icon', 26), ('help_icon', 24), ('mes_lite_icon', 24),
@@ -65,8 +65,10 @@ EXTRA_UI = [
     # Catalogue product slot (Switch/Vita catalogue grid, like the PC edition).
     'catalog_bg_icon_slot',
 ]
-# Public rooms with their own layers.
-SCENES = ['park_a', 'pool_a', 'pool_b', 'md_a', 'igloo_waddle']
+# Public rooms with their own layers. The lobby is the compact reception: its room image
+# (classic reception_hall) plus the counter, seats, tables and lamps cut per tile
+# (../Tweebbo-Vercel/tools/draw-reception.py).
+SCENES = ['park_a', 'pool_a', 'pool_b', 'md_a', 'igloo_waddle', 'newbie_lobby', 'newbie_lobby_es', 'newbie_lobby_zh', 'newbie_lobby_ja']
 # Layer roles (SceneSprite.role) of the Lido rooms: drawn under the floor, and the two states
 # of the booth curtains and the lift door (open = 10 + 2k, closed = 11 + 2k), source/pool.c.
 ROLE_UNDER = 1
@@ -85,7 +87,14 @@ if HD:
             'pelle1', 'ph_biggerbutton_', 'ph_smallerbutton_',
             'char.button.', 'char.part.viewer',
         ])
-CLASSIC = ['model_a', 'model_b', 'model_c', 'model_d', 'model_e', 'model_f', 'casino_hall', 'lobby_hall', 'bar_hall']
+CLASSIC = ['model_a', 'model_b', 'model_c', 'model_d', 'model_e', 'model_f', 'casino_hall', 'lobby_hall', 'bar_hall',
+           # The later classic layouts offered by the room creator (server room::creatable): the
+           # ones with clean Room-o-matic previews; at most 2 x 2 pages of 1024 x 512 each.
+           'model_g', 'model_h', 'model_i', 'model_j', 'model_k', 'model_l', 'model_m', 'model_n',
+           'model_o', 'model_p', 'model_q', 'model_r', 'model_s', 'model_x', 'model_z']
+# Public rooms whose seats are drawn in the room (not catalogue furniture): their seats and
+# solid tiles are packed for the sit pose and the offline simulation.
+DRAWN_SEAT_ROOMS = ['newbie_lobby', 'newbie_lobby_es', 'newbie_lobby_zh', 'newbie_lobby_ja']
 # Catalogue flag bits used by the simulation and the renderer.
 FLAG_BITS = ['can_sit_on_top', 'can_lay_on_top', 'can_stack_on_top', 'teleporter', 'gate', 'solid', 'redeemable']
 
@@ -412,6 +421,14 @@ def main():
         classic_ui[key] = {'reg': [0, 0]}
         ui_names.append(key)
         ui_rects[key] = packer.add(small)
+    # Original monogram: 16px for 3DS, 18px for the Switch/Vita HUD.
+    mark_box = 18 if HD else 16
+    mark = Image.open(ROOT / 'tools/branding/tweebbo-mark.png').convert('RGBA')
+    mark.thumbnail((mark_box, mark_box), Image.Resampling.BOX)
+    mark_key = f'tweebbo-mark@{mark_box}'
+    classic_ui[mark_key] = {'reg': [0, 0]}
+    ui_names.append(mark_key)
+    ui_rects[mark_key] = packer.add(mark)
     qr = SRC / 'data/qr-site.png'
     if qr.exists():
         classic_ui['qr-site'] = {'reg': [0, 0]}
@@ -761,7 +778,14 @@ def main():
         sp = Packer()
         sprites = []
         bg_name = r.get('background') or 'park_bg'
-        for l in r['layers']:
+        layers = r['layers']
+        if r.get('render') == 'private' and r.get('classicModel'):
+            # A room drawn on a classic image: that image is the scene background.
+            c = classic['rooms'][r['classicModel']]
+            bg_name = 'classic_bg'
+            layers = [{'name': bg_name, 'path': str(SRC / 'data/classic' / c['file']), 'x': c['x'], 'y': c['y'],
+                       'w': c['w'], 'h': c['h'], 'depth': -10000, 'alpha': 1}] + layers
+        for l in layers:
             frames = l.get('frames') or [l]
             switch = SWITCHES.index(l['name']) if l['name'] in SWITCHES and l.get('closed') else -1
             role = ROLE_UNDER if l.get('under') else 10 + 2 * switch if switch >= 0 else 0
@@ -772,7 +796,7 @@ def main():
                     # Original hidden members (barmask on the rooftop) sit millions of pixels away.
                     if abs(fr['x']) > 30000 or abs(fr['y']) > 30000:
                         continue
-                    img = Image.open(SRC / 'data/public-rooms' / fr['file']).convert('RGBA')
+                    img = Image.open(fr['path'] if fr.get('path') else SRC / 'data/public-rooms' / fr['file']).convert('RGBA')
                     if l.get('flip'):
                         img = img.transpose(Image.FLIP_LEFT_RIGHT)
                     page, x, y, w_, h_ = sp.add(img)
@@ -893,6 +917,20 @@ def main():
         w(f"  {{{c_str(key)}, {c_str(r['name'])}, {c_str(r.get('classicModel', ''))}, \"{rows}\", {r['door'][0]}, {r['door'][1]}, {r.get('direction', 2)}, {target[0]}, {target[1]}, {n}, room_items_{key}}},")
     w('};')
     w(f'const int room_model_count = {len(rooms)};')
+    seats = [(key, s) for key in DRAWN_SEAT_ROOMS for s in public_rooms[key].get('seats', [])]
+    w('const PublicSeat public_seats[] = {')
+    for key, s in seats:
+        w(f"  {{{c_str(key)}, {s['x']}, {s['y']}, {s['dir']}, {s['height']}}},")
+    if not seats: w('  {0},')
+    w('};')
+    w(f'const int public_seat_count = {len(seats)};')
+    blocked = [(key, b) for key in DRAWN_SEAT_ROOMS for b in public_rooms[key].get('blocked', [])]
+    w('const PublicBlock public_blocked[] = {')
+    for key, (bx, by) in blocked:
+        w(f"  {{{c_str(key)}, {bx}, {by}}},")
+    if not blocked: w('  {0},')
+    w('};')
+    w(f'const int public_blocked_count = {len(blocked)};')
 
     for old in GFX.rglob('*.png'):
         if old.resolve() not in GENERATED_PNGS and not old.name.startswith('font'): old.unlink()

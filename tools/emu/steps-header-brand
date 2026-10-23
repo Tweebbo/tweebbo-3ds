@@ -1,0 +1,17 @@
+# LAN-restricted debug build only. Open Donate without creating a payment code.
+wait 40
+shot header-room
+click 774 499
+wait 3
+shot header-donate
+click 787 518
+wait 3
+shot header-closed
+click 503 710
+wait 3
+shot header-me
+click 774 499
+wait 3
+shot header-donate-from-me
+click 787 518
+wait 2

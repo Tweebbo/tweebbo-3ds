@@ -23,6 +23,10 @@ typedef struct {
   u64 t0, talk_until, drink_until;
   s8 move_dir;
   u8 drink;
+  /** Expression and dance style from the server's ACTION (4 kiss, 5 laugh, 6 sleep, 7 thumb up,
+   *  8 sign; dance 1-4), and when the expression ends. */
+  u8 action, dance;
+  u64 action_until;
 } Ent;
 
 typedef struct {

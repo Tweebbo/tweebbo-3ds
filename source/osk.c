@@ -17,7 +17,7 @@ static struct {
   int page; /* 0 letters, 1 symbols and accents */
   int fx, fy; /* D-Pad focus */
   int max_chars;
-  char title[64], text[512];
+  char title[64], text[8001];
   OskDone done;
   void *ctx;
   u64 repeat_at;
@@ -63,7 +63,7 @@ static void finish(bool send) {
   O.active = false;
   OskDone done = O.done;
   void *ctx = O.ctx;
-  char text[512];
+  char text[8001];
   snprintf(text, sizeof text, "%s", O.text);
   memset(O.text, 0, sizeof O.text);
   // Blank messages are not sent.
@@ -153,9 +153,35 @@ bool osk_draw(u64 now) {
     memset(stars, '*', (size_t)n); stars[n] = 0;
   }
   const char *shown = O.secret ? stars : O.text;
-  while (*shown && text_width(shown, 12) > BOT_W - 26) { shown++; while (((u8)*shown & 0xC0) == 0x80) shown++; }
-  float tw = text_draw(shown, 10, 28, 12, sk_rgb(0x1d2a33), 0);
-  if ((osGetTime() / 500) % 2) fill_rect(11 + tw, 27, 1, 16, sk_rgb(0x1d2a33));
+  float tw;
+  bool blink = (osGetTime() / 500) % 2;
+  if (text_width(shown, 12) <= BOT_W - 26) {
+    tw = text_draw(shown, 10, 28, 12, sk_rgb(0x1d2a33), 0);
+    if (blink) fill_rect(11 + tw, 27, 1, 16, sk_rgb(0x1d2a33));
+  } else {
+    // Long text: wrapped on two smaller lines (the last two), so the whole message can be
+    // checked before sending instead of only its end.
+    char lines[8][160]; int n = 0;
+    const char *p = shown;
+    while (*p && n < 8) {
+      size_t used = 0, cut = 0; const char *q = p;
+      while (*q) {
+        size_t k = 1; while (((u8)q[k] & 0xC0) == 0x80) k++;
+        if (used + k >= sizeof lines[n]) break;
+        memcpy(lines[n] + used, q, k); lines[n][used + k] = 0;
+        if (used && text_width(lines[n], 10) > BOT_W - 24) break;
+        used += k; q += k;
+        if (*q == ' ') cut = used + 1;
+      }
+      if (*q && cut > 0 && cut < used) { used = cut; q = p + cut; }
+      lines[n][used] = 0; n++; p = q;
+    }
+    int first = n > 2 ? n - 2 : 0;
+    text_draw(lines[first], 9, 23, 10, sk_rgb(0x1d2a33), 0);
+    tw = n > first + 1 ? text_draw(lines[first + 1], 9, 34, 10, sk_rgb(0x1d2a33), 0) : 0;
+    if (blink) fill_rect(10 + tw, 34, 1, 12, sk_rgb(0x1d2a33));
+    if (first > 0) text_draw("…", BOT_W - 14, 24, 10, sk_rgb(0x9a9a9a), 0);
+  }
   if (!O.text[0]) text_draw("Type with the keys or the buttons", 12, 29, 10, sk_rgb(0x9a9a9a), 0);
   for (int r = 0; r < 4; r++)
     for (int c = 0; c < 10; c++) {

@@ -23,6 +23,7 @@
 #include "music.h"
 #include "snow.h"
 #include "osk.h"
+#include "feedback.h"
 #include "world.h"
 #include "update.h"
 
@@ -719,8 +720,39 @@ static void panel_me(u64 now) {
   y += 24;
   // The private code (and restoring another character) has its own window: it is long and
   // the Me panel has no room above the bottom bar for it.
-  if (sk_button(IN_X + 4, y, IN_W - 8, "Character code", true)) ui_open(P_IDENTITY);
+  float half = (IN_W - 12) / 2;
+  if (sk_button(IN_X + 4, y, half, "Actions", true)) ui_open(P_ACTIONS);
+  if (sk_button(IN_X + 8 + half, y, half, "Character code", true)) ui_open(P_IDENTITY);
   identity_poll(now);
+}
+
+// Me > Actions: the expressions and dance styles of the web's character panel (GESTURE 4-13).
+// Wave, dance and sit stay on the Me panel and the X / Y buttons.
+static void panel_actions(u64 now) {
+  (void)now;
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Actions")) { ui_open(P_ME); return; }
+  sk_content(IN_X, IN_Y, IN_W, IN_H);
+  Ent *me = world_ent(W.me);
+  bool lying = me && (me->flags & FLAG_LAY);
+  float bw = (IN_W - 16) / 3, y = IN_Y + 4;
+  sk_text("Expressions", IN_X + 6, y, 11, SK_DIM, 0, IN_W - 12);
+  y += 16;
+  static const struct { const char *label; int kind; } EXPR[] = {
+    {"Kiss", GESTURE_KISS}, {"Laugh", GESTURE_LAUGH}, {"Thumb up", GESTURE_THUMB}, {"Sign", GESTURE_SIGN}, {"Sleep", GESTURE_SLEEP},
+  };
+  for (int i = 0; i < (int)COUNT(EXPR); i++) {
+    float bx = IN_X + 4 + (i % 3) * (bw + 4), by = y + (i / 3) * 24;
+    if (sk_button(bx, by, bw, EXPR[i].label, !lying || EXPR[i].kind == GESTURE_SLEEP)) send_gesture(EXPR[i].kind);
+  }
+  if (sk_button(IN_X + 4 + 2 * (bw + 4), y + 24, bw, lying || (me && me->action == 6) ? "Wake up" : "Stop action", true))
+    send_gesture(GESTURE_STOP);
+  y += 54;
+  sk_text("Dance style", IN_X + 6, y, 11, SK_DIM, 0, IN_W - 12);
+  y += 16;
+  static const char *STYLES[] = {"Hab-Hop", "Pogo Mogo", "Duck Funk", "The Rollie"};
+  float dw = (IN_W - 12) / 2;
+  for (int i = 0; i < 4; i++)
+    if (sk_button(IN_X + 4 + (i % 2) * (dw + 4), y + (i / 2) * 24, dw, STYLES[i], !lying)) send_gesture(GESTURE_DANCE_STYLE + i);
 }
 
 // The web's "Save / restore character" sheet: the private code, restoring another character
@@ -907,6 +939,12 @@ static void panel_ent(u64 now) {
   float x = IN_X + 82, w = IN_W - 88;
   sk_text(e->name, x, IN_Y + 4, 13, SK_TEXT, 0, w);
   text_draw(e->name, x + 0.6f, IN_Y + 4, 13, sk_rgb(SK_TEXT), 0);
+  if(feedback_receptionist(e->guest,W.model)) {
+    sk_text("Receptionist",x,IN_Y+25,11,SK_TEXT,0,w);
+    sk_paragraph("Have an idea or found a problem? Leave a message in the suggestion box.",x,IN_Y+44,w,11,SK_TEXT,4);
+    if(sk_button(x,IN_Y+104,w,"Suggestions",true)){feedback_open();ui_open(P_FEEDBACK);}
+    return;
+  }
   sk_text((e->flags & FLAG_CLUB) ? "Tweebbo Club member" : "In this room", x, IN_Y + 22, 10.5f, (e->flags & FLAG_CLUB) ? 0x8a6200 : SK_DIM, 0, w);
   float y = IN_Y + 42;
   if (e->guest && net_online()) {
@@ -1210,20 +1248,29 @@ static void panel_settings(u64 now) {
 static void header(void) {
   fill_rect(0, 0, BOT_W, HEAD_H, sk_rgb(0x1f2a30));
   fill_rect(0, HEAD_H - 1, BOT_W, 1, sk_rgb(0x000000));
-  sk_text(W.in_room ? W.title : "Tweebbo", 5, 2, 11, SK_WHITE, 0, 150);
+  int mw = 0, mh = 0;
+  if (sk_sprite_size("tweebbo-mark@16", &mw, &mh))
+    sk_sprite("tweebbo-mark@16", floorf(10 - mw / 2.0f), floorf((HEAD_H - mh) / 2.0f), 1);
+  NetState st = net_state();
+  const float dw = ceilf(text_width("Donate", 10)) + 14, dx = BOT_W - 3 - dw;
+  const bool enabled = W.in_room && (st == NET_ONLINE || st == NET_OFFLINE);
+  const bool pressed = enabled && T.held && !T.dragging && T.x0 >= dx && T.x0 < dx + dw && T.y0 >= 0 && T.y0 < HEAD_H;
+  fill_round(dx, 2, dw, HEAD_H - 3, (HEAD_H - 3) / 2.0f, sk_rgb(!enabled ? 0x687276 : pressed ? 0xd9a90c : 0xf5c62a));
+  text_draw("Donate", dx + dw / 2, 2, 10, sk_rgb(enabled ? 0x3a2a00 : 0xffffff), 1);
+  if (enabled && sk_hit(dx, 0, dw, HEAD_H)) ui_open(P_SUPPORT);
   char buf[32];
   snprintf(buf, sizeof buf, "%u", (unsigned)W.credits);
-  float x = BOT_W - 5 - text_width(buf, 11);
+  float x = dx - 5 - text_width(buf, 11);
   text_draw(buf, x, 2, 11, sk_rgb(SK_WHITE), 0);
   // Classic coin stack (credits_icon) instead of a circle.
   sk_sprite("credits_icon@14", x - 16, 2, 1);
-  NetState st = net_state();
   if (st == NET_ONLINE) snprintf(buf, sizeof buf, "%d online", W.online);
-  else snprintf(buf, sizeof buf, "%s", st == NET_OFFLINE ? "OFFLINE PRACTICE (bots)" : st == NET_CONNECTING ? "connecting…" : st == NET_FULL ? "at capacity" : st == NET_LOCKED ? "locked room" : st == NET_REPLACED || st == NET_DENIED ? "paused" : "reconnecting…");
+  else snprintf(buf, sizeof buf, "%s", st == NET_OFFLINE ? "offline" : st == NET_CONNECTING ? "connecting…" : st == NET_FULL ? "at capacity" : st == NET_LOCKED ? "locked room" : st == NET_REPLACED || st == NET_DENIED ? "paused" : "reconnecting…");
   x -= 24 + text_width(buf, 10);
   text_draw(buf, x, 3, 10, sk_rgb(st == NET_ONLINE ? 0xd9f2dc : 0xffd34d), 0);
   // Classic messenger head (mes_smallbuddy_head) for connected players.
   if (st == NET_ONLINE) sk_sprite_tint("mes_smallbuddy_head@13", x - 15, 2, 0x8fe39b);
+  sk_text(W.in_room ? W.title : "Tweebbo", 21, 2, 11, SK_WHITE, 0, fmaxf(0, x - (st == NET_ONLINE ? 19 : 4) - 21));
 }
 
 typedef struct { Panel panel; const char *label, *icon; } Tool;
@@ -1245,7 +1292,7 @@ static void toolbar(void) {
   for (int i = 0; i < COUNT(TOOLS); i++) {
     const Tool *t = &TOOLS[i];
     float cx = i * w + w / 2;
-    bool on = U.panel == t->panel || (t->panel == P_ME && (U.panel == P_LOOK || U.panel == P_MOVE || U.panel == P_IDENTITY));
+    bool on = U.panel == t->panel || (t->panel == P_ME && (U.panel == P_LOOK || U.panel == P_MOVE || U.panel == P_IDENTITY || U.panel == P_ACTIONS));
     if (on) fill_round(i * w + 3, BAR_Y + 2, w - 6, BAR_H - 4, 4, sk_rgba(0xffffff, 40));
     int iw = 0, ih = 0;
     if (t->icon && sk_sprite_size(t->icon, &iw, &ih)) {
@@ -1458,7 +1505,7 @@ bool ui_input(u32 down, u32 held, u64 now) {
     while (i < COUNT(cycle) && cycle[i] != U.panel) i++;
     ui_open(cycle[(i + 1) % COUNT(cycle)]);
   }
-  if ((down & (KEY_L | KEY_R)) && U.panel != P_LOOK) scene_toggle_overview();
+  if ((down & (KEY_L | KEY_R)) && U.panel != P_LOOK && U.panel != P_SHOP) scene_toggle_overview();
   char lido[64];
   if (!window && (bar_context(lido, sizeof lido, now) || music_context(lido, sizeof lido, now))) {
     // After Hours Bar's counter and bartender, and the room's Jukebox or Trax machine.
@@ -1485,18 +1532,34 @@ bool ui_input(u32 down, u32 held, u64 now) {
     if ((down & KEY_Y) && cd && cd->kind == KIND_DICE && ctx.item->state >= 1 && ctx.item->state <= 6) send_use_op(ctx.item->id, 1);
     else if (down & KEY_Y) send_gesture(GESTURE_DANCE);
     if (down & KEY_B) send_gesture(GESTURE_SIT);
-  } else if (K.b && U.panel != P_LOOK && U.panel != P_IDENTITY && U.panel != P_GAME) {
+  } else if (K.b && U.panel != P_LOOK && U.panel != P_IDENTITY && U.panel != P_ACTIONS && U.panel != P_GAME) {
     // B closes the window (the wardrobe and the character code return to Me from their own panel).
     if (U.panel == P_ENT) scene_select(0);
     ui_close();
     K.b = false;
-  } else if (K.b && (U.panel == P_LOOK || U.panel == P_IDENTITY)) ui_open(P_ME);
+  } else if (K.b && (U.panel == P_LOOK || U.panel == P_IDENTITY || U.panel == P_ACTIONS)) ui_open(P_ME);
   // The Circle Pad always walks; the D-Pad only when no window is open.
   if (U.panel != P_CASINO && U.panel != P_GAME) stick_walk(held, !window, now);
   return true;
 }
 
+static void feedback_subject_done(const char *s,void *ctx){(void)ctx;snprintf(feedback.subject,sizeof feedback.subject,"%s",s);feedback.status[0]=0;}
+static void feedback_message_done(const char *s,void *ctx){(void)ctx;snprintf(feedback.message,sizeof feedback.message,"%s",s);feedback.status[0]=0;}
+static void panel_feedback(void) {
+  if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,"Suggestion box")){ui_close();return;}
+  sk_content(IN_X,IN_Y,IN_W,IN_H);
+  float x=IN_X+6,y=IN_Y+4,w=IN_W-12;
+  static const char *categories[]={"Suggestion","Bug","Other"};
+  for(int i=0;i<3;i++)if(sk_button(x+i*w/3,y,w/3-3,categories[i],!feedback.busy))feedback.category=i;
+  sk_text(categories[feedback.category],x,y+23,10,SK_DIM,0,w);
+  if(sk_field(x,y+38,w,feedback.subject,"Subject (3-100 characters)") && !feedback.busy)osk_open("Subject (3-100 characters)",feedback.subject,100,feedback_subject_done,NULL);
+  if(sk_field(x,y+65,w,feedback.message,"Description (10-2000 characters)") && !feedback.busy)osk_open("Description (10-2000 characters)",feedback.message,2000,feedback_message_done,NULL);
+  sk_paragraph(feedback.status[0]?feedback.status:"Do not include passwords or private access codes.",x,y+92,w,10,SK_TEXT,2);
+  if(sk_button(x,y+124,w,feedback.busy?"Sending...":"Send message",!feedback.busy))feedback_send();
+}
+
 void ui_draw(u64 now) {
+  feedback_poll();
   fill_rect(0, 0, BOT_W, BOT_H, sk_rgb(0x111111));
   friends_poll(now);
   games_poll();
@@ -1595,9 +1658,11 @@ void ui_draw(u64 now) {
     case P_LOOK: panel_look(now); break;
     case P_ITEM: item_draw(now); break;
     case P_ENT: panel_ent(now); break;
+    case P_FEEDBACK: panel_feedback(); break;
     case P_PETS: pets_draw(now); break;
     case P_BAR: bar_draw(now); break;
     case P_MUSIC: music_draw(now); break;
+    case P_ACTIONS: panel_actions(now); break;
     default: panel_room(now); break;
   }
   header();

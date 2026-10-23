@@ -188,6 +188,16 @@ static float scr_y(float wy) { return V.overview ? roundf((V.cam_y + wy) * V.zoo
 
 typedef struct { Pose pose; int frame; float lift, dx, dy, depth, anchor_y; } PoseInfo;
 
+/** An expression from the server's ACTION is shown until its time runs out. */
+static bool expression_on(const Ent *e, u64 now) { return e->action && (!e->action_until || now < e->action_until); }
+
+/** Sit height of a seat drawn in this public room's image (pack.py DRAWN_SEAT_ROOMS), or 0. */
+static int public_seat_height(int x, int y) {
+  for (int i = 0; i < public_seat_count; i++)
+    if (public_seats[i].x == x && public_seats[i].y == y && !strcmp(public_seats[i].room, W.model)) return public_seats[i].height;
+  return 0;
+}
+
 static bool in_water(const Ent *e) { return scene_water_tile(e->x, e->y); }
 
 static PoseInfo pose_of(const Ent *e, u64 now, bool moving) {
@@ -211,13 +221,25 @@ static PoseInfo pose_of(const Ent *e, u64 now, bool moving) {
     Item *seat = world_item_at(e->x, e->y);
     const FurniDef *d = seat ? def_get(seat->def) : NULL;
     if (d && d->kind == KIND_SIT) { p.pose = POSE_SIT; p.lift = d->seat - SEATED_HIP + ent_height(e, now); }
+    else if (!seat && public_seat_height(e->x, e->y) > 0) {
+      // Seats drawn in the lobby image: the sitter goes between the seat back and its near arm.
+      p.pose = POSE_SIT; p.lift = public_seat_height(e->x, e->y) - SEATED_HIP + ent_height(e, now); p.depth = .6f;
+    }
     else p.pose = POSE_FLOOR;
     return p;
   }
   if (moving && (e->flags & FLAG_ROLL)) return p;
   if (moving) { p.pose = POSE_WALK; p.frame = (int)(now / 125) & 3; }
+  else if (e->action == 4 && expression_on(e, now)) { p.pose = POSE_KISS; p.frame = (int)(now / 220) & 1; }
+  else if (e->action == 5 && expression_on(e, now)) { p.pose = POSE_LAUGH; p.frame = (int)(now / 160) & 3; p.dy = (now / 70) % 2 ? 1 : 0; }
+  else if (e->action == 7 && expression_on(e, now)) p.pose = POSE_THUMB;
+  else if (e->action == 8 && expression_on(e, now)) p.pose = POSE_SIGN;
   else if (e->flags & FLAG_WAVE) { p.pose = POSE_WAVE; p.frame = (int)(now / 220) & 1; }
-  else if (e->flags & FLAG_DANCE) { p.pose = POSE_DANCE; p.frame = (int)(now / 160) & 7; }
+  else if (e->flags & FLAG_DANCE) {
+    p.pose = POSE_DANCE;
+    p.frame = (int)(now / 160) & 7;
+    if (e->dance >= 1 && e->dance <= 4) p.frame += DANCE_STYLE_STEP * (e->dance - 1);
+  }
   return p;
 }
 
@@ -360,11 +382,15 @@ static void draw_ent(const Ent *e, u64 now) {
     for (int i = 0; i < 4; i++) fill_rect(roundf(cx + corners[i][0] * V.zoom) - 1, roundf(cy + corners[i][1] * V.zoom) - 1, 3, 3, rgba(0xffe7a2, 255));
   } else if (slot >= 0 && slot < MAX_ENTS) arrival_id[slot] = 0;
   bool talking = now < e->talk_until && (now / 140) % 2 == 0;
-  bool blink = (now + e->id * 1777) % 5200 < 130;
+  // Sleep (action 6) keeps the eyes closed.
+  bool blink = (now + e->id * 1777) % 5200 < 130 || (e->action == 6 && expression_on(e, now));
   int drink = now < e->drink_until ? e->drink : 0;
   int bar = bar_sip(e, now, moving);
   bool sip = bar >= 0 ? bar == 1 : !moving && (now + e->id * 177) % 6000 < 900;
-  avatar_draw(appearance(e), body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0),
+  int upper = (p.pose == POSE_SIT || p.pose == POSE_FLOOR)
+    ? avatar_seated_expr(expression_on(e, now) ? e->action : 0, (e->flags & FLAG_WAVE) != 0) : 0;
+  if (upper) p.frame = (int)(now / (e->action == 5 ? 160 : 220)) & 3;
+  avatar_draw(appearance(e), body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0) | upper,
               head_dir(e, now, moving), drink, sip,
               scr_x(roundf(sx) + p.dx - ANCHOR_X), scr_y(roundf(sy + HALF_H) + p.dy - p.anchor_y - p.lift), V.zoom, 255);
 }
@@ -485,7 +511,7 @@ static void draw_bubbles(u64 now) {
   }
 }
 
-void scene_chat(u32 eid, const char *text, u64 now) {
+static void bubble_add(u32 eid, const char *text, u64 now) {
   Ent *e = world_ent(eid);
   if (!e) return;
   float px, py, wx, wy;
@@ -516,6 +542,37 @@ void scene_chat(u32 eid, const char *text, u64 now) {
   b->y = NAN;
   b->t0 = now;
   V.last_shift = now;
+}
+
+/** Long messages become several bubbles (one per line that fits), so nothing is cut off. */
+void scene_chat(u32 eid, const char *text, u64 now) {
+  Ent *e = world_ent(eid);
+  if (!e) return;
+  char prefix[32];
+  snprintf(prefix, sizeof prefix, "%s: ", e->name);
+  float room = TOP_W - 30 - (text_width(prefix, BUBBLE_TEXT) + 1);
+  const char *p = text;
+  while (*p == ' ') p++;
+  for (int chunks = 0; *p && chunks < BUBBLE_MAX; chunks++) {
+    char line[104];
+    size_t used = 0, cut = 0;
+    const char *q = p;
+    while (*q) {
+      size_t n = 1;
+      while (((unsigned char)q[n] & 0xc0) == 0x80) n++;
+      if (used + n >= sizeof line) break;
+      memcpy(line + used, q, n); line[used + n] = 0;
+      if (used && text_width(line, BUBBLE_TEXT) > room) break;
+      used += n; q += n;
+      if (*q == ' ') cut = used;
+    }
+    // Break at the last space when the line is full and a word would be split.
+    if (*q && cut > 0) { used = cut; q = p + cut; }
+    line[used] = 0;
+    bubble_add(eid, line, now);
+    p = q;
+    while (*p == ' ') p++;
+  }
 }
 
 void scene_draw(u64 now) {

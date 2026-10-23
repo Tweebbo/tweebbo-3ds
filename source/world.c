@@ -203,6 +203,15 @@ void world_handle(const u8 *data, int len) {
       if (e) e->used = false;
       break;
     }
+    case S_ACTION:
+      // Expressions and dance styles: id, action, dance style, remaining milliseconds.
+      for (int n = (int)r_var(&r); n > 0 && !r.err; n--) {
+        Ent *e = world_ent((u32)r_var(&r));
+        u8 action = r_u8(&r), dance = r_u8(&r);
+        u32 left = (u32)r_var(&r);
+        if (e && !r.err) { e->action = action; e->dance = dance; e->action_until = left ? now + left : 0; }
+      }
+      break;
     case S_DEVICE:
       // Native device of each player (3DS/Switch/Vita); old servers never send it.
       for (int n = (int)r_var(&r); n > 0 && !r.err; n--) {

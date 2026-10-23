@@ -24,6 +24,12 @@ while read -r cmd a b c; do
     "#"*|"") ;;
   esac
 done < "${STEPS:-/work/tools/emu/steps-online}"
+if ! kill -0 "$EMU" 2>/dev/null; then
+  wait "$EMU"; status=$?
+  printf 'unexpected-exit status=%s\n' "$status" > /work/build/shots/emulator-exit.txt
+  exit 1
+fi
+printf 'alive-after-steps; planned-stop=SIGTERM\n' > /work/build/shots/emulator-exit.txt
 kill "$EMU" 2>/dev/null || true
 sleep 1
 kill -KILL "$EMU" 2>/dev/null || true

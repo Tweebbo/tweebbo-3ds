@@ -2,6 +2,15 @@ Tweebbo for Nintendo 3DS: the same hotel as [tweebbo.lol](https://tweebbo.lol), 
 
 > Tweebbo is in development and may be unstable.
 
+**New in 1.2.2**
+- F3 reception in all four regions, PC-style featured-room ordering and the expanded furniture catalogue.
+- Lia opens Suggestions, with validation, retained drafts and retry support.
+- Wave, kiss, laugh, thumbs-up and sign keep the avatar seated.
+- Official pixel-art T and yellow Donate button in the bottom-screen header.
+- Shared hotel presence uses five virtual residents outside rooms; moderator tools distinguish each console.
+
+Verified with native host tests and a LAN-only Azahar build. Physical 3DS validation remains pending.
+
 **New in 1.2.1**
 - Payment screens no longer show a generic website QR before a code exists. Donate / Pay by phone now offers crypto and custom donation amounts on the phone, and the Pay / QR button and text fit completely.
 - The catalogue is re-exported from the current PC hotel: 2,097 definitions, including the Exchange chip tokens and the newest furniture ranges.

@@ -48,6 +48,14 @@ typedef struct {
   u8 door_x, door_y, dir, target_x, target_y;
   u16 item_count; const RoomItem *items;
 } RoomModel;
+/** Seats drawn in a public room image (the lobby): sitters use the sit pose at `height`. */
+typedef struct { const char *room; u8 x, y, dir, height; } PublicSeat;
+/** Solid tiles of a drawn public room (counter, tables), for the offline simulation. */
+typedef struct { const char *room; u8 x, y; } PublicBlock;
+extern const PublicSeat public_seats[];
+extern const int public_seat_count;
+extern const PublicBlock public_blocked[];
+extern const int public_blocked_count;
 
 extern const int atlas_page_count;
 /** Pages from this index on (character skins) are loaded on demand by gfx.c. */

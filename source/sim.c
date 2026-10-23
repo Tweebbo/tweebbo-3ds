@@ -13,7 +13,7 @@
 #define TICK_MS 500
 #define HANDOUT_TICKS 600
 #define DRINK_TICKS 180
-#define BOT_COUNT 6
+#define BOT_COUNT 0
 
 typedef struct {
   bool used, bot, leaving;
@@ -78,8 +78,22 @@ static SItem *item_at(int x, int y) {
   return best;
 }
 
+/** Seat drawn in the room image (the lobby): its facing direction, or -1 (pack.py DRAWN_SEAT_ROOMS). */
+static int drawn_seat(int x, int y) {
+  for (int i = 0; i < public_seat_count; i++)
+    if (public_seats[i].x == x && public_seats[i].y == y && !strcmp(public_seats[i].room, S.model->key)) return public_seats[i].dir;
+  return -1;
+}
+
+/** Solid tile drawn in the room image (the lobby counter, tables, lamps). */
+static bool drawn_block(int x, int y) {
+  for (int i = 0; i < public_blocked_count; i++)
+    if (public_blocked[i].x == x && public_blocked[i].y == y && !strcmp(public_blocked[i].room, S.model->key)) return true;
+  return false;
+}
+
 static bool can_walk(int x, int y, bool goal) {
-  if (!tile(x, y)) return false;
+  if (!tile(x, y) || drawn_block(x, y)) return false;
   SItem *it = item_at(x, y);
   if (!it) return true;
   const FurniDef *d = def_get(it->def);
@@ -131,7 +145,7 @@ static int count_ents(void) {
 }
 
 static void online(void) {
-  Writer w; w_begin(&w, S_ONLINE); w_var(&w, (u64)count_ents()); send(&w);
+  Writer w; w_begin(&w, S_ONLINE); w_var(&w, (u64)count_ents()+5); send(&w);
 }
 
 static void carry(const SEnt *e) {
@@ -343,6 +357,11 @@ static bool random_seat(int *x, int *y) {
       for (int tx = it->x; tx < it->x + w; tx++)
         if (!occupied(tx, ty, 0) && rnd_range(0, ++seen) == 0) { *x = tx; *y = ty; }
   }
+  // Bots also take the seats drawn in the lobby image.
+  for (int i = 0; i < public_seat_count; i++) {
+    const PublicSeat *ps = &public_seats[i];
+    if (!strcmp(ps->room, S.model->key) && !occupied(ps->x, ps->y, 0) && rnd_range(0, ++seen) == 0) { *x = ps->x; *y = ps->y; }
+  }
   return *x >= 0;
 }
 
@@ -417,6 +436,9 @@ static void tick(u64 now) {
         if (d && (d->kind == KIND_SIT || (d->flags & DEF_LAY))) {
           e->flags = (u8)((e->flags & ~(FLAG_SIT | FLAG_LAY | FLAG_DANCE | FLAG_WAVE)) | (d->kind == KIND_SIT ? FLAG_SIT : FLAG_LAY));
           e->dir = (u8)(seat->rot * 2);
+        } else if (last && !seat && drawn_seat(nx, ny) >= 0) {
+          e->flags = (u8)((e->flags & ~(FLAG_SIT | FLAG_LAY | FLAG_DANCE | FLAG_WAVE)) | FLAG_SIT);
+          e->dir = (u8)drawn_seat(nx, ny);
         }
       } else {
         e->plen = e->ppos = 0;
@@ -468,6 +490,9 @@ static void tick(u64 now) {
 /** Public slug of a room model, as the server exposes it (lobby, park, pool…). */
 static const char *model_slug(const char *model) {
   if (!strcmp(model, "newbie_lobby")) return "lobby";
+  if (!strcmp(model, "newbie_lobby_es")) return "lobby-es";
+  if (!strcmp(model, "newbie_lobby_zh")) return "lobby-zh";
+  if (!strcmp(model, "newbie_lobby_ja")) return "lobby-ja";
   if (!strcmp(model, "park_a")) return "park";
   if (!strcmp(model, "pool_a")) return "pool";
   if (!strcmp(model, "pool_b")) return "diving";
@@ -478,6 +503,9 @@ static const char *model_slug(const char *model) {
 /** Accepts either a public slug or the packed model key. */
 static const char *model_key(const char *room) {
   if (!strcmp(room, "lobby")) return "newbie_lobby";
+  if (!strcmp(room, "lobby-es")) return "newbie_lobby_es";
+  if (!strcmp(room, "lobby-zh")) return "newbie_lobby_zh";
+  if (!strcmp(room, "lobby-ja")) return "newbie_lobby_ja";
   if (!strcmp(room, "park")) return "park_a";
   if (!strcmp(room, "pool")) return "pool_a";
   if (!strcmp(room, "diving")) return "pool_b";

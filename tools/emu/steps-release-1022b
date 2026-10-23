@@ -1,0 +1,11 @@
+# 2026-10-22: Me, catalogue and navigator on the 3DS against the local hotel.
+wait 40
+click 503 712
+wait 2
+shot s01-me
+click 594 712
+wait 3
+shot s02-catalogue
+click 549 712
+wait 4
+shot s03-navigator
