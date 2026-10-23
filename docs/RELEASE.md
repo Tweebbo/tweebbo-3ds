@@ -2,12 +2,20 @@ Tweebbo for Nintendo 3DS: the same hotel as [tweebbo.lol](https://tweebbo.lol), 
 
 > Tweebbo is in development and may be unstable.
 
+**New in 1.2.4**
+- Catalogue: long pages scroll with the stylus again, so every item can be reached and bought. The Hand and trade lists scroll the same way.
+- The hotel now has favourite rooms and a public changelog at [tweebbo.lol/changelog](https://tweebbo.lol/changelog).
+
+**New in 1.2.3**
+- Doorbell rooms: ring to enter, and let visitors in from your own room.
+- Choose the badge shown first on your profile, and open Tweebbo Club from the catalogue.
+- Improved furniture animations and restored bear, terrier and pig textures, coat colours and shadows.
+
 **New in 1.2.2**
 - F3 reception in all four regions, PC-style featured-room ordering and the expanded furniture catalogue.
 - Lia opens Suggestions, with validation, retained drafts and retry support.
 - Wave, kiss, laugh, thumbs-up and sign keep the avatar seated.
 - Official pixel-art T and yellow Donate button in the bottom-screen header.
-- Shared hotel presence uses five virtual residents outside rooms; moderator tools distinguish each console.
 
 Verified with native host tests and a LAN-only Azahar build. Physical 3DS validation remains pending.
 

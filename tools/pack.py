@@ -204,7 +204,7 @@ def main():
     pet_src = Image.open(SRC / 'data/models/pets-0.png').convert('RGBA')
     pet_names = sorted(pets_data['sprites'], key=lambda n: n.encode())
     order = sorted(pet_names, key=lambda n: -pets_data['sprites'][n]['h'])
-    PW = 512
+    PW = 1024
     x = y = shelf = 0
     pet_rects = {}
     for n in order:
@@ -222,16 +222,22 @@ def main():
         for n in pet_names:
             sp = pets_data['sprites'][n]
             crop = pet_src.crop((sp['x'], sp['y'], sp['x'] + sp['w'], sp['y'] + sp['h']))
+            if n == 'p_std_sd_001_0_0':
+                shadow = Image.new('RGBA', crop.size)
+                shadow.putalpha(crop.getchannel('A'))
+                page.paste(shadow, pet_rects[n])
+                continue
             px = crop.load()
             out = Image.new('RGBA', crop.size)
             po = out.load()
             for yy in range(sp['h']):
                 for xx in range(sp['w']):
                     c = pal[px[xx, yy][0]]
-                    po[xx, yy] = (c[0], c[1], c[2], 255)
+                    po[xx, yy] = (c[0], c[1], c[2], px[xx, yy][3] if sp.get('alpha') else 255)
             # Director matte: white connected to the border is transparent.
             seen = set()
             stack = [(xx, yy) for xx in range(sp['w']) for yy in (0, sp['h'] - 1)] + [(xx, yy) for yy in range(sp['h']) for xx in (0, sp['w'] - 1)]
+            if sp.get('alpha'): stack = []
             while stack:
                 xx, yy = stack.pop()
                 if xx < 0 or yy < 0 or xx >= sp['w'] or yy >= sp['h'] or (xx, yy) in seen:
@@ -244,6 +250,10 @@ def main():
                 po[xx, yy] = (255, 255, 255, 0)
             page.paste(out, pet_rects[n])
         save_png(page, GFX / f'pets_{pi}.png')
+
+    if os.environ.get('PACK_PETS_ONLY') == '1':
+        print('Pet textures rebuilt with their original shadow alpha.')
+        return
 
     # --- avatars: parts sorted by name (binary search in C) ---
     people = json.loads((SRC / 'people.json').read_text())

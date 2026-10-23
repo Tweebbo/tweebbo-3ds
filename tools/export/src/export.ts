@@ -3,7 +3,7 @@
 import { loadModels, people, poolPeople, spriteImage, loadBarItems, barItems } from '@web/models';
 import { drawHeld } from '@web/after-hours-art';
 import { catalogue, ensureFurniture, furniAnim } from '@web/catalogue';
-import { furniLayers, furniFrame, importedSmall, FURNI_OX, FURNI_OY } from '@web/furni';
+import { furniLayers, furniFrame, importedSmall, animationPeriod, layerFrame, layerOffset, FURNI_OX, FURNI_OY } from '@web/furni';
 import { Renderer } from '@web/renderer';
 import { State } from '@web/state';
 import { loadClassic } from '@web/classic';
@@ -29,9 +29,11 @@ const png = (c: HTMLCanvasElement) => c.toDataURL('image/png').slice('data:image
 declare global {
   interface Window {
     exportPeople(prefix: string): Promise<unknown[]>;
-    exportFurni(defs: number[]): Promise<unknown[]>;
+    exportFurni(defs: number[],rotation?:number,state?:number): Promise<unknown[]>;
+    furniturePlan():Promise<{id:number;rotations:number[];states:number}[]>;
     exportIcons(defs: number[]): Promise<{ def: number; png: string }[]>;
     furnitureTimelines(): Record<string, number[]>;
+    takeFurnitureImages(): {id:number;png:string}[];
     furniIds(): Promise<number[]>;
     exportFloors(models: { key: string; rows: string[]; door: [number, number] }[]): Promise<unknown[]>;
     exportSwimming(): Promise<unknown[]>;
@@ -83,7 +85,6 @@ window.furniIds = async () => {
   return Object.values(catalogue.definitions).filter((d) => d.asset).map((d) => d.id).sort((a, b) => a - b);
 };
 
-const gcd = (a: number, b: number): number => b ? gcd(b, a % b) : a;
 
 // Catalogue and inventory icons as the web draws them (importedSmall): one per definition, with
 // the definition's own colours. The bank's -icon.png is shared by every colour and only holds the
@@ -100,8 +101,17 @@ window.exportIcons = async (defs) => {
 };
 
 const timelines: Record<string, number[]> = {};
+const furnitureImages=new WeakMap<HTMLCanvasElement,number>();
+let nextFurnitureImage=0;
+const pendingFurnitureImages:{id:number;png:string}[]=[];
+const furnitureImage=(canvas:HTMLCanvasElement):number=>{
+  let id=furnitureImages.get(canvas);if(id!==undefined)return id;
+  id=nextFurnitureImage++;furnitureImages.set(canvas,id);pendingFurnitureImages.push({id,png:png(canvas)});return id;
+};
+window.takeFurnitureImages=()=>pendingFurnitureImages.splice(0);
 window.furnitureTimelines = () => timelines;
-window.exportFurni = async (defs) => {
+window.furniturePlan=async()=>{await loadModels();return Object.values(catalogue.definitions).filter(d=>d.asset).map(d=>({id:d.id,rotations:d.rotations?.length?d.rotations:[0,1,2,3],states:d.kind===4||d.id===7?8:d.flags.includes('teleporter')?3:Math.max(1,d.states)}));};
+window.exportFurni = async (defs,onlyRotation,onlyState) => {
   await loadModels();
   const out = [];
   for (const id of defs) {
@@ -109,31 +119,22 @@ window.exportFurni = async (defs) => {
     if (!def?.asset) continue;
     await ensureFurniture(id);
     for (const rot of def.rotations?.length ? def.rotations : [0, 1, 2, 3]) {
+      if(onlyRotation!==undefined&&rot!==onlyRotation)continue;
       // States the server uses even if the catalogue does not count them: dice (face 1–6, 7 = rolling)
       // and teleporters (1 open, 2 travelling).
       const states = def.kind === 4 || id === 7 ? 8 : def.flags.includes('teleporter') ? 3 : Math.max(1, def.states);
       for (let state = 0; state < states; state++) {
+       if(onlyState!==undefined&&state!==onlyState)continue;
        // Frames of animated furniture (furniFrame): holograms, teleporting, dice, lamp.
        const frames = new Set<number>([0]);
        const first = furniFrame(id, state, 0);
        if (first >= 1000) {
          const sequence = furniAnim[def.asset.bank]?.states[String(state)];
-         let period = 1;
-         for (const layer of Object.values(sequence ?? {})) {
-           const n = layer.d * layer.f.length;
-           period = Math.min(4096, period / gcd(period, n) * n);
-         }
+         const period = animationPeriod(sequence ?? {});
          const aliases: number[] = [], unique = new Map<string, number>();
          for (let tick = 0; tick < period; tick++) {
            const signature = Object.entries(sequence ?? {}).map(([layer, seq]) => {
-             const step = Math.floor(tick / seq.d);
-             let index = step % seq.f.length;
-             if (seq.r) {
-               let h = (step * 2654435761 + layer.charCodeAt(0) * 40503) >>> 0;
-               h = (h ^ (h >>> 15)) >>> 0; h = Math.imul(h, 2246822519) >>> 0; h = (h ^ (h >>> 13)) >>> 0;
-               index = h % seq.f.length;
-             }
-             return `${layer}:${seq.f[index]}`;
+             return `${layer}:${layerFrame(seq,tick,layer)}:${layerOffset(seq,tick,layer)}`;
            }).join('/');
            let canonical = unique.get(signature);
            if (canonical === undefined) { canonical = 1000 + tick; unique.set(signature, canonical); frames.add(canonical); }
@@ -145,12 +146,12 @@ window.exportFurni = async (defs) => {
         const layers = furniLayers(id, rot, state, frame);
         let parts = (layers.parts ?? []).map((p) => ({
           x: p.x, y: p.y, depth: p.depth, alpha: p.alpha, shadow: p.shadow,
-          add: p.composite === 'lighter', w: p.image.width, h: p.image.height, png: png(p.image),
+          add: p.composite === 'lighter', w: p.image.width, h: p.image.height, image: furnitureImage(p.image),
         }));
         // Furniture 1–8 from the first edition only has 512×512 base and front layers.
         if (!layers.parts) parts = [[layers.base, -0.006], [layers.front, 0.133]].flatMap(([c, depth]) => {
           const cut = crop(c as HTMLCanvasElement | null);
-          return cut ? [{ x: cut.x - FURNI_OX, y: cut.y - FURNI_OY, depth: depth as number, alpha: 1, shadow: false, add: false, w: cut.c.width, h: cut.c.height, png: png(cut.c) }] : [];
+          return cut ? [{ x: cut.x - FURNI_OX, y: cut.y - FURNI_OY, depth: depth as number, alpha: 1, shadow: false, add: false, w: cut.c.width, h: cut.c.height, image: furnitureImage(cut.c) }] : [];
         });
         out.push({ def: id, rot, state, frame, parts });
        }

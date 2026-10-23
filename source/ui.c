@@ -2,6 +2,7 @@
 // players and credits; icon bar (Me, Navigator, Catalogue, Hand,
 // Friends, Chat, Help) and steel-blue windows for each panel.
 #include "ui.h"
+#include "doorbell.h"
 #include <3ds.h>
 #include <citro2d.h>
 #include <jansson.h>
@@ -263,8 +264,8 @@ static bool context_find(Context *c, u64 now) {
     else if (d->drinks && d->drinks[0]) verb = (me->drink && now < me->drink_until) ? NULL : "Get a drink";
     else if (d->kind == KIND_DICE) verb = it->state >= 1 && it->state <= 6 ? "Roll the dice (Y closes it)" : "Roll the dice";
     else if (d->flags & DEF_TELEPORTER) verb = "Enter the teleporter";
-    else if (d->flags & DEF_GATE) verb = it->state ? "Close the gate" : "Open the gate";
-    else if (d->kind == KIND_TOGGLE) verb = it->state ? "Switch off" : "Switch on";
+    else if ((d->flags & DEF_GATE) && W.room_owner) verb = it->state ? "Close the gate" : "Open the gate";
+    else if (d->kind == KIND_TOGGLE && W.room_owner) verb = it->state ? "Switch off" : "Switch on";
     else if (d->flags & DEF_LAY) verb = "Lie down";
     else if (d->kind == KIND_SIT) verb = (me->flags & FLAG_SIT) && me->x == it->x && me->y == it->y ? NULL : seat_taken(it) ? NULL : "Sit";
     if (!verb) continue;
@@ -744,7 +745,7 @@ static void panel_actions(u64 now) {
     float bx = IN_X + 4 + (i % 3) * (bw + 4), by = y + (i / 3) * 24;
     if (sk_button(bx, by, bw, EXPR[i].label, !lying || EXPR[i].kind == GESTURE_SLEEP)) send_gesture(EXPR[i].kind);
   }
-  if (sk_button(IN_X + 4 + 2 * (bw + 4), y + 24, bw, lying || (me && me->action == 6) ? "Wake up" : "Stop action", true))
+  if (!lying && me && me->action != 6 && sk_button(IN_X + 4 + 2 * (bw + 4), y + 24, bw, "Stop action", true))
     send_gesture(GESTURE_STOP);
   y += 54;
   sk_text("Dance style", IN_X + 6, y, 11, SK_DIM, 0, IN_W - 12);
@@ -896,6 +897,19 @@ static ListState rights_list;
 static void remove_all_confirmed(void *ctx) { (void)ctx; send_room_mod(MOD_REMOVE_ALL, 0, 0); }
 
 /** The owner's players with rights and banned players, with Remove / Lift. */
+static void panel_doorbell(void) {
+  if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,"Doorbell")){ui_close();return;}
+  sk_content(IN_X,IN_Y,IN_W,IN_H);
+  if(!W.room_owner){sk_paragraph("Enter your own room to answer the door.",IN_X+8,IN_Y+8,IN_W-16,11,SK_TEXT,3);return;}
+  sk_paragraph(doorbell.status,IN_X+8,IN_Y+8,IN_W-16,11,SK_TEXT,3);
+  if(sk_button(IN_X+8,IN_Y+46,IN_W-16,doorbell.enabled?"Turn off doorbell (open room)":"Use doorbell instead of password",!doorbell.busy))doorbell_set(!doorbell.enabled);
+  if(doorbell.guest){
+    sk_text(doorbell.name,IN_X+8,IN_Y+80,12,SK_TEXT,0,IN_W-16);
+    if(sk_button(IN_X+8,IN_Y+110,(IN_W-24)/2,"Let in",!doorbell.busy))doorbell_answer(true);
+    if(sk_button(IN_X+16+(IN_W-24)/2,IN_Y+110,(IN_W-24)/2,"Decline",!doorbell.busy))doorbell_answer(false);
+  }
+}
+
 static void panel_rights(u64 now) {
   (void)now;
   if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Room rights")) { ui_open(P_ME); return; }
@@ -904,6 +918,7 @@ static void panel_rights(u64 now) {
   json_t *j = W.rights_json ? json_loads(W.rights_json, 0, NULL) : NULL;
   json_t *holders = json_object_get(j, "holders"), *bans = json_object_get(j, "bans");
   int nh = (int)json_array_size(holders), nb = (int)json_array_size(bans), n = nh + nb + 2;
+  if(sk_button(IN_X+IN_W-98,IN_Y+IN_H-25,92,"Doorbell",net_online()))ui_open(P_DOORBELL);
   const float row = 22, lh = IN_H - 30;
   fill_rect(IN_X + 2, IN_Y + 2, IN_W - 4, lh, sk_rgb(SK_WHITE));
   int first = sk_list_begin(&rights_list, IN_X + 2, IN_Y + 2, IN_W - 4, lh, n, row);
@@ -925,7 +940,7 @@ static void panel_rights(u64 now) {
   sk_list_end();
   json_decref(j);
   if (sk_button(IN_X + 4, IN_Y + IN_H - 24, 150, "Remove all rights", nh > 0)) ui_confirm("Remove everyone's rights in this room?", "Remove", remove_all_confirmed, NULL);
-  sk_text("Use a player's card to add.", IN_X + IN_W - 6, IN_Y + IN_H - 20, 9, SK_DIM, 2, 140);
+
 }
 
 static void panel_ent(u64 now) {
@@ -1559,7 +1574,10 @@ static void panel_feedback(void) {
 }
 
 void ui_draw(u64 now) {
-  feedback_poll();
+  feedback_poll();doorbell_poll();
+  static u32 last_bell;
+  if(!doorbell.count)last_bell=0;
+  if(doorbell.guest&&doorbell.guest!=last_bell&&U.panel==P_ROOM){last_bell=doorbell.guest;ui_open(P_DOORBELL);}
   fill_rect(0, 0, BOT_W, BOT_H, sk_rgb(0x111111));
   friends_poll(now);
   games_poll();
@@ -1571,13 +1589,15 @@ void ui_draw(u64 now) {
     sk_status_window(10, 28, 300, 198, blocked == NET_LOCKED ? "Locked room" : blocked == NET_FULL ? "Over capacity" : "Connection paused");
     sk_content(15, 49, 290, 172);
     sk_sprite("frank-maintenance", 25, 62, 1);
-    sk_paragraph(net_status(), 94, 62, 200, 11, SK_TEXT, 5);
+    sk_paragraph(net_doorbell()&&doorbell.status[0]?doorbell.status:net_status(), 94, 62, 200, 11, SK_TEXT, 5);
     if (blocked == NET_FULL) {
       sk_paragraph("Soon you can help Tweebbo grow.", 94, 138, 200, 10, SK_DIM, 2);
       sk_button(94, 172, 93, "Donate", false);
       sk_button(194, 172, 100, "Sponsor", false);
     }
-    if (blocked == NET_LOCKED) {
+    if (blocked == NET_LOCKED && net_doorbell()) {
+      if(sk_button(94,153,200,doorbell.waiting?"Waiting...":"Ring doorbell",!doorbell.busy&&!doorbell.waiting))doorbell_ring();
+    } else if (blocked == NET_LOCKED) {
       if (sk_button(94, 153, 200, "Enter password", true) || (down_keys & KEY_A)) {
         osk_open_secret("Room password", 32, unlock_done, NULL);
       }
@@ -1659,6 +1679,7 @@ void ui_draw(u64 now) {
     case P_ITEM: item_draw(now); break;
     case P_ENT: panel_ent(now); break;
     case P_FEEDBACK: panel_feedback(); break;
+    case P_DOORBELL: panel_doorbell(); break;
     case P_PETS: pets_draw(now); break;
     case P_BAR: bar_draw(now); break;
     case P_MUSIC: music_draw(now); break;

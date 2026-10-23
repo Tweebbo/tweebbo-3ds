@@ -1,0 +1,32 @@
+# Catalogue grid and page list: a stylus drag scrolls them and they stay scrolled.
+wait 35
+click 594 712
+wait 3
+click 745 642
+wait 3
+click 560 560
+wait 2
+shot 122-shop-page
+down 590 600
+wait 0.2
+move 590 590
+wait 0.1
+move 590 575
+wait 0.1
+move 590 560
+wait 0.1
+move 590 545
+wait 0.1
+move 590 530
+wait 0.1
+move 590 515
+wait 0.2
+up
+wait 2
+shot 123-shop-dragged
+click 560 580
+wait 2
+shot 124-shop-picked
+key a
+wait 2
+shot 125-shop-confirm

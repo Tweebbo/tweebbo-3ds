@@ -121,7 +121,7 @@ static void draw_picker(void) {
   if (K.right && T_.sel + 1 < n) T_.sel++;
   if (K.up && T_.sel >= cols) T_.sel -= cols;
   if (K.dn && T_.sel + cols < n) T_.sel += cols;
-  T_.pick.focus = T_.sel / cols;
+  if (K.left || K.right || K.up || K.dn || T_.pick.focus >= 0) T_.pick.focus = T_.sel / cols;
   int frow = sk_list_begin(&T_.pick, IN_X + 2, IN_Y + 2, IN_W - 4, gh, rows, slot);
   bool chosen = false;
   for (int r = frow; r < rows; r++) {

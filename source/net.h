@@ -54,6 +54,7 @@ void net_resume(void);
 void net_unlock(const char *password);
 int net_retry_seconds(void);
 bool net_room_full(void);
+bool net_doorbell(void);
 
 // Storage implemented by the application (SD card on the console, files in the tests).
 bool store_load(const char *key, char *out, int cap);

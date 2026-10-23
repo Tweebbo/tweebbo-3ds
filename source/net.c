@@ -77,7 +77,7 @@ typedef struct {
 } HttpJob;
 
 static struct {
-  bool started, offline, quit;
+  bool started, offline, quit, doorbell;
   Mutex mu;
   ThreadHandle thread, http_thread;
   char server[128], session_server[128];
@@ -134,7 +134,8 @@ static void deliver(const u8 *data, int len, void *ctx) {
   if (len > 0 && data[0] == S_WELCOME) N.welcomed = true;
   if (len > 0 && data[0] == S_LOCKED) {
     N.blocked = NET_LOCKED;
-    snprintf(N.status, sizeof N.status, "%s", len > 1 && data[1] == 2 ? "Incorrect password. Try again." : "Enter the room password to continue.");
+    N.doorbell = len > 1 && data[1] == 4;
+    snprintf(N.status, sizeof N.status, "%s", N.doorbell ? "Ring the doorbell to ask the room owner to enter." : len > 1 && data[1] == 2 ? "Incorrect password. Try again." : "Enter the room password to continue.");
   }
   if (len > 0 && data[0] == S_CAPACITY) {
     Reader r; r_init(&r, data, len); r_u8(&r);
@@ -601,3 +602,5 @@ void send_trade(const char *json) { SEND(w_begin(&w, C_TRADE); w_str(&w, json));
 void send_activity(const char *json) { SEND(w_begin(&w, C_ACTIVITY); w_str(&w, json)); }
 void send_music(const char *json) { SEND(w_begin(&w, C_MUSIC); w_str(&w, json)); }
 void send_casino(int op, int a, int b, int c) { SEND(w_begin(&w, C_CASINO); w_u8(&w, op); w_u8(&w, a); w_u8(&w, b); w_u8(&w, c)); }
+
+bool net_doorbell(void) { lock(&N.mu); bool value=N.blocked==NET_LOCKED&&N.doorbell; unlock(&N.mu); return value; }

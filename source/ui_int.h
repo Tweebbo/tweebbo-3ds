@@ -26,7 +26,7 @@ typedef enum {
   P_BAR,      /* After Hours Bar: the menu and the held drink */
   P_MUSIC,    /* the room playlist (Jukebox / Trax) */
   P_ACTIONS,  /* expressions and dance styles (Me > Actions), as the web's character panel */
-  P_FEEDBACK,
+  P_FEEDBACK, P_DOORBELL,
   P_COUNT
 } Panel;
 

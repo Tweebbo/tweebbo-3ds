@@ -6,10 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-static struct { u32 guest, job_guest; int job, save; bool vip, staff, club, gold, loading; char status[80]; } P;
+static struct { u32 guest, job_guest; int job, save; bool vip, staff, club, gold, loading, picking; int count, choice; char codes[8][16]; char status[80]; } P;
 
 void profile_open(u32 guest) {
-  P.guest = guest; P.vip = P.staff = P.club = P.gold = false; P.loading = true; P.status[0] = 0;
+  P.guest = guest; P.vip = P.staff = P.club = P.gold = false; P.loading = true; P.picking=false; P.count=P.choice=0; P.status[0] = 0;
   char path[80]; snprintf(path, sizeof path, "/api/badges?guest=%u", (unsigned)guest);
   if (!P.job) { P.job_guest = guest; P.job = net_http("GET", path, NULL, false); }
   ui_open(P_PROFILE);
@@ -27,7 +27,7 @@ void profile_draw(u64 now) {
       json_t *array = json_object_get(j, "badges"), *code; size_t i;
       json_array_foreach(array, i, code) {
         const char *s = json_string_value(code);
-        if (s) { P.vip |= !strcmp(s, "VIP"); P.staff |= !strcmp(s, "ADM"); P.club |= !strcmp(s, "CLUB1"); P.gold |= !strcmp(s, "CLUB2"); }
+        if (s) { if(P.count<8)snprintf(P.codes[P.count++],16,"%s",s);P.vip |= !strcmp(s, "VIP"); P.staff |= !strcmp(s, "ADM"); P.club |= !strcmp(s, "CLUB1"); P.gold |= !strcmp(s, "CLUB2"); }
       }
     } else snprintf(P.status, sizeof P.status, "Could not load badges. Try Refresh.");
     json_decref(j); free(result.body);
@@ -39,6 +39,13 @@ void profile_draw(u64 now) {
     free(result.body);
   }
   float x = IN_X + 12, y = IN_Y + 10;
+  if(P.picking&&P.guest==W.guest_id){
+    sk_text("Choose your profile badge",x,y,12,SK_TEXT,0,IN_W-24);
+    for(int k=0;k<P.count;k++){char label[40];snprintf(label,sizeof label,"%s%s",P.choice==k?"> ":"",P.codes[k]);if(sk_button(x+(k%2)*138,y+25+(k/2)*24,132,label,!P.save))P.choice=k;}
+    if(sk_button(x,y+128,110,"Back",!P.save))P.picking=false;
+    if(sk_button(x+120,y+128,150,"Show this badge",!P.save&&P.count)){json_t *j=json_pack("{s:s}","code",P.codes[P.choice]);char *body=json_dumps(j,JSON_COMPACT);json_decref(j);P.save=net_http("POST","/api/badges",body,true);free(body);}
+    sk_text(P.status,x,IN_Y+IN_H-18,10,SK_DIM,0,IN_W-24);return;
+  }
   // Badges flow left to right: VIP, Staff, then the Tweebbo Club badge (gold for life members).
   struct { bool on; const char *sprite, *label; } badges[] = {
     {P.vip, "badge-VIP", "VIP"}, {P.staff, "badge-ADM", "Staff"},
@@ -53,6 +60,7 @@ void profile_draw(u64 now) {
   }
   if (!P.vip && !P.staff && !P.club && !P.gold) sk_text(P.loading ? "Loading badges…" : "No badges to display.", x, y + 10, 11, SK_DIM, 0, IN_W - 24);
   if (sk_button(x, y + 42, 110, "Refresh badges", !P.job)) profile_open(P.guest);
+  if(P.guest==W.guest_id&&sk_button(x+120,y+42,150,"Choose badge",!P.job&&!P.save&&P.count))P.picking=true;
   json_t *owners = W.owners_json ? json_loads(W.owners_json, 0, NULL) : NULL;
   json_t *self = json_object_get(owners, "self");
   if (P.guest == W.guest_id && json_is_object(self)) {

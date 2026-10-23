@@ -90,20 +90,24 @@ try {
 
   if (!defs) defs = await page.evaluate(() => window.furniIds());
   const furniMeta = [];
+  const plan=new Map((await page.evaluate(()=>window.furniturePlan())).map(d=>[d.id,d]));
   let n = 0;
-  // In batches: hundreds of definitions in one call exhaust the page memory.
-  for (let i = 0; i < defs.length; i += 40) {
-    const furni = await page.evaluate((d) => window.exportFurni(d), defs.slice(i, i + 40));
+  // Export each definition separately; particle timelines can contain thousands of variants.
+  for (let i = 0; i < defs.length; i++) {
+    for(const rotation of plan.get(defs[i]).rotations)for(let state=0;state<plan.get(defs[i]).states;state++){
+    const furni = await page.evaluate(([d,r,s]) => window.exportFurni([d],r,s), [defs[i],rotation,state]);
+    for(const image of await page.evaluate(()=>window.takeFurnitureImages())){
+      await writeFile(join(outDir,'furni',`f${image.id}.png`),Buffer.from(image.png,'base64'));
+    }
     for (const v of furni) {
       const parts = [];
       for (const p of v.parts) {
-        const file = `f${n++}.png`;
-        await writeFile(join(outDir, 'furni', file), Buffer.from(p.png, 'base64'));
-        const { png, ...meta } = p; parts.push({ ...meta, file });
+        const { image, ...meta } = p; parts.push({ ...meta, file:`f${image}.png` });n++;
       }
       furniMeta.push({ ...v, parts });
     }
-    process.stdout.write(`\rfurniture: ${Math.min(i + 40, defs.length)}/${defs.length}`);
+    }
+    if((i+1)%40===0||i+1===defs.length)process.stdout.write(`\rfurniture: ${i+1}/${defs.length}`);
   }
   await mkdir(join(outDir, 'icons'), { recursive: true });
   for (let i = 0; i < defs.length; i += 40)

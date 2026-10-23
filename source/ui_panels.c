@@ -519,7 +519,10 @@ void shop_draw(u64 now) {
     }
   }
   if (SH.page_focus && (K.left || K.a)) { SH.page_focus = false; K.a = false; }
-  SH.pages.focus = focus_row;
+  // The D-Pad keeps the focused row in view; a stylus drag clears the focus (sk_list_begin) and
+  // the list then stays where it was dragged until the D-Pad is used again.
+  if (SH.page_focus && (K.up || K.dn || (K.down & (KEY_L | KEY_R)))) SH.pages.focus = focus_row;
+  else if (SH.pages.focus >= 0) SH.pages.focus = focus_row;
   int first = sk_list_begin(&SH.pages, px, IN_Y + 2, pw, IN_H - 4, row_n, prow);
   for (int r = first; r < row_n; r++) {
     float y = sk_list_row_y(r);
@@ -550,6 +553,11 @@ void shop_draw(u64 now) {
 
   if (!strcmp(pg->layout, "ctlg_spaces")) { spaces_draw(gx + 2, IN_Y + 25, gw - 4, now); return; }
   spaces_reset(true);
+  if(!strcmp(pg->id,"60")){
+    sk_paragraph("Donate $5.00 USD or more for Tweebbo Club for life, Club and VIP badges and extra credits. Review the amount before paying.",gx+2,IN_Y+26,gw-4,10,SK_TEXT,7);
+    if(sk_button(gx+2,IN_Y+112,gw-4,"Get Tweebbo Club",net_online()))ui_open(P_SUPPORT);
+    return;
+  }
   if (!strcmp(pg->layout, "ctlg_pets")) {
     sk_paragraph("Dogs, cats and crocodiles with their original coats. Adopt one and bring them to your room.", gx + 2, IN_Y + 26,
                  gw - 4, 10, SK_TEXT, 4);
@@ -569,6 +577,7 @@ void shop_draw(u64 now) {
   int cols = (int)(gw / slot);
   int rows = (n + cols - 1) / cols;
   float gy = IN_Y + 22, gh = IN_H - 24 - detail_h;
+  bool moved = !SH.page_focus && (K.left || K.right || K.up || K.dn);
   if (!SH.page_focus) {
     if (SH.offer < 0) SH.offer = 0;
     if (K.left) { if (SH.offer % cols == 0) SH.page_focus = true; else SH.offer--; }
@@ -576,7 +585,7 @@ void shop_draw(u64 now) {
     if (K.up && SH.offer >= cols) SH.offer -= cols;
     if (K.dn && SH.offer + cols < n) SH.offer += cols;
   }
-  SH.grid.focus = SH.offer >= 0 ? SH.offer / cols : -1;
+  if (moved || SH.grid.focus >= 0) SH.grid.focus = SH.offer >= 0 ? SH.offer / cols : -1;
   int frow = sk_list_begin(&SH.grid, gx, gy, gw, gh, rows, slot);
   for (int r = frow; r < rows; r++) {
     float y = sk_list_row_y(r);
@@ -672,7 +681,7 @@ void hand_draw(u64 now) {
   if (K.up && HD.sel >= cols) HD.sel -= cols;
   if (K.dn && HD.sel + cols < n) HD.sel += cols;
   if ((K.left || K.right || K.up || K.dn) && HD.sel < 0) HD.sel = 0;
-  HD.grid.focus = HD.sel >= 0 ? HD.sel / cols : -1;
+  if (K.left || K.right || K.up || K.dn || HD.grid.focus >= 0) HD.grid.focus = HD.sel >= 0 ? HD.sel / cols : -1;
   int frow = sk_list_begin(&HD.grid, IN_X + 2, gy, IN_W - 4, gh, rows, slot);
   for (int r = frow; r < rows; r++) {
     float y = sk_list_row_y(r);
@@ -753,7 +762,8 @@ void item_draw(u64 now) {
       if (sk_button(NEXT_X, NEXT_Y, bw, (d->flags & DEF_LAY) ? "Lie down" : "Sit", true)) { send_walk(it->x, it->y); ui_close(); return; }
       col++;
     }
-    if (d->casino || d->kind == KIND_TOGGLE || d->kind == KIND_DICE || (d->flags & (DEF_TELEPORTER | DEF_GATE))) {
+    if (d->casino || d->kind == KIND_DICE || (d->flags & DEF_TELEPORTER) ||
+        (W.room_owner && !d->drink && (d->kind == KIND_TOGGLE || (d->kind == KIND_WALL && d->states > 1) || (d->flags & DEF_GATE)))) {
       bool rolling = d->kind == KIND_DICE && it->state == 7;
       const char *label = d->casino ? "Play" : d->kind == KIND_DICE ? (rolling ? "Rolling…" : "Roll") : (d->flags & DEF_TELEPORTER) ? "Join" : "Use";
       if (sk_button(NEXT_X, NEXT_Y, bw, label, !rolling)) send_use(it->id);

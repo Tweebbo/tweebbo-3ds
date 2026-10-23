@@ -111,7 +111,7 @@ static const PetOffset *find_offset(const char *key) {
 
 static int palette_index(const Pet *p) {
   char name[32];
-  snprintf(name, sizeof name, "Palette %s %03d", p->kind == 2 ? "croco" : "dogcat", p->breed);
+  snprintf(name, sizeof name, "Palette %s %03d", p->kind == 2 ? "croco" : p->kind >= 3 && p->kind < pet_kind_count ? pet_kind_keys[p->kind] : "dogcat", p->breed);
   for (int i = 0; i < pet_palette_count; i++) if (!strcmp(pet_palettes[i], name)) return i;
   return 0;
 }
@@ -135,11 +135,14 @@ void pet_draw(const Pet *p, u64 now, float sx, float sy, float zoom) {
   if (p->dir == 7) { order3[0] = "hd"; order3[1] = "bd"; order3[2] = "tl"; }
   else if (p->dir == 0 || p->dir == 6) { order3[0] = "bd"; order3[1] = "hd"; order3[2] = "tl"; }
   else { order3[0] = "tl"; order3[1] = "bd"; order3[2] = "hd"; }
-  u32 tint = abgr(pet_kinds[kind].colors[p->color % pet_kinds[kind].color_count], 255);
+  int colors=pet_kinds[kind].color_count;
+  int color=colors?(p->color%colors+colors)%colors:0;
+  u32 tint = abgr(pet_kinds[kind].colors[color], 255);
   float ox = sx - 48 * zoom, oy = sy + (16 - 80 - p->z) * zoom;
   for (int k = 0; k < 3; k++) {
     const char *name = order3[k];
-    const char *model = !strcmp(name, "bd") ? "round" : !strcmp(name, "hd") ? pet_kind_keys[kind] : TAILS[kind % 3];
+    char body[32];snprintf(body,sizeof body,"round%s",kind>=3?pet_kind_keys[kind]:"");
+    const char *model = !strcmp(name, "bd") ? body : !strcmp(name, "hd") || kind>=3 ? pet_kind_keys[kind] : TAILS[kind % 3];
     // Original pet parts: the body takes walk/sit/lay/jump/play/dead, the head eat/sleep/beg/
     // speak/smile/dead, the tail dead; anything a part does not have falls back to standing.
     const char *act;
@@ -148,6 +151,7 @@ void pet_draw(const Pet *p, u64 now, float sx, float sy, float zoom) {
     int f = 0;
     if (!strcmp(name, "bd") && (!strcmp(action, "wlk") || !strcmp(action, "jmp") || !strcmp(action, "scr") || !strcmp(action, "pla"))) f = frame;
     else if (!strcmp(act, "eat") || !strcmp(act, "spk")) f = frame % 2;
+    if(kind>=3)f=frame;
     char full[48];
     bool flip;
     snprintf(full, sizeof full, "p_%s_%s_%s_%d_%d", act, name, model, dir, f);
@@ -156,8 +160,8 @@ void pet_draw(const Pet *p, u64 now, float sx, float sy, float zoom) {
     if (!part) { snprintf(full, sizeof full, "p_std_%s_%s_%d_0", name, model, dir); part = resolve(full, &flip); }
     if (!part) continue;
     int offx = 0, offy = 0;
-    if (strcmp(name, "bd")) {
-      const char *group = kind == 2 ? "croco.large" : "dogcat.large";
+    if (strcmp(name, "bd") || kind>=3) {
+      char group[32];snprintf(group,sizeof group,"%s.large",kind==2?"croco":kind>=3?pet_kind_keys[kind]:"dogcat");
       char key[48];
       snprintf(key, sizeof key, "%s/%s_%s_%d", group, name, action, frame);
       const PetOffset *o = find_offset(key);
