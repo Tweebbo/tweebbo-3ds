@@ -1,0 +1,56 @@
+# Start with a deleted saved room and Spanish selected in the isolated emulator SD.
+wait 25
+shot recovery-reception
+click 549 712
+wait 3
+shot recovery-online-navigator
+down 650 646
+wait 1
+move 650 600
+wait 1
+move 650 558
+wait 1
+up
+wait 2
+shot recovery-online-navigator-scroll
+key s 120
+wait 1
+click 505 530
+wait 2
+click 710 660
+wait 8
+shot recovery-snow-lobby
+click 777 712
+wait 2
+click 741 574
+wait 4
+click 549 712
+wait 3
+shot recovery-offline-navigator
+down 650 646
+wait 1
+move 650 600
+wait 1
+move 650 558
+wait 1
+up
+wait 2
+shot recovery-offline-navigator-scroll
+key g 120
+key g 120
+key g 120
+key g 120
+key g 120
+key g 120
+key g 120
+key g 120
+key g 120
+key g 120
+key g 120
+key g 120
+key g 120
+wait 2
+shot recovery-offline-snow-listed
+key a 120
+wait 5
+shot recovery-offline-snow-entry

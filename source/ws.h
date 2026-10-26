@@ -4,6 +4,8 @@
 
 typedef struct {
   Conn *conn;
+  int http_status; /* Upgrade response, retained on a rejected handshake. */
+  bool text_messages;
   u8 *rx;
   int rx_len, rx_cap;
   u8 *msg; /* fragmented message in progress */
@@ -16,6 +18,7 @@ typedef void (*WsHandler)(const u8 *data, int len, void *ctx);
 bool ws_connect(Ws *ws, const Endpoint *ep, const char *path, int timeout_ms, char *err, int err_cap);
 /** Sends a binary message in a single frame (masked, as the protocol requires). */
 bool ws_send(Ws *ws, const u8 *data, int len);
+bool ws_send_text(Ws *ws, const u8 *data, int len);
 /** Reads what is available and calls `fn` for each binary message. Returns false when the connection ended. */
 bool ws_poll(Ws *ws, int timeout_ms, WsHandler fn, void *ctx);
 void ws_close(Ws *ws);

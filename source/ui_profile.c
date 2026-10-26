@@ -1,3 +1,4 @@
+#include "language.h"
 #include "ui_int.h"
 #include "net.h"
 #include "world.h"
@@ -16,7 +17,7 @@ void profile_open(u32 guest) {
 }
 
 void profile_draw(u64 now) {
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Badges & identity")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Badges & identity"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   HttpResult result;
   if (P.job && net_http_result(P.job, &result)) {
@@ -29,7 +30,7 @@ void profile_draw(u64 now) {
         const char *s = json_string_value(code);
         if (s) { if(P.count<8)snprintf(P.codes[P.count++],16,"%s",s);P.vip |= !strcmp(s, "VIP"); P.staff |= !strcmp(s, "ADM"); P.club |= !strcmp(s, "CLUB1"); P.gold |= !strcmp(s, "CLUB2"); }
       }
-    } else snprintf(P.status, sizeof P.status, "Could not load badges. Try Refresh.");
+    } else snprintf(P.status, sizeof P.status,"%s",TR("Could not load badges. Try Refresh."));
     json_decref(j); free(result.body);
   }
   if (P.save && net_http_result(P.save, &result)) {
@@ -40,10 +41,10 @@ void profile_draw(u64 now) {
   }
   float x = IN_X + 12, y = IN_Y + 10;
   if(P.picking&&P.guest==W.guest_id){
-    sk_text("Choose your profile badge",x,y,12,SK_TEXT,0,IN_W-24);
+    sk_text(TR("Choose your profile badge"),x,y,12,SK_TEXT,0,IN_W-24);
     for(int k=0;k<P.count;k++){char label[40];snprintf(label,sizeof label,"%s%s",P.choice==k?"> ":"",P.codes[k]);if(sk_button(x+(k%2)*138,y+25+(k/2)*24,132,label,!P.save))P.choice=k;}
-    if(sk_button(x,y+128,110,"Back",!P.save))P.picking=false;
-    if(sk_button(x+120,y+128,150,"Show this badge",!P.save&&P.count)){json_t *j=json_pack("{s:s}","code",P.codes[P.choice]);char *body=json_dumps(j,JSON_COMPACT);json_decref(j);P.save=net_http("POST","/api/badges",body,true);free(body);}
+    if(sk_button(x,y+128,110,TR("Back"),!P.save))P.picking=false;
+    if(sk_button(x+120,y+128,150,TR("Show this badge"),!P.save&&P.count)){json_t *j=json_pack("{s:s}","code",P.codes[P.choice]);char *body=json_dumps(j,JSON_COMPACT);json_decref(j);P.save=net_http("POST","/api/badges",body,true);free(body);}
     sk_text(P.status,x,IN_Y+IN_H-18,10,SK_DIM,0,IN_W-24);return;
   }
   // Badges flow left to right: VIP, Staff, then the Tweebbo Club badge (gold for life members).
@@ -58,16 +59,16 @@ void profile_draw(u64 now) {
     sk_text(badges[i].label, bx + 42, y + 10, 11, SK_TEXT, 0, 56);
     bx += 100;
   }
-  if (!P.vip && !P.staff && !P.club && !P.gold) sk_text(P.loading ? "Loading badges…" : "No badges to display.", x, y + 10, 11, SK_DIM, 0, IN_W - 24);
-  if (sk_button(x, y + 42, 110, "Refresh badges", !P.job)) profile_open(P.guest);
-  if(P.guest==W.guest_id&&sk_button(x+120,y+42,150,"Choose badge",!P.job&&!P.save&&P.count))P.picking=true;
+  if (!P.vip && !P.staff && !P.club && !P.gold) sk_text(P.loading ? TR("Loading badges…") : TR("No badges to display."), x, y + 10, 11, SK_DIM, 0, IN_W - 24);
+  if (sk_button(x, y + 42, 110, TR("Refresh badges"), !P.job)) profile_open(P.guest);
+  if(P.guest==W.guest_id&&sk_button(x+120,y+42,150,TR("Choose badge"),!P.job&&!P.save&&P.count))P.picking=true;
   json_t *owners = W.owners_json ? json_loads(W.owners_json, 0, NULL) : NULL;
   json_t *self = json_object_get(owners, "self");
   if (P.guest == W.guest_id && json_is_object(self)) {
     bool visible = json_is_true(json_object_get(self, "visible")), presence = json_is_true(json_object_get(self, "presence"));
-    sk_text(visible ? "Founder identity visible" : "Anonymous appearance", x, y + 70, 11, SK_TEXT, 0, 270);
-    bool toggle = sk_button(x, y + 92, 132, visible ? "Go anonymous" : "Show Founder", !P.save);
-    bool aura = sk_button(x + 142, y + 92, 132, presence ? "Presence: on" : "Presence: off", !P.save && visible);
+    sk_text(visible ? TR("Founder identity visible") : TR("Anonymous appearance"), x, y + 70, 11, SK_TEXT, 0, 270);
+    bool toggle = sk_button(x, y + 92, 132, visible ? TR("Go anonymous") : TR("Show Founder"), !P.save);
+    bool aura = sk_button(x + 142, y + 92, 132, presence ? TR("Presence: on") : TR("Presence: off"), !P.save && visible);
     if (toggle || aura) {
       char body[64]; snprintf(body, sizeof body, "{\"visible\":%s,\"presence\":%s}", (toggle ? !visible : visible) ? "true" : "false", (aura ? !presence : presence) ? "true" : "false");
       P.save = net_http("POST", "/api/owner-profile", body, true);

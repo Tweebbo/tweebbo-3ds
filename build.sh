@@ -123,6 +123,11 @@ esac
 python3 tools/pack-font.py
 python3 tools/pack-snow.py
 node tools/export/snow.mjs
+python3 tools/pack-fastfood.py
+node tools/export/fastfood.mjs
+python3 tools/pack-battle.py
+node tools/export/battle.mjs
+python3 tools/pack-game-audio.py
 mkdir -p romfs/gfx romfs/furni
 # Remove textures no longer present in the generated manifest.
 for file in romfs/gfx/*.t3x; do [ -e "build/gfx/$(basename "$file" .t3x).png" ] || rm -f "$file"; done

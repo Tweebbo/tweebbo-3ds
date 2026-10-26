@@ -18,6 +18,8 @@ base = sys.argv[1]
 hotel_host = urlparse(base).hostname
 if not hotel_host:
     raise SystemExit('Pass a complete LAN download URL.')
+hotel = os.environ.get('HOTEL_URL', f'ws://{hotel_host}:8092').rstrip('/')
+hotel_web = hotel.replace('ws://', 'http://', 1)
 version = root.joinpath('VERSION').read_text().strip() + '-debug'
 files = []
 for extension in ('cia', '3dsx'):
@@ -46,6 +48,12 @@ os.replace(share / 'latest.json.tmp', share / 'latest.json')
 shutil.copy2(root / 'out/debug/tweebbo-debug.elf', root / f'build/debug-elf/build-{build_number}.elf')
 share.joinpath('SHA256SUMS').write_text(''.join(f"{f['sha256']}  {f['file']}\n" for f in files))
 captures = [
+    ('79-recovery', 'Build 79: recovery to the Spanish reception'),
+    ('79-snow-lobby', 'Build 79: Snow Storm lobby online'),
+    ('79-offline-rooms', 'Build 79: imported rooms in offline navigation'),
+    ('78-snow-lobby', 'Build 78: Snow Storm lobby, Japanese controls'),
+    ('78-snow-practice', 'Build 78: Snow Storm practice'),
+    ('78-spanish', 'Build 78: Spanish restored after practice'),
     ('10-founder-profile', 'Founder profile and original badges'),
     ('01-lobby', 'Classic Lobby'),
     ('02-navigator', 'Room navigator'),
@@ -100,26 +108,31 @@ footer{font-size:12px;margin:20px 0 32px} @media(max-width:680px){main{margin-to
 <p>The HOME Menu installs a separate <b>Tweebbo Debug</b> title. Open it to join the local hotel.</p>
 <div class="downloads"><a class="button primary" href="tweebbo-debug.cia" download>Download CIA · @CIA_SIZE@</a><a class="button" href="tweebbo-debug.3dsx" download>Download 3DSX · @3DSX_SIZE@</a></div>
 <p class="muted">CIA: use your existing FBI setup. 3DSX: place in SD:/3ds/ and open with the Homebrew Launcher.</p>
-<p><a href="http://192.168.1.20:8092/" target="_blank" rel="noopener">Open the local browser hotel</a> · <a href="debug-guide.txt">Installation and test guide</a></p>
-<small>Local hotel: ws://192.168.1.20:8092<br>Settings and character key: SD:/3ds/Tweebbo-debug/<br>Public hotel sessions are disabled; updates come from this page.</small>
+<p><a href="@HOTEL_WEB@/" target="_blank" rel="noopener">Open the local browser hotel</a> · <a href="debug-guide.txt">Installation and test guide</a></p>
+<small>Local hotel: @HOTEL@<br>Settings and character key: SD:/3ds/Tweebbo-debug/<br>Public hotel sessions are disabled; updates come from this page.</small>
 </div></div></section>
 <div class="columns"><section class="window"><h2>What to try</h2><div class="body">
 <ul><li>Native-sized text, updated wardrobe and catalogue.</li><li>Original furniture textures and animations, with lossless compression and memory-aware loading.</li><li>Wall/floor previews and purchases in your own room.</li><li>VIP / Staff badges, Founder appearance and anonymous mode.</li><li>Tic-tac-toe, Connect Four and Chess with a browser player.</li><li>Chat, friends, pets, swimming, locked rooms and reconnection.</li></ul>
-<h3>Before the public release</h3><p>Snow Storm and Casino game windows still need native implementations. Physical-console performance, sleep/wake and crowded-room tests are pending.</p>
+<p>Fast Food, Battle Ball and Snow Storm are available from Game Center. Help → Language selects English, Spanish, Chinese, Japanese, French or Brazilian Portuguese and saves the preference.</p>
+<h3>Before the public release</h3><p>Physical-console performance, sleep/wake and crowded-room tests are pending.</p>
 <p>This is a debug build for review; full browser feature parity is still pending.</p>
 <details><summary>Build verification</summary><p>Native host and transport tests, isolated server tests, native/browser board-game round trips and emulator interface tours passed. Emulator timing does not establish console performance.</p><a href="SHA256SUMS">SHA-256 checksums</a> · <a href="manifest.json">Build manifest</a>@CHECKSUMS@</details>
 </div></section><section class="window"><h2>Actual emulator captures</h2><div class="body">
 <label for="capture">Screen to inspect</label><select id="capture">@OPTIONS@</select>
-<figure><div class="view"><img id="shot" src="screenshots/10-founder-profile.png" alt="Founder profile and original badges in the emulator"></div>
-<figcaption>Top: 400 × 240. Bottom: 320 × 240.<br><a id="full" href="screenshots/10-founder-profile.png" target="_blank" rel="noopener">Open full capture</a></figcaption></figure>
+<figure><div class="view"><img id="shot" src="screenshots/@FIRST_CAPTURE@.png" alt="@FIRST_LABEL@"></div>
+<figcaption>Top: 400 × 240. Bottom: 320 × 240.<br><a id="full" href="screenshots/@FIRST_CAPTURE@.png" target="_blank" rel="noopener">Open full capture</a></figcaption></figure>
 </div></section></div>
 <footer>For an issue report, note the console model, room and action. Diagnostics are log.txt and last-error.txt in the debug SD folder. Keep character keys and access/transfer codes private.</footer>
 </main><script>
 const select=document.querySelector('#capture'),shot=document.querySelector('#shot'),full=document.querySelector('#full');
-select.addEventListener('change',()=>{shot.src='screenshots/'+select.value+'.png';shot.alt=select.selectedOptions[0].text+' in the emulator';full.href=shot.src;});
+if(select)select.addEventListener('change',()=>{shot.src='screenshots/'+select.value+'.png';shot.alt=select.selectedOptions[0].text+' in the emulator';full.href=shot.src;});
 </script></body></html>'''
-for key, value in {'VERSION': version, 'CIA_SIZE': sizes['cia'], '3DSX_SIZE': sizes['3dsx'], 'OPTIONS': options, 'CHECKSUMS': checksums}.items():
+if not captures:
+    start = page.index('<section class="window"><h2>Actual emulator captures')
+    end = page.index('</section>', start) + len('</section>')
+    page = page[:start] + page[end:]
+first = captures[0] if captures else ('', '')
+for key, value in {'VERSION': f'{version}.{build_number}', 'HOTEL': html.escape(hotel), 'HOTEL_WEB': html.escape(hotel_web), 'CIA_SIZE': sizes['cia'], '3DSX_SIZE': sizes['3dsx'], 'OPTIONS': options, 'CHECKSUMS': checksums, 'FIRST_CAPTURE': first[0], 'FIRST_LABEL': html.escape(first[1])}.items():
     page = page.replace('@' + key + '@', value)
-page = page.replace('192.168.1.20:8092', html.escape(hotel_host) + ':8092')
 share.joinpath('index.html').write_text(page)
 print(f'Prepared {share}; CIA URL: {base}/tweebbo-debug.cia')

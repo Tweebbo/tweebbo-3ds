@@ -28,6 +28,7 @@ void on_item(u32 i) { (void)i; }
 void sim_start(const char *s, u64 t) { (void)s; (void)t; }
 void sim_receive(const u8 *d, int l) { (void)d; (void)l; }
 void sim_update(u64 t) { (void)t; }
+const char *tw_reception_slug(void) { return "lobby-es"; }
 bool store_load(const char *key, char *out, int cap) {
   if (strcmp(key, "server")) return false;
   snprintf(out, cap, "%s", server); return true;
@@ -51,4 +52,5 @@ int main(int argc, char **argv) {
   if (mode == 2) { assert(!net_room_full()); assert(net_retry_seconds() >= 29); net_resume(); assert(net_state() == NET_FULL); }
   net_stop(); conn_global_exit();
   puts("transport state passed");
+  return 0;
 }

@@ -1,0 +1,15 @@
+wait 25
+key s 120
+click 505 530
+wait 2
+click 640 570
+wait 6
+shot food-lobby
+click 640 594
+wait 10
+shot food-playing
+key a 120
+wait 1
+shot food-dish
+wait 20
+shot food-performance

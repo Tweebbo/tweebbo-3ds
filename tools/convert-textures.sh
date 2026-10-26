@@ -4,6 +4,8 @@ convert_texture() {
   local file=$1 name format=rgba8888 target
   name=$(basename "$file" .png)
   case "$file" in
+    build/fastfood/*) target=romfs/fastfood/$name.t3x ;;
+    build/battle/*) target=romfs/battle/$name.t3x ;;
     build/snow/*) target=romfs/snow/$name.t3x; case "$name" in gray*) format=la8;; esac ;;
     build/gfx/furni/*) target=romfs/furni/$name.t3x; grep -qx "$name" build/gfx/soft-alpha.txt || format=rgba5551 ;;
     *) target=romfs/gfx/$name.t3x
@@ -25,3 +27,6 @@ convert_texture() {
 export -f convert_texture
 printf '%s\0' build/gfx/*.png build/gfx/furni/*.png | xargs -0 -n 1 -P "${TEXTURE_JOBS:-6}" bash -c 'convert_texture "$1"' _
 printf '%s\0' build/snow/*.png | xargs -0 -n 1 -P "${TEXTURE_JOBS:-6}" bash -c 'convert_texture "$1"' _
+
+printf '%s\0' build/fastfood/*.png | xargs -0 -n 1 -P "${TEXTURE_JOBS:-6}" bash -c 'convert_texture "$1"' _
+printf '%s\0' build/battle/*.png | xargs -0 -n 1 -P "${TEXTURE_JOBS:-6}" bash -c 'convert_texture "$1"' _

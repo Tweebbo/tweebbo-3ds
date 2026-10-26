@@ -1,0 +1,6 @@
+# Classic room S: the doorway sits in the left wall, without a notch.
+wait 40
+shot 130-room-s
+key q 1
+wait 2
+shot 131-room-s-overview

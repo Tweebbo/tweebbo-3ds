@@ -1,3 +1,4 @@
+#include "language.h"
 // After Hours Bar on the console: the menu comes from the server (prices and contents are
 // decided there, server room/bar.rs); orders walk the guest to a free stool and Vic serves.
 #include "bar.h"
@@ -109,7 +110,7 @@ bool bar_context(char *label, int cap, u64 now) {
     near = e->used && e->guest >= STAFF_BASE && !strncmp(e->name, "Bartender", 9) && abs(e->x - me->x) <= 2 && abs(e->y - me->y) <= 2;
   }
   if (!near) return false;
-  snprintf(label, cap, bar_holding() ? "Bar · what you are holding" : "Order at the bar");
+  snprintf(label, cap, "%s", bar_holding() ? TR("Bar · what you are holding") : TR("Order at the bar"));
   return true;
 }
 
@@ -133,12 +134,12 @@ static void actions(u64 now) {
   const char *name = "Your drink";
   for (int i = 0; i < B.menu_n; i++) if (B.menu[i].id == drink) name = B.menu[i].name;
   sk_text(name, x + 42, y + 4, 11, SK_TEXT, 0, IN_W - 60);
-  sk_text(smoke(drink) ? "A puffs. B closes." : "A sips, X raises a toast. B closes.", x + 42, y + 20, 9, SK_DIM, 0, IN_W - 60);
-  if (sk_button(x, y + 44, 96, smoke(drink) ? "Puff (A)" : "Sip (A)", true) || K.a) command("bar_use", NULL);
-  if (!smoke(drink) && (sk_button(x + 100, y + 44, 96, "Cheers! (X)", true) || K.x)) command("bar_toast", NULL);
-  if (sk_button(x + 200, y + 44, 90, "Put down", true)) { command("bar_drop", NULL); ui_close(); return; }
-  if (sk_button(x, y + 72, 150, B.picking ? "Hide the list" : "Hand over… (Y)", true) || K.y) B.picking = !B.picking;
-  if (sk_button(x + 156, y + 72, 134, "Order another", true)) B.menu_mode = true;
+  sk_text(smoke(drink) ? TR("A puffs. B closes.") : TR("A sips, X raises a toast. B closes."), x + 42, y + 20, 9, SK_DIM, 0, IN_W - 60);
+  if (sk_button(x, y + 44, 96, smoke(drink) ? TR("Puff (A)") : TR("Sip (A)"), true) || K.a) command("bar_use", NULL);
+  if (!smoke(drink) && (sk_button(x + 100, y + 44, 96, TR("Cheers! (X)"), true) || K.x)) command("bar_toast", NULL);
+  if (sk_button(x + 200, y + 44, 90, TR("Put down"), true)) { command("bar_drop", NULL); ui_close(); return; }
+  if (sk_button(x, y + 72, 150, B.picking ? TR("Hide the list") : TR("Hand over… (Y)"), true) || K.y) B.picking = !B.picking;
+  if (sk_button(x + 156, y + 72, 134, TR("Order another"), true)) B.menu_mode = true;
   if (!B.picking) return;
   // Players within two tiles with an empty hand (the server checks it again).
   int row = 0;
@@ -151,17 +152,17 @@ static void actions(u64 now) {
     }
     row++;
   }
-  if (!row) sk_text("Stand next to someone to hand it over.", x, y + 108, 9, SK_DIM, 0, IN_W - 12);
+  if (!row) sk_text(TR("Stand next to someone to hand it over."), x, y + 108, 9, SK_DIM, 0, IN_W - 12);
 }
 
 void bar_draw(u64 now) {
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "After Hours Bar")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("After Hours Bar"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
-  if (!bar_room()) { sk_paragraph("The bar serves in After Hours Bar. Find it in Rooms.", IN_X + 6, IN_Y + 8, IN_W - 12, 10, SK_TEXT, 3); return; }
+  if (!bar_room()) { sk_paragraph(TR("The bar serves in After Hours Bar. Find it in Rooms."), IN_X + 6, IN_Y + 8, IN_W - 12, 10, SK_TEXT, 3); return; }
   if (bar_holding() && !B.menu_mode) { actions(now); return; }
   if (!B.asked) { B.asked = true; command("bar_menu", NULL); }
-  if (!B.menu_n) { sk_text("Loading the menu…", IN_X + 6, IN_Y + 8, 10, SK_DIM, 0, IN_W - 12); return; }
-  sk_text("Vic serves at a free stool; you pay when served.", IN_X + 6, IN_Y + 3, 9, SK_DIM, 0, IN_W - 12);
+  if (!B.menu_n) { sk_text(TR("Loading the menu…"), IN_X + 6, IN_Y + 8, 10, SK_DIM, 0, IN_W - 12); return; }
+  sk_text(TR("Vic serves at a free stool; you pay when served."), IN_X + 6, IN_Y + 3, 9, SK_DIM, 0, IN_W - 12);
   const float row = 30;
   if (K.dn && B.list.focus < B.menu_n - 1) B.list.focus++;
   if (K.up && B.list.focus > 0) B.list.focus--;
@@ -174,12 +175,12 @@ void bar_draw(u64 now) {
     fill_rect(IN_X + 2, y, IN_W - 4, row - 1, sk_rgb(focus ? SK_SELECT : i % 2 ? SK_ROW_ALT : SK_ROW));
     avatar_draw_held(m->id, IN_X + 16, y + row / 2, 1);
     sk_text(m->name, IN_X + 32, y + 2, 10.5f, SK_TEXT, 0, IN_W - 130);
-    sk_text(m->about, IN_X + 32, y + 15, 8.5f, SK_DIM, 0, IN_W - 130);
-    char price[24]; snprintf(price, sizeof price, "%d %s", m->price, m->price == 1 ? "credit" : "credits");
+    sk_text(TR(m->about), IN_X + 32, y + 15, 8.5f, SK_DIM, 0, IN_W - 130);
+    char price[24]; snprintf(price, sizeof price, "%d %s", m->price, TR(m->price == 1 ? "credit" : "credits"));
     sk_text(price, IN_X + IN_W - 52, y + 8, 9.5f, SK_TEXT, 2, 70);
-    if (sk_go(IN_X + IN_W - 48, y + 5, 40, 18, "Order", (int)W.credits >= m->price) || (focus && K.a)) {
+    if (sk_go(IN_X + IN_W - 48, y + 5, 40, 18, TR("Order"), (int)W.credits >= m->price) || (focus && K.a)) {
       if ((int)W.credits >= m->price) order(m);
-      else ui_toast("You do not have enough credits.", now);
+      else ui_toast(TR("You do not have enough credits."), now);
     }
   }
   sk_list_end();

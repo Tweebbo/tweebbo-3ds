@@ -12,7 +12,8 @@ static int eval(JSContext *ctx,const char *path){
   if(failed){JSValue e=JS_GetException(ctx);const char *s=JS_ToCString(ctx,e);fprintf(stderr,"%s\n",s?s:"exception");JS_FreeCString(ctx,s);JSValue st=JS_GetPropertyStr(ctx,e,"stack");s=JS_ToCString(ctx,st);fprintf(stderr,"%s\n",s?s:"");JS_FreeCString(ctx,s);JS_FreeValue(ctx,st);JS_FreeValue(ctx,e);}return failed;
 }
 int main(int argc,char **argv){
-  JSRuntime *rt=JS_NewRuntime();JS_SetMemoryLimit(rt,12*1024*1024);JS_SetMaxStackSize(rt,128*1024);JSContext *ctx=JS_NewContext(rt);JSValue g=JS_GetGlobalObject(ctx);
+  const char *limit=getenv("QUICKJS_TEST_HEAP_MB");
+  JSRuntime *rt=JS_NewRuntime();JS_SetMemoryLimit(rt,(limit?atoi(limit):12)*1024*1024);JS_SetMaxStackSize(rt,128*1024);JSContext *ctx=JS_NewContext(rt);JSValue g=JS_GetGlobalObject(ctx);
   const char *names[]={"nativeSprite","nativeRect","nativeText","nativeMeasure","nativeSend","nativeSound","nativeStopWalk"};for(unsigned i=0;i<7;i++)JS_SetPropertyStr(ctx,g,names[i],JS_NewCFunction(ctx,noop,names[i],0));
   JS_SetPropertyStr(ctx,g,"print",JS_NewCFunction(ctx,print,"print",1));JS_FreeValue(ctx,g);
   int failed=0;for(int i=1;i<argc&&!failed;i++)failed=eval(ctx,argv[i]);

@@ -1,3 +1,6 @@
+#include "fastfood.h"
+#include "language.h"
+#include "battle.h"
 // Bottom screen with the classic look of the web edition: header with room,
 // players and credits; icon bar (Me, Navigator, Catalogue, Hand,
 // Friends, Chat, Help) and steel-blue windows for each panel.
@@ -76,6 +79,7 @@ static struct {
   char move_code[16], move_typed[16], move_name[32];
   u64 move_expires, move_polled;
   ListState settings_list;
+  bool language_picker;
 } U = {.stick_dir = -1, .preview_dir = 2};
 
 // ---------------------------------------------------------------- helpers
@@ -83,6 +87,8 @@ static struct {
 void ui_open(Panel p) {
   if (p != P_CASINO) casino_close(true);
   if (p != P_SNOW) snow_close(true);
+  if (p != P_FASTFOOD) fastfood_close();
+  if (p != P_BATTLE) battle_close();
   if (p != P_SHOP) spaces_reset(true);
   if (p == P_NAV) nav_opened();
   if (p == P_FRIENDS) friends_opened();
@@ -90,7 +96,7 @@ void ui_open(Panel p) {
   U.panel = p;
 }
 Panel ui_panel(void) { return U.panel; }
-void ui_close(void) { snow_close(true); casino_close(true); spaces_reset(true); U.panel = P_ROOM; }
+void ui_close(void) { battle_close(); fastfood_close(); snow_close(true); casino_close(true); spaces_reset(true); U.panel = P_ROOM; }
 
 void ui_select_item(u32 id) { U.item = id; ui_open(P_ITEM); }
 void ui_select_ent(u32 eid) {
@@ -120,6 +126,8 @@ void ui_confirm(const char *text, const char *yes, void (*fn)(void *), void *ctx
 void ui_room_changed(void) {
   casino_close(false);
   snow_close(false);
+  fastfood_close();
+  battle_close();
   spaces_reset(false);
   // A connection renewal sends ROOM again: the chat is only cleared when the room changes.
   if (strcmp(U.last_slug, W.slug)) {
@@ -201,7 +209,7 @@ void ui_alert(const char *text) {
 
 void ui_social_changed(void) { friends_poll(0); }
 void ui_name_changed(u32 eid) {
-  if (eid == W.me) ui_toast("Name saved. Your character and rooms are unchanged.", now_ms());
+  if (eid == W.me) ui_toast(TR("Name saved. Your character and rooms are unchanged."), now_ms());
 }
 
 // ---------------------------------------------------------------- actions
@@ -211,11 +219,11 @@ static void unlock_done(const char *text, void *ctx) { (void)ctx; net_unlock(tex
 
 static void talk(void) {
   // Touch keyboard: the room keeps moving on the top screen while you type.
-  osk_open("Say something… (START: send)", NULL, 100, chat_done, NULL);
+  osk_open(TR("Say something… (START: send)"), NULL, 100, chat_done, NULL);
 }
 
 static void rename_done(const char *text, void *ctx) { (void)ctx; if (strcmp(text, W.name)) send_name(text); }
-static void rename_me(void) { osk_open("New name (3-20: letters, numbers, _ -)", W.name, 20, rename_done, NULL); }
+static void rename_me(void) { osk_open(TR("New name (3-20: letters, numbers, _ -)"), W.name, 20, rename_done, NULL); }
 
 static void get_drink(u64 now) {
   Ent *me = world_ent(W.me);
@@ -230,7 +238,7 @@ static void get_drink(u64 now) {
   }
   const FurniDef *d = best ? def_get(best->def) : NULL;
   if (best) send_drink(best->id, d->drink);
-  else ui_toast("There is no drink dispenser in this room.", now);
+  else ui_toast(TR("There is no drink dispenser in this room."), now);
 }
 
 // ---------------------------------------------------------------- "Press A" (3DS only)
@@ -282,13 +290,13 @@ static bool context_find(Context *c, u64 now) {
     if (score < best) {
       best = score;
       c->item = it;
-      snprintf(c->label, sizeof c->label, "%s · %s", verb, d->name);
+      snprintf(c->label, sizeof c->label, "%s · %s", TR(verb), TR(d->name));
     }
   }
   // Someone right in front: view their profile.
   for (int i = 0; i < MAX_ENTS && !c->item; i++) {
     const Ent *e = &W.ents[i];
-    if (e->used && e->id != W.me && e->x == fx && e->y == fy) { c->ent = e; snprintf(c->label, sizeof c->label, "View %s", e->name); }
+    if (e->used && e->id != W.me && e->x == fx && e->y == fy) { c->ent = e; snprintf(c->label, sizeof c->label, TR("View %s"), e->name); }
   }
   return c->item || c->ent;
 }
@@ -550,21 +558,21 @@ static void panel_room(u64 now) {
     float sy = MM_Y + MM_H - 24;
     const float lw = 100, rw = 112;
     if (mm_corner_free(0, sy - 2, lw, 26)) {
-      sk_text("Follow us", 6, sy, 9, 0x8a959c, 0, lw);
-      sk_text("@Tweebbo", 6, sy + 11, 9.5f, 0xc9d3d8, 0, lw);
+      sk_text(TR("Follow us"), 6, sy, 9, 0x8a959c, 0, lw);
+      sk_text(TR("@Tweebbo"), 6, sy + 11, 9.5f, 0xc9d3d8, 0, lw);
     }
     if (mm_corner_free(BOT_W - rw, sy - 2, rw, 26)) {
-      sk_text("TikTok · Instagram", BOT_W - 6, sy, 9, 0xc9d3d8, 2, rw);
-      sk_text("X · YouTube", BOT_W - 6, sy + 11, 9, 0xc9d3d8, 2, rw);
+      sk_text(TR("TikTok · Instagram"), BOT_W - 6, sy, 9, 0xc9d3d8, 2, rw);
+      sk_text(TR("X · YouTube"), BOT_W - 6, sy + 11, 9, 0xc9d3d8, 2, rw);
     }
   }
   // Games and Casino in the empty top corners of the map, like the web's Games and Casino tools.
   const float cw = 44, ch = 40, cy = MM_Y + 3;
   bool corner = T.y0 >= cy && T.y0 < cy + ch && (T.x0 < 4 + cw || T.x0 >= BOT_W - 4 - cw);
-  if (corner_tool(4, cy, cw, ch, "games-icon", "Games", net_online())) ui_open(P_GAMES);
-  if (corner_tool(BOT_W - 4 - cw, cy, cw, ch, "casino-icon", "Casino", net_online())) {
+  if (corner_tool(4, cy, cw, ch, "games-icon", TR("Games"), net_online())) ui_open(P_GAMES);
+  if (corner_tool(BOT_W - 4 - cw, cy, cw, ch, "casino-icon", TR("Casino"), net_online())) {
     if (strcmp(W.slug, "casino")) net_goto("casino", "");
-    else ui_toast("Walk up to a machine or table and press A to play.", now);
+    else ui_toast(TR("Walk up to a machine or table and press A to play."), now);
   }
   if (!corner && T.released && !T.dragging && T.y >= MM_Y && T.y < MM_Y + MM_H) {
     float u = (T.x - U.mm_ox) / (U.mm_tile / 2), v = (T.y - U.mm_oy) / (U.mm_tile / 4);
@@ -577,24 +585,24 @@ static void panel_room(u64 now) {
     const char *line = music_now_playing();
     float sy = BAR_Y - 48;
     if (line[0]) sk_text(line, 6, sy + 5, 9, 0xc9d3d8, 0, BOT_W - (bar_room() ? 160 : 92));
-    if (line[0] && sk_button(BOT_W - 82, sy, 78, "Playlist", true)) ui_open(P_MUSIC);
-    if (bar_room() && sk_button(BOT_W - (line[0] ? 160 : 82), sy, 74, bar_holding() ? "Drink" : "Bar menu", true)) ui_open(P_BAR);
+    if (line[0] && sk_button(BOT_W - 82, sy, 78, TR("Playlist"), true)) ui_open(P_MUSIC);
+    if (bar_room() && sk_button(BOT_W - (line[0] ? 160 : 82), sy, 74, bar_holding() ? TR("Drink") : TR("Bar menu"), true)) ui_open(P_BAR);
   }
   // Quick actions, like the room bar buttons on the web.
   Ent *me = world_ent(W.me);
   bool sitting = me && (me->flags & FLAG_SIT), dancing = me && (me->flags & FLAG_DANCE);
   float y = BAR_Y - 24, w = 74, gap = (BOT_W - 8 - w * 4) / 3;
-  if (sk_button(4, y, w, "Wave (X)", true)) send_gesture(GESTURE_WAVE);
-  if (sk_button(4 + (w + gap), y, w, dancing ? "Stop (Y)" : "Dance (Y)", true)) send_gesture(GESTURE_DANCE);
-  if (sk_button(4 + (w + gap) * 2, y, w, sitting ? "Stand (B)" : "Sit (B)", true)) send_gesture(GESTURE_SIT);
-  if (sk_button(4 + (w + gap) * 3, y, w, "Say (A)", true)) talk();
+  if (sk_button(4, y, w, TR("Wave (X)"), true)) send_gesture(GESTURE_WAVE);
+  if (sk_button(4 + (w + gap), y, w, dancing ? TR("Stop (Y)") : TR("Dance (Y)"), true)) send_gesture(GESTURE_DANCE);
+  if (sk_button(4 + (w + gap) * 2, y, w, sitting ? TR("Stand (B)") : TR("Sit (B)"), true)) send_gesture(GESTURE_SIT);
+  if (sk_button(4 + (w + gap) * 3, y, w, TR("Say (A)"), true)) talk();
 }
 
 // ---------------------------------------------------------------- Chat panel
 
 static void panel_chat(u64 now) {
   (void)now;
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Chat")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Chat"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H - 24);
   const float row = 15;
   U.chat_list.focus = -1;
@@ -615,9 +623,9 @@ static void panel_chat(u64 now) {
     sk_text(l->text, IN_X + 10 + nw, y + 1, 10.5f, SK_TEXT, 0, IN_W - 22 - nw);
   }
   sk_list_end();
-  if (!U.log_n) sk_text("Nobody has spoken yet.", BOT_W / 2, IN_Y + 60, 11, SK_DIM, 1, 0);
-  if (sk_field(IN_X, IN_Y + IN_H - 20, IN_W - 64, "", "Type here…  (A)") ||
-      sk_button(IN_X + IN_W - 58, IN_Y + IN_H - 20, 58, "Say", true))
+  if (!U.log_n) sk_text(TR("Nobody has spoken yet."), BOT_W / 2, IN_Y + 60, 11, SK_DIM, 1, 0);
+  if (sk_field(IN_X, IN_Y + IN_H - 20, IN_W - 64, "", TR("Type here…  (A)")) ||
+      sk_button(IN_X + IN_W - 58, IN_Y + IN_H - 20, 58, TR("Say"), true))
     talk();
 }
 
@@ -629,7 +637,7 @@ static void use_character(void *ctx) {
   (void)ctx;
   net_use_token(U.identity_token);
   memset(U.identity_token, 0, sizeof U.identity_token);
-  ui_toast("Character restored. Reconnecting…", now_ms());
+  ui_toast(TR("Character restored. Reconnecting…"), now_ms());
   ui_close();
 }
 
@@ -642,11 +650,11 @@ static void identity_poll(u64 now) {
   if (r.status == 200 && j && json_string_value(json_object_get(j, "name"))) {
     snprintf(U.identity_name, sizeof U.identity_name, "%s", json_string_value(json_object_get(j, "name")));
     char text[160];
-    snprintf(text, sizeof text, "Use the character \"%s\" on this console? Save your current code first.", U.identity_name);
-    ui_confirm(text, "Use this character", use_character, NULL);
+    snprintf(text, sizeof text, TR("Use the character \"%s\" on this console? Save your current code first."), U.identity_name);
+    ui_confirm(text, TR("Use this character"), use_character, NULL);
   } else {
     const char *msg = j ? json_string_value(json_object_get(j, "error")) : NULL;
-    ui_toast(msg ? msg : r.err[0] ? r.err : "This access code was not found.", now);
+    ui_toast(msg ? msg : r.err[0] ? r.err : TR("This access code was not found."), now);
     memset(U.identity_token, 0, sizeof U.identity_token);
   }
   if (j) json_decref(j);
@@ -660,17 +668,17 @@ static void identity_done(const char *code, void *ctx) {
   snprintf(body, sizeof body, "{\"token\":\"%s\"}", esc);
   snprintf(U.identity_token, sizeof U.identity_token, "%s", code);
   U.identity_job = net_http("POST", "/api/identity", body, false);
-  if (!U.identity_job) ui_toast("Connect to tweebbo.lol to restore a character.", now_ms());
+  if (!U.identity_job) ui_toast(TR("Connect to tweebbo.lol to restore a character."), now_ms());
 }
 
 static void identity_code(void *ctx) {
   (void)ctx;
-  osk_open_secret("Private access code from \"Character code\"", 64, identity_done, NULL);
+  osk_open_secret(TR("Private access code from \"Character code\""), 64, identity_done, NULL);
 }
 
 static void panel_me(u64 now) {
   Ent *me = world_ent(W.me);
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "My character")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("My character"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   fill_round(IN_X + 4, IN_Y + 4, 70, 104, 4, sk_rgb(SK_WHITE));
   if (me) {
@@ -681,49 +689,49 @@ static void panel_me(u64 now) {
   sk_text(W.name, x, IN_Y + 4, 13, SK_TEXT, 0, w);
   text_draw(W.name, x + 0.6f, IN_Y + 4, 13, sk_rgb(SK_TEXT), 0);
   char line[80];
-  snprintf(line, sizeof line, "%u credits", (unsigned)W.credits);
+  snprintf(line, sizeof line, TR("%u credits"), (unsigned)W.credits);
   sk_text(line, x, IN_Y + 22, 10.5f, SK_DIM, 0, w - 80);
   {
     // Donations, Tweebbo Club and chips (PC edition): the gold button of the web's top bar.
     float sx = x + w - 76, sy = IN_Y + 19;
     fill_round(sx, sy, 76, 16, 4, sk_rgb(0x7a5600));
     fill_round(sx + 1, sy + 1, 74, 14, 3, sk_rgb(0xf2bf2c));
-    text_draw("Donate", sx + 38, sy + 1, 10, sk_rgb(0x4a3000), 1);
+    text_draw(TR("Donate"), sx + 38, sy + 1, 10, sk_rgb(0x4a3000), 1);
     if (sk_click(sx, sy, 76, 16)) ui_open(P_SUPPORT);
   }
-  sk_text("Nintendo 3DS player", x, IN_Y + 36, 11, SK_DIM, 0, w - 14);
+  sk_text(TR("Nintendo 3DS player"), x, IN_Y + 36, 11, SK_DIM, 0, w - 14);
   console_badge(x + w - 12, IN_Y + 34, 1);
   float bw = (w - 6) / 2, y = IN_Y + 52;
   bool sitting = me && (me->flags & FLAG_SIT), dancing = me && (me->flags & FLAG_DANCE), lying = me && (me->flags & FLAG_LAY);
   {
-    if (sk_button(x, y, bw, "Wave", true)) send_gesture(GESTURE_WAVE);
-    if (sk_button(x + bw + 6, y, bw, dancing ? "Stop dancing" : "Dance", true)) send_gesture(GESTURE_DANCE);
-    if (sk_button(x, y + 22, bw, sitting || lying ? "Stand up" : "Sit down", true)) send_gesture(GESTURE_SIT);
+    if (sk_button(x, y, bw, TR("Wave"), true)) send_gesture(GESTURE_WAVE);
+    if (sk_button(x + bw + 6, y, bw, dancing ? TR("Stop dancing") : TR("Dance"), true)) send_gesture(GESTURE_DANCE);
+    if (sk_button(x, y + 22, bw, sitting || lying ? TR("Stand up") : TR("Sit down"), true)) send_gesture(GESTURE_SIT);
   }
-  if (sk_button(x + bw + 6, y + 22, bw, me && me->drink && now < me->drink_until ? "Put drink away" : "Get a drink", true)) {
+  if (sk_button(x + bw + 6, y + 22, bw, me && me->drink && now < me->drink_until ? TR("Put drink away") : TR("Get a drink"), true)) {
     if (me && me->drink && now < me->drink_until) send_drink(0, 0);
     else get_drink(now);
   }
   if (W.room_owner && world_can_decorate()) {
     // In your own room: who can decorate it and who is banned.
     float tw = (w - 8) / 3;
-    if (sk_button(x, IN_Y + 92, tw, "Badges", net_online())) profile_open(W.guest_id);
-    if (sk_button(x + tw + 4, IN_Y + 92, tw, "Games", net_online())) ui_open(P_GAMES);
-    if (sk_button(x + 2 * (tw + 4), IN_Y + 92, tw, "Rights", net_online())) ui_open(P_RIGHTS);
+    if (sk_button(x, IN_Y + 92, tw, TR("Badges"), net_online())) profile_open(W.guest_id);
+    if (sk_button(x + tw + 4, IN_Y + 92, tw, TR("Games"), net_online())) ui_open(P_GAMES);
+    if (sk_button(x + 2 * (tw + 4), IN_Y + 92, tw, TR("Rights"), net_online())) ui_open(P_RIGHTS);
   } else {
-    if (sk_button(x, IN_Y + 92, w/2-3, "Badges", net_online())) profile_open(W.guest_id);
-    if (sk_button(x+w/2+3, IN_Y + 92, w/2-3, "Games", net_online())) ui_open(P_GAMES);
+    if (sk_button(x, IN_Y + 92, w/2-3, TR("Badges"), net_online())) profile_open(W.guest_id);
+    if (sk_button(x+w/2+3, IN_Y + 92, w/2-3, TR("Games"), net_online())) ui_open(P_GAMES);
   }
   y = IN_Y + 114;
-  if (sk_button(IN_X + 4, y, 108, "Change looks", true)) ui_open(P_LOOK);
-  if (sk_button(IN_X + 118, y, 80, "Rename", true)) rename_me();
-  if (sk_button(IN_X + 204, y, IN_W - 208, "Pets", net_online())) ui_open(P_PETS);
+  if (sk_button(IN_X + 4, y, 108, TR("Change looks"), true)) ui_open(P_LOOK);
+  if (sk_button(IN_X + 118, y, 80, TR("Rename"), true)) rename_me();
+  if (sk_button(IN_X + 204, y, IN_W - 208, TR("Pets"), net_online())) ui_open(P_PETS);
   y += 24;
   // The private code (and restoring another character) has its own window: it is long and
   // the Me panel has no room above the bottom bar for it.
   float half = (IN_W - 12) / 2;
-  if (sk_button(IN_X + 4, y, half, "Actions", true)) ui_open(P_ACTIONS);
-  if (sk_button(IN_X + 8 + half, y, half, "Character code", true)) ui_open(P_IDENTITY);
+  if (sk_button(IN_X + 4, y, half, TR("Actions"), true)) ui_open(P_ACTIONS);
+  if (sk_button(IN_X + 8 + half, y, half, TR("Character code"), true)) ui_open(P_IDENTITY);
   identity_poll(now);
 }
 
@@ -731,12 +739,12 @@ static void panel_me(u64 now) {
 // Wave, dance and sit stay on the Me panel and the X / Y buttons.
 static void panel_actions(u64 now) {
   (void)now;
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Actions")) { ui_open(P_ME); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Actions"))) { ui_open(P_ME); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   Ent *me = world_ent(W.me);
   bool lying = me && (me->flags & FLAG_LAY);
   float bw = (IN_W - 16) / 3, y = IN_Y + 4;
-  sk_text("Expressions", IN_X + 6, y, 11, SK_DIM, 0, IN_W - 12);
+  sk_text(TR("Expressions"), IN_X + 6, y, 11, SK_DIM, 0, IN_W - 12);
   y += 16;
   static const struct { const char *label; int kind; } EXPR[] = {
     {"Kiss", GESTURE_KISS}, {"Laugh", GESTURE_LAUGH}, {"Thumb up", GESTURE_THUMB}, {"Sign", GESTURE_SIGN}, {"Sleep", GESTURE_SLEEP},
@@ -745,10 +753,10 @@ static void panel_actions(u64 now) {
     float bx = IN_X + 4 + (i % 3) * (bw + 4), by = y + (i / 3) * 24;
     if (sk_button(bx, by, bw, EXPR[i].label, !lying || EXPR[i].kind == GESTURE_SLEEP)) send_gesture(EXPR[i].kind);
   }
-  if (!lying && me && me->action != 6 && sk_button(IN_X + 4 + 2 * (bw + 4), y + 24, bw, "Stop action", true))
+  if (!lying && me && me->action != 6 && sk_button(IN_X + 4 + 2 * (bw + 4), y + 24, bw, TR("Stop action"), true))
     send_gesture(GESTURE_STOP);
   y += 54;
-  sk_text("Dance style", IN_X + 6, y, 11, SK_DIM, 0, IN_W - 12);
+  sk_text(TR("Dance style"), IN_X + 6, y, 11, SK_DIM, 0, IN_W - 12);
   y += 16;
   static const char *STYLES[] = {"Hab-Hop", "Pogo Mogo", "Duck Funk", "The Rollie"};
   float dw = (IN_W - 12) / 2;
@@ -759,26 +767,26 @@ static void panel_actions(u64 now) {
 // The web's "Save / restore character" sheet: the private code, restoring another character
 // and the one-time move. It has its own window so the code is never hidden by the bottom bar.
 void identity_draw(u64 now) {
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Character code")) { ui_open(P_ME); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Character code"))) { ui_open(P_ME); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   float x = IN_X + 6, w = IN_W - 12, y = IN_Y + 6;
   if (net_state() == NET_OFFLINE) {
-    sk_paragraph("Connect to tweebbo.lol to see and use your character code.", x, y, w, 11, SK_TEXT, 4);
-    if (sk_button(x, IN_Y + IN_H - 26, w, "Back", true)) ui_open(P_ME);
+    sk_paragraph(TR("Connect to tweebbo.lol to see and use your character code."), x, y, w, 11, SK_TEXT, 4);
+    if (sk_button(x, IN_Y + IN_H - 26, w, TR("Back"), true)) ui_open(P_ME);
     return;
   }
   // Private code: hidden by default (must not appear in screenshots).
   fill_round(x, y, w, 22, 4, sk_rgb(SK_WHITE));
   if (U.show_code && net_token()[0]) sk_text(net_token(), x + w / 2, y + 5, 12.5f, SK_TEXT, 1, w - 12);
-  else sk_text(net_token()[0] ? "The code is hidden." : "Waiting for the hotel…", x + w / 2, y + 5, 10.5f, SK_DIM, 1, w - 12);
+  else sk_text(net_token()[0] ? TR("The code is hidden.") : TR("Waiting for the hotel…"), x + w / 2, y + 5, 10.5f, SK_DIM, 1, w - 12);
   y += 28;
-  if (sk_button(x, y, w, U.show_code ? "Hide code" : "Show code", net_token()[0] != 0)) U.show_code = !U.show_code;
+  if (sk_button(x, y, w, U.show_code ? TR("Hide code") : TR("Show code"), net_token()[0] != 0)) U.show_code = !U.show_code;
   y += 24;
-  sk_paragraph("Anyone with this code can use your character, also on the web (PC, phone or X). Keep it private.", x, y, w, 9, SK_DIM, 2);
+  sk_paragraph(TR("Anyone with this code can use your character, also on the web (PC, phone or X). Keep it private."), x, y, w, 9, SK_DIM, 2);
   y += 26;
-  if (sk_button(x, y, w, "Use a code", U.identity_job == 0)) identity_code(NULL);
+  if (sk_button(x, y, w, TR("Use a code"), U.identity_job == 0)) identity_code(NULL);
   y += 24;
-  if (sk_button(x, y, w, "Move to another device…", true)) ui_open(P_MOVE);
+  if (sk_button(x, y, w, TR("Move to another device…"), true)) ui_open(P_MOVE);
   identity_poll(now);
 }
 
@@ -813,23 +821,23 @@ static void move_code_done(const char *code, void *ctx) {
 static void move_confirmed(void *ctx) { (void)ctx; move_claim(true); }
 
 static void panel_move(u64 now) {
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Move character")) { ui_open(P_ME); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Move character"))) { ui_open(P_ME); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   float x = IN_X + 6, w = IN_W - 12, y = IN_Y + 4;
-  if (net_state() == NET_OFFLINE) { sk_paragraph("Connect to tweebbo.lol to move a character.", x, y, w, 11, SK_TEXT, 3); return; }
-  sk_paragraph("Each character can move to another device (PC, phone or console) only once. Afterwards it leaves this device and its old code stops working.",
+  if (net_state() == NET_OFFLINE) { sk_paragraph(TR("Connect to tweebbo.lol to move a character."), x, y, w, 11, SK_TEXT, 3); return; }
+  sk_paragraph(TR("Each character can move to another device (PC, phone or console) only once. Afterwards it leaves this device and its old code stops working."),
                x, y, w, 9.5f, SK_DIM, 3);
   y += 38;
   int status = 0;
   json_t *j;
   // This console's character to another device.
-  if (sk_button(x, y, w, U.move_job ? "Asking…" : "Get a transfer code", !U.move_job)) U.move_job = net_http("POST", "/api/transfer", "{}", true);
+  if (sk_button(x, y, w, U.move_job ? TR("Asking…") : TR("Get a transfer code"), !U.move_job)) U.move_job = net_http("POST", "/api/transfer", "{}", true);
   if ((j = move_result(&U.move_job, &status))) {
     const char *code = json_string_value(json_object_get(j, "code"));
     if (status == 200 && code) {
       snprintf(U.move_code, sizeof U.move_code, "%s", code);
       U.move_expires = now + 10 * 60 * 1000;
-    } else ui_toast(json_string_value(json_object_get(j, "error")) ?: "Could not get a code.", now);
+    } else ui_toast(json_string_value(json_object_get(j, "error")) ?: TR("Could not get a code."), now);
     json_decref(j);
   }
   y += 24;
@@ -839,7 +847,7 @@ static void panel_move(u64 now) {
     text_draw(U.move_code, x + w / 2 + 0.6f, y + 5, 15, sk_rgb(SK_TEXT), 1);
     char left[48];
     u64 s = (U.move_expires - now) / 1000;
-    snprintf(left, sizeof left, "Enter it on the other device. %d:%02d left", (int)(s / 60), (int)(s % 60));
+    snprintf(left, sizeof left, TR("Enter it on the other device. %d:%02d left"), (int)(s / 60), (int)(s % 60));
     sk_text(left, x, y + 29, 9.5f, SK_DIM, 0, w);
     // Has the other device taken the character?
     if (!U.move_status_job && now - U.move_polled > 3000) { U.move_polled = now; U.move_status_job = net_http("GET", "/api/transfer", NULL, true); }
@@ -847,7 +855,7 @@ static void panel_move(u64 now) {
       if (json_is_true(json_object_get(j, "moved"))) {
         U.move_code[0] = 0;
         net_use_token("");
-        ui_toast("Your character moved to the other device. This console starts with a new character.", now);
+        ui_toast(TR("Your character moved to the other device. This console starts with a new character."), now);
         ui_close();
       }
       json_decref(j);
@@ -855,22 +863,22 @@ static void panel_move(u64 now) {
   } else U.move_code[0] = 0;
   y += 46;
   // Another device's character to this console.
-  if (sk_button(x, y, w, U.move_claim_job ? "Checking…" : "Enter a code from another device", !U.move_claim_job)) {
-    osk_open("Transfer code from your other device (like K7Q9-M2XP)", NULL, 12, move_code_done, NULL);
+  if (sk_button(x, y, w, U.move_claim_job ? TR("Checking…") : TR("Enter a code from another device"), !U.move_claim_job)) {
+    osk_open(TR("Transfer code from your other device (like K7Q9-M2XP)"), NULL, 12, move_code_done, NULL);
   }
   if ((j = move_result(&U.move_claim_job, &status))) {
     const char *name = json_string_value(json_object_get(j, "name")), *token = json_string_value(json_object_get(j, "token"));
     if (status == 200 && U.move_confirming && token) {
       net_use_token(token);
       memset(U.move_typed, 0, sizeof U.move_typed);
-      ui_toast("Character moved to this console. Reconnecting…", now);
+      ui_toast(TR("Character moved to this console. Reconnecting…"), now);
       ui_close();
     } else if (status == 200 && name) {
       snprintf(U.move_name, sizeof U.move_name, "%s", name);
       char text[160];
-      snprintf(text, sizeof text, "Move \"%s\" to this console? Save this console's character code first if you want to keep it.", U.move_name);
-      ui_confirm(text, "Move here", move_confirmed, NULL);
-    } else ui_toast(json_string_value(json_object_get(j, "error")) ?: "This code is not valid.", now);
+      snprintf(text, sizeof text, TR("Move \"%s\" to this console? Save this console's character code first if you want to keep it."), U.move_name);
+      ui_confirm(text, TR("Move here"), move_confirmed, NULL);
+    } else ui_toast(json_string_value(json_object_get(j, "error")) ?: TR("This code is not valid."), now);
     json_decref(j);
   }
 }
@@ -898,55 +906,55 @@ static void remove_all_confirmed(void *ctx) { (void)ctx; send_room_mod(MOD_REMOV
 
 /** The owner's players with rights and banned players, with Remove / Lift. */
 static void panel_doorbell(void) {
-  if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,"Doorbell")){ui_close();return;}
+  if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,TR("Doorbell"))){ui_close();return;}
   sk_content(IN_X,IN_Y,IN_W,IN_H);
-  if(!W.room_owner){sk_paragraph("Enter your own room to answer the door.",IN_X+8,IN_Y+8,IN_W-16,11,SK_TEXT,3);return;}
+  if(!W.room_owner){sk_paragraph(TR("Enter your own room to answer the door."),IN_X+8,IN_Y+8,IN_W-16,11,SK_TEXT,3);return;}
   sk_paragraph(doorbell.status,IN_X+8,IN_Y+8,IN_W-16,11,SK_TEXT,3);
-  if(sk_button(IN_X+8,IN_Y+46,IN_W-16,doorbell.enabled?"Turn off doorbell (open room)":"Use doorbell instead of password",!doorbell.busy))doorbell_set(!doorbell.enabled);
+  if(sk_button(IN_X+8,IN_Y+46,IN_W-16,doorbell.enabled?TR("Turn off doorbell (open room)"):TR("Use doorbell instead of password"),!doorbell.busy))doorbell_set(!doorbell.enabled);
   if(doorbell.guest){
     sk_text(doorbell.name,IN_X+8,IN_Y+80,12,SK_TEXT,0,IN_W-16);
-    if(sk_button(IN_X+8,IN_Y+110,(IN_W-24)/2,"Let in",!doorbell.busy))doorbell_answer(true);
-    if(sk_button(IN_X+16+(IN_W-24)/2,IN_Y+110,(IN_W-24)/2,"Decline",!doorbell.busy))doorbell_answer(false);
+    if(sk_button(IN_X+8,IN_Y+110,(IN_W-24)/2,TR("Let in"),!doorbell.busy))doorbell_answer(true);
+    if(sk_button(IN_X+16+(IN_W-24)/2,IN_Y+110,(IN_W-24)/2,TR("Decline"),!doorbell.busy))doorbell_answer(false);
   }
 }
 
 static void panel_rights(u64 now) {
   (void)now;
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Room rights")) { ui_open(P_ME); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Room rights"))) { ui_open(P_ME); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
-  if (!W.room_owner) { sk_paragraph("Open your own room to manage who can decorate it.", IN_X + 8, IN_Y + 10, IN_W - 16, 11, SK_TEXT, 3); return; }
+  if (!W.room_owner) { sk_paragraph(TR("Open your own room to manage who can decorate it."), IN_X + 8, IN_Y + 10, IN_W - 16, 11, SK_TEXT, 3); return; }
   json_t *j = W.rights_json ? json_loads(W.rights_json, 0, NULL) : NULL;
   json_t *holders = json_object_get(j, "holders"), *bans = json_object_get(j, "bans");
   int nh = (int)json_array_size(holders), nb = (int)json_array_size(bans), n = nh + nb + 2;
-  if(sk_button(IN_X+IN_W-98,IN_Y+IN_H-25,92,"Doorbell",net_online()))ui_open(P_DOORBELL);
+  if(sk_button(IN_X+IN_W-98,IN_Y+IN_H-25,92,TR("Doorbell"),net_online()))ui_open(P_DOORBELL);
   const float row = 22, lh = IN_H - 30;
   fill_rect(IN_X + 2, IN_Y + 2, IN_W - 4, lh, sk_rgb(SK_WHITE));
   int first = sk_list_begin(&rights_list, IN_X + 2, IN_Y + 2, IN_W - 4, lh, n, row);
   for (int i = first; i < n; i++) {
     float y = sk_list_row_y(i);
     if (y > IN_Y + 2 + lh) break;
-    if (i == 0) { sk_text(nh ? "Players who can decorate" : "Nobody else can decorate.", IN_X + 8, y + 5, 10, SK_DIM, 0, IN_W - 16); continue; }
+    if (i == 0) { sk_text(nh ? TR("Players who can decorate") : TR("Nobody else can decorate."), IN_X + 8, y + 5, 10, SK_DIM, 0, IN_W - 16); continue; }
     if (i <= nh) {
       json_t *v = json_array_get(holders, i - 1);
-      sk_text(json_string_value(json_object_get(v, "name")) ?: "Player", IN_X + 8, y + 5, 10.5f, SK_TEXT, 0, IN_W - 90);
-      if (sk_go(IN_X + IN_W - 76, y + 2, 70, 18, "Remove", true)) send_room_mod(MOD_REMOVE_RIGHTS_OF, (u32)json_integer_value(json_object_get(v, "guest")), 0);
+      sk_text(json_string_value(json_object_get(v, "name")) ?: TR("Player"), IN_X + 8, y + 5, 10.5f, SK_TEXT, 0, IN_W - 90);
+      if (sk_go(IN_X + IN_W - 76, y + 2, 70, 18, TR("Remove"), true)) send_room_mod(MOD_REMOVE_RIGHTS_OF, (u32)json_integer_value(json_object_get(v, "guest")), 0);
       continue;
     }
-    if (i == nh + 1) { sk_text(nb ? "Banned players" : "Nobody is banned.", IN_X + 8, y + 5, 10, SK_DIM, 0, IN_W - 16); continue; }
+    if (i == nh + 1) { sk_text(nb ? TR("Banned players") : TR("Nobody is banned."), IN_X + 8, y + 5, 10, SK_DIM, 0, IN_W - 16); continue; }
     json_t *v = json_array_get(bans, i - nh - 2);
-    sk_text(json_string_value(json_object_get(v, "name")) ?: "Player", IN_X + 8, y + 5, 10.5f, SK_TEXT, 0, IN_W - 90);
-    if (sk_go(IN_X + IN_W - 76, y + 2, 70, 18, "Lift ban", true)) send_room_mod(MOD_UNBAN, (u32)json_integer_value(json_object_get(v, "guest")), 0);
+    sk_text(json_string_value(json_object_get(v, "name")) ?: TR("Player"), IN_X + 8, y + 5, 10.5f, SK_TEXT, 0, IN_W - 90);
+    if (sk_go(IN_X + IN_W - 76, y + 2, 70, 18, TR("Lift ban"), true)) send_room_mod(MOD_UNBAN, (u32)json_integer_value(json_object_get(v, "guest")), 0);
   }
   sk_list_end();
   json_decref(j);
-  if (sk_button(IN_X + 4, IN_Y + IN_H - 24, 150, "Remove all rights", nh > 0)) ui_confirm("Remove everyone's rights in this room?", "Remove", remove_all_confirmed, NULL);
+  if (sk_button(IN_X + 4, IN_Y + IN_H - 24, 150, TR("Remove all rights"), nh > 0)) ui_confirm(TR("Remove everyone's rights in this room?"), TR("Remove"), remove_all_confirmed, NULL);
 
 }
 
 static void panel_ent(u64 now) {
   Ent *e = world_ent(U.ent);
   if (!e) { ui_close(); return; }
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Character")) { ui_close(); scene_select(0); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Character"))) { ui_close(); scene_select(0); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   fill_round(IN_X + 4, IN_Y + 4, 70, 104, 4, sk_rgb(SK_WHITE));
   bool blink = (now + e->id * 1777) % 5200 < 130;
@@ -955,21 +963,21 @@ static void panel_ent(u64 now) {
   sk_text(e->name, x, IN_Y + 4, 13, SK_TEXT, 0, w);
   text_draw(e->name, x + 0.6f, IN_Y + 4, 13, sk_rgb(SK_TEXT), 0);
   if(feedback_receptionist(e->guest,W.model)) {
-    sk_text("Receptionist",x,IN_Y+25,11,SK_TEXT,0,w);
-    sk_paragraph("Have an idea or found a problem? Leave a message in the suggestion box.",x,IN_Y+44,w,11,SK_TEXT,4);
-    if(sk_button(x,IN_Y+104,w,"Suggestions",true)){feedback_open();ui_open(P_FEEDBACK);}
+    sk_text(TR("Receptionist"),x,IN_Y+25,11,SK_TEXT,0,w);
+    sk_paragraph(TR("Have an idea or found a problem? Leave a message in the suggestion box."),x,IN_Y+44,w,11,SK_TEXT,4);
+    if(sk_button(x,IN_Y+104,w,TR("Suggestions"),true)){feedback_open();ui_open(P_FEEDBACK);}
     return;
   }
-  sk_text((e->flags & FLAG_CLUB) ? "Tweebbo Club member" : "In this room", x, IN_Y + 22, 10.5f, (e->flags & FLAG_CLUB) ? 0x8a6200 : SK_DIM, 0, w);
+  sk_text((e->flags & FLAG_CLUB) ? TR("Tweebbo Club member") : TR("In this room"), x, IN_Y + 22, 10.5f, (e->flags & FLAG_CLUB) ? 0x8a6200 : SK_DIM, 0, w);
   float y = IN_Y + 42;
   if (e->guest && net_online()) {
-    if (sk_button(x, y, w, "Add friend", true)) { friends_act("request", e->guest, ""); ui_toast("Friend request sent.", now); }
-    if (sk_button(x + w / 2 + 4, y + 22, w / 2 - 4, "Challenge", true)) games_challenge(e->id);
+    if (sk_button(x, y, w, TR("Add friend"), true)) { friends_act("request", e->guest, ""); ui_toast(TR("Friend request sent."), now); }
+    if (sk_button(x + w / 2 + 4, y + 22, w / 2 - 4, TR("Challenge"), true)) games_challenge(e->id);
     bool blocked = friends_is_blocked(e->guest);
-    if (sk_button(x, y + 22, w / 2, blocked ? "Unignore" : "Ignore", true)) friends_act(blocked ? "unblock" : "block", e->guest, "");
+    if (sk_button(x, y + 22, w / 2, blocked ? TR("Unignore") : TR("Ignore"), true)) friends_act(blocked ? "unblock" : "block", e->guest, "");
   }
-  if (sk_button(x, IN_Y + 88, w / 2, "Badges", net_online())) profile_open(e->guest);
-  if (sk_button(x + w / 2 + 4, IN_Y + 88, w / 2 - 4, "Trade", e->guest && net_online())) trade_invite(e->id);
+  if (sk_button(x, IN_Y + 88, w / 2, TR("Badges"), net_online())) profile_open(e->guest);
+  if (sk_button(x + w / 2 + 4, IN_Y + 88, w / 2 - 4, TR("Trade"), e->guest && net_online())) trade_invite(e->id);
   float note_y = IN_Y + 116;
   // Room tools in a private room (Kepler's rights and kick, plus entry bans).
   if (e->guest && e->guest != W.owner && (W.room_owner || W.room_rights) && world_can_decorate() && net_online()) {
@@ -977,18 +985,18 @@ static void panel_ent(u64 now) {
     static const char *lengths[] = {"", "Ban 1 hour", "Ban 1 day", "Ban always"};
     bool holder = room_rights_has(e->guest);
     float bx = IN_X + 4, bw = (IN_W - 16) / 3, by = IN_Y + 112;
-    if (W.room_owner && sk_button(bx, by, bw, holder ? "Remove rights" : "Give rights", true)) send_room_mod(holder ? MOD_REMOVE_RIGHTS : MOD_GIVE_RIGHTS, e->id, 0);
-    if ((W.room_owner || !holder) && sk_button(bx + bw + 4, by, bw, "Kick", true)) {
+    if (W.room_owner && sk_button(bx, by, bw, holder ? TR("Remove rights") : TR("Give rights"), true)) send_room_mod(holder ? MOD_REMOVE_RIGHTS : MOD_GIVE_RIGHTS, e->id, 0);
+    if ((W.room_owner || !holder) && sk_button(bx + bw + 4, by, bw, TR("Kick"), true)) {
       static u32 target; static char q[96]; target = e->id;
-      snprintf(q, sizeof q, "Ask %s to leave this room? They can come back in a minute.", e->name);
-      ui_confirm(q, "Kick", kick_confirmed, &target);
+      snprintf(q, sizeof q, TR("Ask %s to leave this room? They can come back in a minute."), e->name);
+      ui_confirm(q, TR("Kick"), kick_confirmed, &target);
     }
     if (W.room_owner) {
       if (sk_button(bx + 2 * (bw + 4), by, bw - 26, lengths[ban_len], true)) {
         static u32 target; static char q[120]; target = e->id;
-        snprintf(q, sizeof q, "Keep %s out of this room (%s)?", e->name, ban_len == 1 ? "1 hour" : ban_len == 2 ? "1 day" : "until you lift it");
+        snprintf(q, sizeof q, TR("Keep %s out of this room (%s)?"), e->name, ban_len == 1 ? "1 hour" : ban_len == 2 ? "1 day" : "until you lift it");
         ban_length = ban_len;
-        ui_confirm(q, "Ban", ban_confirmed, &target);
+        ui_confirm(q, TR("Ban"), ban_confirmed, &target);
       }
       if (sk_button(bx + 3 * bw + 8 - 22, by, 22, ">", true)) ban_len = ban_len % 3 + 1;
     }
@@ -1000,7 +1008,7 @@ static void panel_ent(u64 now) {
     device_badge(dev, IN_X + 6, note_y, 2);
     const char *system = dev == DEVICE_SWITCH ? "Nintendo Switch" : dev == DEVICE_VITA ? "PlayStation Vita" : "Nintendo 3DS";
     char note[96];
-    snprintf(note, sizeof note, e->id == W.me ? "You are connected through a %s system." : "This person is connected through a %s system.", system);
+    snprintf(note, sizeof note, e->id == W.me ? TR("You are connected through a %s system.") : TR("This person is connected through a %s system."), system);
     sk_paragraph(note, IN_X + 36, note_y + 2, IN_W - 42, 10.5f, SK_TEXT, 2);
   }
 }
@@ -1048,7 +1056,7 @@ static void look_random(Look *L) {
 static void panel_look(u64 now) {
   Ent *me = world_ent(W.me);
   if (me && !U.draft_dirty) U.draft = look_decode(me->look);
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Change looks")) { ui_open(P_ME); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Change looks"))) { ui_open(P_ME); return; }
   Look *L = &U.draft;
   Category cats[5];
   look_categories(L, cats);
@@ -1108,10 +1116,10 @@ static void panel_look(u64 now) {
   static const char *sex_names[] = {"All", "Boy", "Girl"};
   for (int i = 0; i < 3; i++)
     if (sk_tab(IN_X + 110 + i * 38, fy + 1, 36, 15, sex_names[i], U.look_sex == i)) { U.look_sex = i; U.look_page = 0; }
-  if (sk_button(IN_X + 228, fy, 74, U.draft_dirty ? "Save looks" : "Saved", U.draft_dirty) || (K.a && U.draft_dirty)) {
+  if (sk_button(IN_X + 228, fy, 74, U.draft_dirty ? TR("Save looks") : TR("Saved"), U.draft_dirty) || (K.a && U.draft_dirty)) {
     send_look(look_encode(L));
     U.draft_dirty = false;
-    ui_toast("Look saved.", now);
+    ui_toast(TR("Look saved."), now);
   }
   if (K.y) { look_random(L); U.draft_dirty = true; }
   if (K.x) U.preview_dir = (U.preview_dir + 7) & 7;
@@ -1124,7 +1132,7 @@ void look_top(u64 now) {
   // Preview tile (wardrobe.css .dress-preview / .dress-avatar).
   fill_round(10, 6, 146, 228, 3, sk_rgb(0xa2a594));
   fill_round(11, 7, 144, 226, 3, sk_rgb(0xd3d4c6));
-  sk_text("Your new look", 83, 10, 10.5f, SK_TEXT, 1, 140);
+  sk_text(TR("Your new look"), 83, 10, 10.5f, SK_TEXT, 1, 140);
   fill_rect(17, 26, 132, 180, sk_rgb(0x7a8773));
   fill_rect(18, 27, 130, 142, sk_rgb(0xb6c0af));
   fill_rect(18, 169, 130, 37, sk_rgb(0xa0ab95));
@@ -1132,12 +1140,12 @@ void look_top(u64 now) {
   bool blink = now % 4000 < 130;
   avatar_draw(look, U.preview_dir, POSE_STD, 0, blink ? EXPR_BLINK : 0, U.preview_dir, 0, false, 83 - ANCHOR_X * 2,
               196 - ANCHOR_Y * 2, 2, 255);
-  sk_text("X: turn around", 83, 214, 9.5f, SK_TEXT, 1, 140);
+  sk_text(TR("X: turn around"), 83, 214, 9.5f, SK_TEXT, 1, 140);
   // Outfit summary in a classic window.
   float x = 168, y = 6, w = 224, h = 228;
   fill_round(x - 1, y - 1, w + 2, h + 2, 5, sk_rgb(0x202020));
   fill_round(x, y, w, h, 4, sk_rgb(SK_WINDOW));
-  sk_text("Wardrobe", x + w / 2, y + 2, 10.5f, SK_WHITE, 1, w - 8);
+  sk_text(TR("Wardrobe"), x + w / 2, y + 2, 10.5f, SK_WHITE, 1, w - 8);
   fill_round(x + 4, y + 18, w - 8, h - 22, 3, sk_rgb(SK_CONTENT));
   Look L = U.draft;
   Category c[5]; look_categories(&L, c);
@@ -1150,9 +1158,9 @@ void look_top(u64 now) {
     sk_text(c[i].list[wrap(*c[i].style, c[i].count)].label, x + 94, ry + 3, 10, SK_TEXT, 0, w - 104);
   }
   float hy = y + 160;
-  sk_text("Left/Right: style    Up/Down: category", x + 14, hy, 9, SK_DIM, 0, w - 24);
-  sk_text("L/R: page    Y: randomize    A: save", x + 14, hy + 16, 9, SK_DIM, 0, w - 24);
-  sk_text(U.draft_dirty ? "Not saved yet" : "Saved", x + 14, hy + 40, 10, U.draft_dirty ? SK_DANGER : SK_GO, 0, w - 24);
+  sk_text(TR("Left/Right: style    Up/Down: category"), x + 14, hy, 9, SK_DIM, 0, w - 24);
+  sk_text(TR("L/R: page    Y: randomize    A: save"), x + 14, hy + 16, 9, SK_DIM, 0, w - 24);
+  sk_text(U.draft_dirty ? TR("Not saved yet") : TR("Saved"), x + 14, hy + 40, 10, U.draft_dirty ? SK_DANGER : SK_GO, 0, w - 24);
 }
 
 // ---------------------------------------------------------------- Help panel
@@ -1162,12 +1170,12 @@ static void local_done(const char *url, void *ctx) {
   (void)ctx;
   {
     Endpoint ep;
-    if (!endpoint_parse(url, &ep)) { ui_toast("Use ws://host:port or wss://host.", now_ms()); return; }
+    if (!endpoint_parse(url, &ep)) { ui_toast(TR("Use ws://host:port or wss://host."), now_ms()); return; }
     if (!net_server_allowed(url)) {
 #if defined(TWEEBBO_DEBUG) || defined(TWEEBBO_SHOWCASE)
-      ui_toast("Use a private LAN address for this build.", now_ms());
+      ui_toast(TR("Use a private LAN address for this build."), now_ms());
 #else
-      ui_toast("This build connects to tweebbo.lol only.", now_ms());
+      ui_toast(TR("This build connects to tweebbo.lol only."), now_ms());
 #endif
       return;
     }
@@ -1178,20 +1186,28 @@ static void local_done(const char *url, void *ctx) {
 
 static void choose_local(void *ctx) {
   (void)ctx;
-  osk_open("Server address, e.g. ws://192.168.1.20:8092", strncmp(net_server(), "ws", 2) ? "ws://" : net_server(), 100, local_done, NULL);
+  osk_open(TR("Server address, e.g. ws://192.168.1.20:8092"), strncmp(net_server(), "ws", 2) ? "ws://" : net_server(), 100, local_done, NULL);
 }
 #endif
 
 static void panel_settings(u64 now) {
   (void)now;
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Help & connection")) { ui_close(); return; }
+  if(U.language_picker){
+    if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,TR("Choose your language"))){U.language_picker=false;return;}
+    sk_content(IN_X,IN_Y,IN_W,IN_H);
+    for(int i=0;i<TW_LANGUAGE_COUNT;i++)if(sk_button(IN_X+4+(i%2)*(IN_W/2),IN_Y+8+(i/2)*30,IN_W/2-8,tw_language_name(i),true))tw_language_request(i);
+    sk_text(TR(tw_language_error()),IN_X+4,IN_Y+108,11,SK_DANGER,0,IN_W-8);
+    if(sk_button(IN_X+4,IN_Y+136,IN_W-8,TR("Back"),true))U.language_picker=false;
+    return;
+  }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Help & connection"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   float x = IN_X + 6, y = IN_Y + 4, w = IN_W - 12;
   const char *server = net_server();
   NetState st = net_state();
   const char *state = st == NET_ONLINE ? "Online" : st == NET_OFFLINE ? "Offline practice" : st == NET_CONNECTING ? "Connecting…" : st == NET_REPLACED ? "Paused" : "Reconnecting…";
   char line[200];
-  snprintf(line, sizeof line, "Server: %s", !strcmp(server, "offline") ? "none (offline)" : server);
+  snprintf(line, sizeof line, TR("Server: %s"), !strcmp(server, "offline") ? "none (offline)" : server);
   sk_text(line, x, y, 10.5f, SK_TEXT, 0, w);
   snprintf(line, sizeof line, "%s%s%s", state, net_status()[0] ? " · " : "", net_status());
   sk_text(line, x, y + 14, 10, st == NET_ONLINE ? SK_GO : SK_DIM, 0, w);
@@ -1199,17 +1215,17 @@ static void panel_settings(u64 now) {
   y += 32;
 #if defined(TWEEBBO_SHOWCASE)
   // The proof of concept only knows the hotel of the local network it was built for.
-  if (sk_button(x, y, (w - 8) / 3, "LAN hotel", strcmp(server, DEFAULT_SERVER) != 0)) { net_set_server(DEFAULT_SERVER); ui_close(); }
-  if (sk_button(x + (w - 8) / 3 + 4, y, (w - 8) / 3, "Local server…", true)) choose_local(NULL);
-  if (sk_button(x + ((w - 8) / 3 + 4) * 2, y, (w - 8) / 3, "Offline", strcmp(server, "offline") != 0)) { net_set_server("offline"); ui_close(); }
+  if (sk_button(x, y, (w - 8) / 3, TR("LAN hotel"), strcmp(server, DEFAULT_SERVER) != 0)) { net_set_server(DEFAULT_SERVER); ui_close(); }
+  if (sk_button(x + (w - 8) / 3 + 4, y, (w - 8) / 3, TR("Local server…"), true)) choose_local(NULL);
+  if (sk_button(x + ((w - 8) / 3 + 4) * 2, y, (w - 8) / 3, TR("Offline"), strcmp(server, "offline") != 0)) { net_set_server("offline"); ui_close(); }
 #elif defined(TWEEBBO_DEBUG)
-  sk_button(x, y, (w - 8) / 3, "Local debug", false);
-  if (sk_button(x + (w - 8) / 3 + 4, y, (w - 8) / 3, "Local server…", true)) choose_local(NULL);
-  if (sk_button(x + ((w - 8) / 3 + 4) * 2, y, (w - 8) / 3, "Offline", strcmp(server, "offline") != 0)) { net_set_server("offline"); ui_close(); }
+  sk_button(x, y, (w - 8) / 3, TR("Local debug"), false);
+  if (sk_button(x + (w - 8) / 3 + 4, y, (w - 8) / 3, TR("Local server…"), true)) choose_local(NULL);
+  if (sk_button(x + ((w - 8) / 3 + 4) * 2, y, (w - 8) / 3, TR("Offline"), strcmp(server, "offline") != 0)) { net_set_server("offline"); ui_close(); }
 #else
   // Public build: tweebbo.lol or offline only (a saved LAN address cannot hijack it).
-  if (sk_button(x, y, (w - 8) / 2, "tweebbo.lol", strcmp(server, PROD_SERVER) != 0)) { net_set_server(PROD_SERVER); ui_close(); }
-  if (sk_button(x + (w - 8) / 2 + 4, y, (w - 8) / 2, "Offline", strcmp(server, "offline") != 0)) { net_set_server("offline"); ui_close(); }
+  if (sk_button(x, y, (w - 8) / 2, TR("tweebbo.lol"), strcmp(server, PROD_SERVER) != 0)) { net_set_server(PROD_SERVER); ui_close(); }
+  if (sk_button(x + (w - 8) / 2 + 4, y, (w - 8) / 2, TR("Offline"), strcmp(server, "offline") != 0)) { net_set_server("offline"); ui_close(); }
 #endif
   y += 22;
   static int check_job;
@@ -1217,15 +1233,15 @@ static void panel_settings(u64 now) {
 #ifdef TWEEBBO_SHOWCASE
   if (false) {
 #else
-  if (sk_button(x, y, 120, check_job ? "Checking…" : "Check tweebbo.lol", !check_job && net_state() != NET_OFFLINE)) {
+  if (sk_button(x, y, 120, check_job ? TR("Checking…") : TR("Check tweebbo.lol"), !check_job && net_state() != NET_OFFLINE)) {
 #endif
     check_job = net_check_prod();
-    snprintf(check_text, sizeof check_text, "Testing the secure connection…");
+    snprintf(check_text, sizeof check_text,"%s",TR("Testing the secure connection…"));
   }
   HttpResult cr;
   if (check_job && net_http_result(check_job, &cr)) {
     check_job = 0;
-    if (cr.status == 200) snprintf(check_text, sizeof check_text, "Secure connection to tweebbo.lol works.");
+    if (cr.status == 200) snprintf(check_text, sizeof check_text,"%s",TR("Secure connection to tweebbo.lol works."));
     else snprintf(check_text, sizeof check_text, "%s", cr.err[0] ? cr.err : "tweebbo.lol did not answer.");
     free(cr.body);
   }
@@ -1234,27 +1250,25 @@ static void panel_settings(u64 now) {
   // Debug builds update from the PC's LAN download page instead of the public releases.
   UpdateState us = update_state();
   char upd[160];
-  if (us == UPD_CHECKING) snprintf(upd, sizeof upd, "Checking for updates…");
-  else if (us == UPD_AVAILABLE) snprintf(upd, sizeof upd, "Version %s is available.", update_version());
-  else if (us == UPD_DOWNLOADING) snprintf(upd, sizeof upd, "Downloading %d%%…", (int)(update_progress() * 100));
-  else if (us == UPD_INSTALLED) snprintf(upd, sizeof upd, "Update installed: restart Tweebbo.");
+  if (us == UPD_CHECKING) snprintf(upd, sizeof upd,"%s",TR("Checking for updates…"));
+  else if (us == UPD_AVAILABLE) snprintf(upd, sizeof upd, TR("Version %s is available."), update_version());
+  else if (us == UPD_DOWNLOADING) snprintf(upd, sizeof upd, TR("Downloading %d%%…"), (int)(update_progress() * 100));
+  else if (us == UPD_INSTALLED) snprintf(upd, sizeof upd,"%s",TR("Update installed: restart Tweebbo."));
   else if (us == UPD_FAILED) snprintf(upd, sizeof upd, "%s", update_error());
-  else if (us == UPD_LATEST) snprintf(upd, sizeof upd, "You have the latest version (%s).", update_current());
-  else snprintf(upd, sizeof upd, "Version %s", update_current());
+  else if (us == UPD_LATEST) snprintf(upd, sizeof upd, TR("You have the latest version (%s)."), update_current());
+  else snprintf(upd, sizeof upd, TR("Version %s"), update_current());
   if (us == UPD_AVAILABLE || us == UPD_FAILED) {
-    if (sk_button(x, y, 120, "Install update", us == UPD_AVAILABLE)) update_start();
-  } else if (sk_button(x, y, 120, "Check for updates", us != UPD_CHECKING && us != UPD_DOWNLOADING && net_state() != NET_OFFLINE))
+    if (sk_button(x, y, 120, TR("Install update"), us == UPD_AVAILABLE)) update_start();
+  } else if (sk_button(x, y, 120, TR("Check for updates"), us != UPD_CHECKING && us != UPD_DOWNLOADING && net_state() != NET_OFFLINE))
     update_check();
   sk_text(upd, x + 126, y + 3, 9.5f, us == UPD_FAILED ? SK_DANGER : SK_DIM, 0, w - 126);
   y += 24;
-  y += sk_paragraph("Move: Circle Pad / D-Pad · Talk/use: A\n"
+  y += sk_paragraph(TR("Move: Circle Pad / D-Pad · Talk/use: A\n"
                     "Wave: X · Dance: Y · Sit/close: B\n"
-                    "Overview/rotate: L/R · Quit: START",
+                    "Overview/rotate: L/R · Quit: START"),
                     x, y, w, 9.5f, SK_TEXT, 3) + 3;
   // Plain text, like the web's social links but readable on the console (no links).
-  sk_text("Follow Tweebbo", x, y + 2, 9.5f, SK_DIM, 0, w);
-  sk_text("tiktok.com/@Tweebbo · instagram.com/Tweebbo", x, y + 14, 9.5f, SK_TEXT, 0, w);
-  sk_text("x.com/Tweebbo · youtube.com/@Tweebbo", x, y + 26, 9.5f, SK_TEXT, 0, w);
+  if(sk_button(x,y+2,w,TR("Language"),true))U.language_picker=true;
 
 }
 
@@ -1267,11 +1281,11 @@ static void header(void) {
   if (sk_sprite_size("tweebbo-mark@16", &mw, &mh))
     sk_sprite("tweebbo-mark@16", floorf(10 - mw / 2.0f), floorf((HEAD_H - mh) / 2.0f), 1);
   NetState st = net_state();
-  const float dw = ceilf(text_width("Donate", 10)) + 14, dx = BOT_W - 3 - dw;
+  const float dw = ceilf(text_width(TR("Donate"), 10)) + 14, dx = BOT_W - 3 - dw;
   const bool enabled = W.in_room && (st == NET_ONLINE || st == NET_OFFLINE);
   const bool pressed = enabled && T.held && !T.dragging && T.x0 >= dx && T.x0 < dx + dw && T.y0 >= 0 && T.y0 < HEAD_H;
   fill_round(dx, 2, dw, HEAD_H - 3, (HEAD_H - 3) / 2.0f, sk_rgb(!enabled ? 0x687276 : pressed ? 0xd9a90c : 0xf5c62a));
-  text_draw("Donate", dx + dw / 2, 2, 10, sk_rgb(enabled ? 0x3a2a00 : 0xffffff), 1);
+  text_draw(TR("Donate"), dx + dw / 2, 2, 10, sk_rgb(enabled ? 0x3a2a00 : 0xffffff), 1);
   if (enabled && sk_hit(dx, 0, dw, HEAD_H)) ui_open(P_SUPPORT);
   char buf[32];
   snprintf(buf, sizeof buf, "%u", (unsigned)W.credits);
@@ -1279,13 +1293,13 @@ static void header(void) {
   text_draw(buf, x, 2, 11, sk_rgb(SK_WHITE), 0);
   // Classic coin stack (credits_icon) instead of a circle.
   sk_sprite("credits_icon@14", x - 16, 2, 1);
-  if (st == NET_ONLINE) snprintf(buf, sizeof buf, "%d online", W.online);
+  if (st == NET_ONLINE) snprintf(buf, sizeof buf, TR("%d online"), W.online);
   else snprintf(buf, sizeof buf, "%s", st == NET_OFFLINE ? "offline" : st == NET_CONNECTING ? "connecting…" : st == NET_FULL ? "at capacity" : st == NET_LOCKED ? "locked room" : st == NET_REPLACED || st == NET_DENIED ? "paused" : "reconnecting…");
   x -= 24 + text_width(buf, 10);
   text_draw(buf, x, 3, 10, sk_rgb(st == NET_ONLINE ? 0xd9f2dc : 0xffd34d), 0);
   // Classic messenger head (mes_smallbuddy_head) for connected players.
   if (st == NET_ONLINE) sk_sprite_tint("mes_smallbuddy_head@13", x - 15, 2, 0x8fe39b);
-  sk_text(W.in_room ? W.title : "Tweebbo", 21, 2, 11, SK_WHITE, 0, fmaxf(0, x - (st == NET_ONLINE ? 19 : 4) - 21));
+  sk_text(W.in_room ? (W.owner?W.title:TR(W.title)) : TR("Tweebbo"), 21, 2, 11, SK_WHITE, 0, fmaxf(0, x - (st == NET_ONLINE ? 19 : 4) - 21));
 }
 
 typedef struct { Panel panel; const char *label, *icon; } Tool;
@@ -1320,7 +1334,7 @@ static void toolbar(void) {
       fill_round(cx - 9, BAR_Y + 6, 18, 11, 5, sk_rgb(SK_WHITE));
       C2D_DrawTriangle(cx - 3, BAR_Y + 16, sk_rgb(SK_WHITE), cx + 2, BAR_Y + 16, sk_rgb(SK_WHITE), cx - 4, BAR_Y + 21, sk_rgb(SK_WHITE), 0.5f);
     }
-    text_draw(t->label, cx, BAR_Y + 21, 10, sk_rgb(on ? SK_ACCENT : 0xdddddd), 1);
+    sk_text(TR(t->label), cx, BAR_Y + 21, 10, on ? SK_ACCENT : 0xdddddd, 1, w-4);
     if (on) fill_rect(i * w + 8, BOT_H - 2, w - 16, 2, sk_rgb(SK_ACCENT));
     if (t->panel == P_FRIENDS && friends_badge() > 0) {
       char n[8];
@@ -1350,44 +1364,44 @@ static bool update_modal(void) {
     // Install error: explained in a window.
     fill_rect(0, 0, BOT_W, BOT_H, sk_rgba(0x000000, 140));
     float w = 280, h = 120, x = (BOT_W - w) / 2, y = 50;
-    bool close = sk_window(x, y, w, h, "Update not installed");
+    bool close = sk_window(x, y, w, h, TR("Update not installed"));
     sk_content(x + 5, y + TITLE_H + 2, w - 10, h - TITLE_H - 7);
     sk_paragraph(update_error(), x + 12, y + TITLE_H + 7, w - 24, 10, SK_TEXT, 5);
-    if (close || sk_button(x + w / 2 - 40, y + h - 27, 80, "OK", true) || K.a || K.b) failure_seen = true;
+    if (close || sk_button(x + w / 2 - 40, y + h - 27, 80, TR("OK"), true) || K.a || K.b) failure_seen = true;
     return true;
   }
   if (!(st == UPD_AVAILABLE && !update_dismissed) && st != UPD_DOWNLOADING && st != UPD_INSTALLED) return false;
   fill_rect(0, 0, BOT_W, BOT_H, sk_rgba(0x000000, 140));
   float w = 280, h = 136, x = (BOT_W - w) / 2, y = 46;
   char title[64];
-  snprintf(title, sizeof title, "Tweebbo %s", update_version());
-  bool close = sk_window(x, y, w, h, st == UPD_INSTALLED ? "Update installed" : "Update available");
+  snprintf(title, sizeof title, TR("Tweebbo %s"), update_version());
+  bool close = sk_window(x, y, w, h, st == UPD_INSTALLED ? TR("Update installed") : TR("Update available"));
   sk_content(x + 5, y + TITLE_H + 2, w - 10, h - TITLE_H - 7);
   float ix = x + 12, iy = y + TITLE_H + 7, iw = w - 24;
   if (st == UPD_AVAILABLE) {
     char line[96];
-    snprintf(line, sizeof line, "Version %s is ready.", update_version());
+    snprintf(line, sizeof line, TR("Version %s is ready."), update_version());
     sk_text(line, ix, iy, 11, SK_TEXT, 0, iw);
-    snprintf(line, sizeof line, "You have %s.", update_current());
+    snprintf(line, sizeof line, TR("You have %s."), update_current());
     sk_text(line, ix, iy + 15, 10, SK_DIM, 0, iw);
-    sk_paragraph(update_notes()[0] ? update_notes() : "Your character and rooms stay the same.", ix, iy + 31, iw, 10, SK_DIM, 3);
+    sk_paragraph(update_notes()[0] ? update_notes() : TR("Your character and rooms stay the same."), ix, iy + 31, iw, 10, SK_DIM, 3);
     float bw = (iw - 8) / 2;
-    if (close || sk_button(ix, y + h - 27, bw, "Later", true) || K.b) update_dismissed = true;
-    else if (sk_button(ix + bw + 8, y + h - 27, bw, "Update now", true) || K.a) update_start();
+    if (close || sk_button(ix, y + h - 27, bw, TR("Later"), true) || K.b) update_dismissed = true;
+    else if (sk_button(ix + bw + 8, y + h - 27, bw, TR("Update now"), true) || K.a) update_start();
   } else if (st == UPD_DOWNLOADING) {
-    sk_text("Downloading and installing…", ix, iy, 11, SK_TEXT, 0, iw);
+    sk_text(TR("Downloading and installing…"), ix, iy, 11, SK_TEXT, 0, iw);
     float p = update_progress();
     fill_round(ix, iy + 26, iw, 14, 4, sk_rgb(0xcfcfcf));
     fill_round(ix, iy + 26, iw * (p > 1 ? 1 : p), 14, 4, sk_rgb(SK_GO));
     char pct[16];
     snprintf(pct, sizeof pct, "%d%%", (int)(p * 100));
     sk_text(pct, x + w / 2, iy + 27, 10, SK_WHITE, 1, 0);
-    sk_paragraph("Keep the console on. You can keep playing; it will ask to restart when it finishes.", ix, iy + 48, iw, 10, SK_DIM, 3);
+    sk_paragraph(TR("Keep the console on. You can keep playing; it will ask to restart when it finishes."), ix, iy + 48, iw, 10, SK_DIM, 3);
     return false;
   } else {
-    sk_paragraph("The new version is installed. Restart Tweebbo to use it (if it closes instead, open it again from the HOME Menu). Your character and rooms stay the same.", ix, iy, iw, 10.5f,
+    sk_paragraph(TR("The new version is installed. Restart Tweebbo to use it (if it closes instead, open it again from the HOME Menu). Your character and rooms stay the same."), ix, iy, iw, 10.5f,
                  SK_TEXT, 4);
-    if (sk_button(ix + iw / 2 - 60, y + h - 27, 120, "Restart now", true) || K.a) quit_requested = update_restart();
+    if (sk_button(ix + iw / 2 - 60, y + h - 27, 120, TR("Restart now"), true) || K.a) quit_requested = update_restart();
   }
   return true;
 }
@@ -1404,16 +1418,16 @@ void ui_draw_top(u64 now) {
   if (!update_dismissed) {
     fill_rect(0, 0, TOP_W, TOP_H, sk_rgba(0x000000, 150));
     float w = 300, h = 104, x = (TOP_W - w) / 2, y = (TOP_H - h) / 2;
-    sk_window(x, y, w, h, "Update available");
+    sk_window(x, y, w, h, TR("Update available"));
     sk_content(x + 5, y + TITLE_H + 2, w - 10, h - TITLE_H - 7);
-    snprintf(line, sizeof line, "Tweebbo %s is ready to install.", update_version());
+    snprintf(line, sizeof line, TR("Tweebbo %s is ready to install."), update_version());
     sk_text(line, x + w / 2, y + TITLE_H + 10, 12, SK_TEXT, 1, w - 20);
-    snprintf(line, sizeof line, "You have %s. We recommend updating now.", update_current());
+    snprintf(line, sizeof line, TR("You have %s. We recommend updating now."), update_current());
     sk_text(line, x + w / 2, y + TITLE_H + 30, 10, SK_DIM, 1, w - 20);
-    sk_text("A: Update now     B: Later", x + w / 2, y + TITLE_H + 54, 11, SK_TEXT, 1, w - 20);
+    sk_text(TR("A: Update now     B: Later"), x + w / 2, y + TITLE_H + 54, 11, SK_TEXT, 1, w - 20);
     return;
   }
-  snprintf(line, sizeof line, "Update %s ready · Help", update_version());
+  snprintf(line, sizeof line, TR("Update %s ready · Help"), update_version());
   float w = text_width(line, 9.5f) + 14;
   fill_round(TOP_W - w - 6, 6, w, 17, 4, sk_rgba(0x000000, 170));
   text_draw(line, TOP_W - w / 2 - 6, 8, 9.5f, sk_rgb(SK_ACCENT), 1);
@@ -1438,9 +1452,9 @@ static void modal(void) {
     int next = sk_paragraph_page(U.alerts[0].text, U.alert_offsets[U.alert_page], ax + (illustrated ? 78 : 11),
       ay + TITLE_H + 6, aw - (illustrated ? 90 : 22), 11, SK_TEXT, 9);
     bool more = U.alerts[0].text[next] != 0 && U.alert_page < 63;
-    if (sk_button(ax + 10, ay + ah - 28, 75, "Previous", U.alert_page > 0) || (K.left && U.alert_page > 0)) U.alert_page--;
-    if (sk_button(ax + aw - 85, ay + ah - 28, 75, "Next", more) || (K.right && more)) U.alert_offsets[++U.alert_page] = next;
-    if (close || sk_button(ax + aw / 2 - 40, ay + ah - 28, 80, "OK", true) || K.a || K.b) {
+    if (sk_button(ax + 10, ay + ah - 28, 75, TR("Previous"), U.alert_page > 0) || (K.left && U.alert_page > 0)) U.alert_page--;
+    if (sk_button(ax + aw - 85, ay + ah - 28, 75, TR("Next"), more) || (K.right && more)) U.alert_offsets[++U.alert_page] = next;
+    if (close || sk_button(ax + aw / 2 - 40, ay + ah - 28, 80, TR("OK"), true) || K.a || K.b) {
       if (U.seen_n == COUNT(U.seen_alerts)) { memmove(U.seen_alerts, U.seen_alerts + 1, sizeof(int) * (COUNT(U.seen_alerts) - 1)); U.seen_n--; }
       U.seen_alerts[U.seen_n++] = U.alerts[0].id;
       memmove(&U.alerts[0], &U.alerts[1], sizeof(U.alerts[0]) * (size_t)(COUNT(U.alerts) - 1));
@@ -1450,11 +1464,11 @@ static void modal(void) {
     }
     return;
   }
-  bool close = sk_window(x, y, w, h, "Confirm");
+  bool close = sk_window(x, y, w, h, TR("Confirm"));
   sk_content(x + 5, y + TITLE_H + 2, w - 10, h - TITLE_H - 7);
   sk_paragraph(U.confirm_text, x + 11, y + TITLE_H + 6, w - 22, 10.5f, SK_TEXT, 4);
   float bw = (w - 30) / 2;
-  if (close || sk_button(x + 10, y + h - 28, bw, "Cancel", true) || K.b) { U.confirm = false; return; }
+  if (close || sk_button(x + 10, y + h - 28, bw, TR("Cancel"), true) || K.b) { U.confirm = false; return; }
   if (sk_button(x + 20 + bw, y + h - 28, bw, U.confirm_yes, true) || K.a) {
     U.confirm = false;
     if (U.confirm_fn) U.confirm_fn(U.confirm_ctx);
@@ -1500,7 +1514,7 @@ bool ui_input(u32 down, u32 held, u64 now) {
   if (osk_active()) {
     osk_input(down, held, now);
     // The Circle Pad still walks while typing.
-    if (W.in_room && U.panel != P_SNOW && U.panel != P_CASINO && U.panel != P_GAME) stick_walk(held, false, now);
+    if (W.in_room && U.panel != P_FASTFOOD && U.panel != P_SNOW && U.panel != P_CASINO && U.panel != P_GAME) stick_walk(held, false, now);
     return true;
   }
   if (net_state() == NET_LOCKED || net_state() == NET_FULL || net_state() == NET_DENIED) return true;
@@ -1510,6 +1524,8 @@ bool ui_input(u32 down, u32 held, u64 now) {
   }
   if (!W.in_room) return true;
   if (U.alert || U.confirm || blocking_update) return true;
+  if (U.panel == P_FASTFOOD) { food_input(down); return true; }
+  if (U.panel == P_BATTLE) { battle_ui_input(down,held,now); return true; }
   if (U.panel == P_SNOW) { snow_input(down, held, now); return true; }
   // Booth, diving tower, vote and Wobble Squabble: the buttons drive the game (no walking).
   if (pool_panel_active()) { pool_input(down, held, now); return true; }
@@ -1561,16 +1577,16 @@ bool ui_input(u32 down, u32 held, u64 now) {
 static void feedback_subject_done(const char *s,void *ctx){(void)ctx;snprintf(feedback.subject,sizeof feedback.subject,"%s",s);feedback.status[0]=0;}
 static void feedback_message_done(const char *s,void *ctx){(void)ctx;snprintf(feedback.message,sizeof feedback.message,"%s",s);feedback.status[0]=0;}
 static void panel_feedback(void) {
-  if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,"Suggestion box")){ui_close();return;}
+  if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,TR("Suggestion box"))){ui_close();return;}
   sk_content(IN_X,IN_Y,IN_W,IN_H);
   float x=IN_X+6,y=IN_Y+4,w=IN_W-12;
   static const char *categories[]={"Suggestion","Bug","Other"};
   for(int i=0;i<3;i++)if(sk_button(x+i*w/3,y,w/3-3,categories[i],!feedback.busy))feedback.category=i;
   sk_text(categories[feedback.category],x,y+23,10,SK_DIM,0,w);
-  if(sk_field(x,y+38,w,feedback.subject,"Subject (3-100 characters)") && !feedback.busy)osk_open("Subject (3-100 characters)",feedback.subject,100,feedback_subject_done,NULL);
-  if(sk_field(x,y+65,w,feedback.message,"Description (10-2000 characters)") && !feedback.busy)osk_open("Description (10-2000 characters)",feedback.message,2000,feedback_message_done,NULL);
-  sk_paragraph(feedback.status[0]?feedback.status:"Do not include passwords or private access codes.",x,y+92,w,10,SK_TEXT,2);
-  if(sk_button(x,y+124,w,feedback.busy?"Sending...":"Send message",!feedback.busy))feedback_send();
+  if(sk_field(x,y+38,w,feedback.subject,TR("Subject (3-100 characters)")) && !feedback.busy)osk_open(TR("Subject (3-100 characters)"),feedback.subject,100,feedback_subject_done,NULL);
+  if(sk_field(x,y+65,w,feedback.message,TR("Description (10-2000 characters)")) && !feedback.busy)osk_open(TR("Description (10-2000 characters)"),feedback.message,2000,feedback_message_done,NULL);
+  sk_paragraph(feedback.status[0]?feedback.status:TR("Do not include passwords or private access codes."),x,y+92,w,10,SK_TEXT,2);
+  if(sk_button(x,y+124,w,feedback.busy?TR("Sending..."):TR("Send message"),!feedback.busy))feedback_send();
 }
 
 void ui_draw(u64 now) {
@@ -1586,29 +1602,29 @@ void ui_draw(u64 now) {
   NetState blocked = net_state();
   if (blocked == NET_LOCKED || blocked == NET_FULL || blocked == NET_DENIED) {
     header();
-    sk_status_window(10, 28, 300, 198, blocked == NET_LOCKED ? "Locked room" : blocked == NET_FULL ? "Over capacity" : "Connection paused");
+    sk_status_window(10, 28, 300, 198, blocked == NET_LOCKED ? TR("Locked room") : blocked == NET_FULL ? TR("Over capacity") : TR("Connection paused"));
     sk_content(15, 49, 290, 172);
     sk_sprite("frank-maintenance", 25, 62, 1);
     sk_paragraph(net_doorbell()&&doorbell.status[0]?doorbell.status:net_status(), 94, 62, 200, 11, SK_TEXT, 5);
     if (blocked == NET_FULL) {
-      sk_paragraph("Soon you can help Tweebbo grow.", 94, 138, 200, 10, SK_DIM, 2);
-      sk_button(94, 172, 93, "Donate", false);
-      sk_button(194, 172, 100, "Sponsor", false);
+      sk_paragraph(TR("Soon you can help Tweebbo grow."), 94, 138, 200, 10, SK_DIM, 2);
+      sk_button(94, 172, 93, TR("Donate"), false);
+      sk_button(194, 172, 100, TR("Sponsor"), false);
     }
     if (blocked == NET_LOCKED && net_doorbell()) {
-      if(sk_button(94,153,200,doorbell.waiting?"Waiting...":"Ring doorbell",!doorbell.busy&&!doorbell.waiting))doorbell_ring();
+      if(sk_button(94,153,200,doorbell.waiting?TR("Waiting..."):TR("Ring doorbell"),!doorbell.busy&&!doorbell.waiting))doorbell_ring();
     } else if (blocked == NET_LOCKED) {
-      if (sk_button(94, 153, 200, "Enter password", true) || (down_keys & KEY_A)) {
-        osk_open_secret("Room password", 32, unlock_done, NULL);
+      if (sk_button(94, 153, 200, TR("Enter password"), true) || (down_keys & KEY_A)) {
+        osk_open_secret(TR("Room password"), 32, unlock_done, NULL);
       }
     } else {
       int seconds = net_retry_seconds();
       char label[40];
-      snprintf(label, sizeof label, seconds && blocked == NET_FULL ? "Retry in %d s" : "Reconnect", seconds);
+      snprintf(label, sizeof label, seconds && blocked == NET_FULL ? TR("Retry in %d s") : TR("Reconnect"), seconds);
       if (sk_button(94, 199, 200, label, blocked != NET_FULL || !seconds)) net_resume();
     }
     if (blocked == NET_LOCKED || net_room_full()) {
-      if (sk_button(24, 199, 65, "Lobby", true) || (down_keys & KEY_B)) net_goto("lobby", "");
+      if (sk_button(24, 199, 65, TR("Lobby"), true) || (down_keys & KEY_B)) net_goto(tw_reception_slug(), "");
     }
     return;
   }
@@ -1619,7 +1635,7 @@ void ui_draw(u64 now) {
     sk_status_window(20, 60, BOT_W - 40, 90, "Tweebbo");
     sk_content(25, 79, BOT_W - 50, 66);
     sk_paragraph(net_status(), 34, 92, BOT_W - 68, 11, SK_TEXT, 3);
-    if (sk_button(BOT_W / 2 - 60, 160, 120, "Play here (A)", true)) net_resume();
+    if (sk_button(BOT_W / 2 - 60, 160, 120, TR("Play here (A)"), true)) net_resume();
     return;
   }
   if (!W.in_room) {
@@ -1628,19 +1644,19 @@ void ui_draw(u64 now) {
     sk_content(25, 79, BOT_W - 50, 66);
     const char *s = net_status();
     char where[160];
-    snprintf(where, sizeof where, "Connecting to %s…", net_server());
-    sk_text(net_state() == NET_OFFLINE ? "Loading…" : where, BOT_W / 2, 88, 11, SK_TEXT, 1, BOT_W - 60);
+    snprintf(where, sizeof where, TR("Connecting to %s…"), net_server());
+    sk_text(net_state() == NET_OFFLINE ? TR("Loading…") : where, BOT_W / 2, 88, 11, SK_TEXT, 1, BOT_W - 60);
     sk_text("v" APP_VERSION, BOT_W - 26, 132, 9, SK_DIM, 2, 60);
     if (s[0]) sk_paragraph(s, 34, 108, BOT_W - 68, 10, SK_DIM, 3);
 #ifdef TWEEBBO_SHOWCASE
     // No hotel on this Wi-Fi: the same build plays offline (the local simulation with bots).
-    if (net_state() != NET_OFFLINE && (sk_button(BOT_W / 2 - 124, 160, 120, "Play offline (Y)", true) || (down_keys & KEY_Y))) {
+    if (net_state() != NET_OFFLINE && (sk_button(BOT_W / 2 - 124, 160, 120, TR("Play offline (Y)"), true) || (down_keys & KEY_Y))) {
       net_set_server("offline");
       return;
     }
-    if (sk_button(BOT_W / 2 + 4, 160, 120, "Settings", true)) ui_open(P_SETTINGS);
+    if (sk_button(BOT_W / 2 + 4, 160, 120, TR("Settings"), true)) ui_open(P_SETTINGS);
 #else
-    if (sk_button(BOT_W / 2 - 60, 160, 120, "Settings", true)) ui_open(P_SETTINGS);
+    if (sk_button(BOT_W / 2 - 60, 160, 120, TR("Settings"), true)) ui_open(P_SETTINGS);
 #endif
     if (U.panel == P_SETTINGS) { fill_rect(0, 0, BOT_W, BOT_H, sk_rgb(0x111111)); header(); panel_settings(now); }
     toolbar();
@@ -1661,6 +1677,8 @@ void ui_draw(u64 now) {
     case P_TRADE: trade_draw(now); break;
     case P_SUPPORT: support_draw(now); break;
     case P_SNOW: snow_draw(now); break;
+    case P_BATTLE: battle_ui_draw(now); break;
+    case P_FASTFOOD: food_draw(now); break;
     case P_PROFILE: profile_draw(now); break;
     case P_GAME: games_draw(now); break;
     case P_GAMES: games_hub_draw(now); break;

@@ -1,3 +1,4 @@
+#include "language.h"
 // Furniture trade with another player in the room (server room/trade.rs). The server owns
 // everything: an offer is a list of item ids, nothing moves until both sides confirm, and
 // any change clears both confirmations. Credits and chips never travel in a trade.
@@ -38,7 +39,7 @@ static void act(const char *action, u32 target, u32 id) {
 void trade_invite(u32 eid) {
   T_.asked = eid;
   act("invite", eid, 0);
-  ui_toast("Trade request sent.", now_ms());
+  ui_toast(TR("Trade request sent."), now_ms());
 }
 
 static int read_offers(json_t *list, Offer *out) {
@@ -62,7 +63,7 @@ void trade_receive(const char *text, u64 now) {
     bool showing = ui_panel() == P_TRADE;
     T_.active = T_.picking = false; T_.asked = 0;
     if (showing) ui_close();
-    ui_toast(note && *note ? note : "The trade ended.", now);
+    ui_toast(note && *note ? note : TR("The trade ended."), now);
     json_decref(j);
     return;
   }
@@ -94,7 +95,7 @@ static void offer_grid(const Offer *list, int n, float x, float y, float w, bool
   const float slot = 28;
   int cols = 4;
   fill_round(x, y, w, 3 * slot + 4, 3, sk_rgb(SK_WHITE));
-  if (!n) sk_text(mine ? "Add furniture from your hand." : "Nothing offered yet.", x + w / 2, y + slot - 6, 9.5f, SK_DIM, 1, w - 8);
+  if (!n) sk_text(mine ? TR("Add furniture from your hand.") : TR("Nothing offered yet."), x + w / 2, y + slot - 6, 9.5f, SK_DIM, 1, w - 8);
   for (int i = 0; i < n && i < TRADE_MAX; i++) {
     float cx = x + 2 + (i % cols) * slot, cy = y + 2 + (i / cols) * slot;
     gfx_furni_icon(list[i].def, cx + slot / 2, cy + slot / 2, slot - 6);
@@ -103,13 +104,13 @@ static void offer_grid(const Offer *list, int n, float x, float y, float w, bool
 }
 
 static void draw_picker(void) {
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Offer furniture")) { T_.picking = false; return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Offer furniture"))) { T_.picking = false; return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   u32 ids[MAX_INV]; u16 defs[MAX_INV]; int n = 0;
   for (int i = 0; i < W.inv_n; i++) if (!offered(W.inv[i].id)) { ids[n] = W.inv[i].id; defs[n] = W.inv[i].def; n++; }
   if (!n) {
-    sk_paragraph("Your hand has no other furniture to offer. Only furniture in your hand (not placed in a room) can be traded.", IN_X + 8, IN_Y + 10, IN_W - 16, 11, SK_TEXT, 5);
-    if (sk_button(IN_X + 8, IN_Y + IN_H - 26, 90, "Back", true) || K.b) T_.picking = false;
+    sk_paragraph(TR("Your hand has no other furniture to offer. Only furniture in your hand (not placed in a room) can be traded."), IN_X + 8, IN_Y + 10, IN_W - 16, 11, SK_TEXT, 5);
+    if (sk_button(IN_X + 8, IN_Y + IN_H - 26, 90, TR("Back"), true) || K.b) T_.picking = false;
     return;
   }
   const float slot = 42;
@@ -138,9 +139,9 @@ static void draw_picker(void) {
   }
   sk_list_end();
   const FurniDef *d = def_get(defs[T_.sel]);
-  sk_text(d && d->name ? d->name : "Furniture", IN_X + 6, IN_Y + IN_H - 22, 10, SK_TEXT, 0, IN_W - 110);
-  if (sk_button(IN_X + IN_W - 100, IN_Y + IN_H - 24, 96, "Offer (A)", true) || K.a || chosen) {
-    if (T_.mine_n >= TRADE_MAX) ui_toast("A trade holds at most 12 items per side.", now_ms());
+  sk_text(d && d->name ? d->name : TR("Furniture"), IN_X + 6, IN_Y + IN_H - 22, 10, SK_TEXT, 0, IN_W - 110);
+  if (sk_button(IN_X + IN_W - 100, IN_Y + IN_H - 24, 96, TR("Offer (A)"), true) || K.a || chosen) {
+    if (T_.mine_n >= TRADE_MAX) ui_toast(TR("A trade holds at most 12 items per side."), now_ms());
     else act("add", 0, ids[T_.sel]);
     T_.picking = false;
   }
@@ -151,42 +152,42 @@ void trade_draw(u64 now) {
   (void)now;
   if (!T_.active) { ui_close(); return; }
   if (T_.picking) { draw_picker(); return; }
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Trade")) {
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Trade"))) {
     act("cancel", 0, 0); T_.active = false; ui_close(); return;
   }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   char line[120];
   if (!T_.open) {
     if (T_.invited_me) {
-      snprintf(line, sizeof line, "%s wants to trade furniture with you.", T_.peer_name);
+      snprintf(line, sizeof line, TR("%s wants to trade furniture with you."), T_.peer_name);
       sk_paragraph(line, IN_X + 8, IN_Y + 10, IN_W - 16, 12, SK_TEXT, 3);
-      sk_paragraph("Nothing moves until both of you confirm the same offer. Credits are never traded.", IN_X + 8, IN_Y + 48, IN_W - 16, 10, SK_DIM, 3);
-      if (sk_button_big(IN_X + 8, IN_Y + IN_H - 30, 140, "Accept (A)", true) || K.a) act("accept", 0, 0);
-      if (sk_button_big(IN_X + IN_W - 148, IN_Y + IN_H - 30, 140, "Decline (B)", true) || K.b) { act("decline", 0, 0); T_.active = false; ui_close(); }
+      sk_paragraph(TR("Nothing moves until both of you confirm the same offer. Credits are never traded."), IN_X + 8, IN_Y + 48, IN_W - 16, 10, SK_DIM, 3);
+      if (sk_button_big(IN_X + 8, IN_Y + IN_H - 30, 140, TR("Accept (A)"), true) || K.a) act("accept", 0, 0);
+      if (sk_button_big(IN_X + IN_W - 148, IN_Y + IN_H - 30, 140, TR("Decline (B)"), true) || K.b) { act("decline", 0, 0); T_.active = false; ui_close(); }
     } else {
-      snprintf(line, sizeof line, "Waiting for %s to accept the trade…", T_.peer_name);
+      snprintf(line, sizeof line, TR("Waiting for %s to accept the trade…"), T_.peer_name);
       sk_paragraph(line, IN_X + 8, IN_Y + 20, IN_W - 16, 12, SK_TEXT, 3);
-      if (sk_button(IN_X + 8, IN_Y + IN_H - 26, 120, "Cancel (B)", true) || K.b) { act("cancel", 0, 0); T_.active = false; ui_close(); }
+      if (sk_button(IN_X + 8, IN_Y + IN_H - 26, 120, TR("Cancel (B)"), true) || K.b) { act("cancel", 0, 0); T_.active = false; ui_close(); }
     }
     return;
   }
   float half = (IN_W - 12) / 2, y = IN_Y + 2;
-  snprintf(line, sizeof line, "%s offers", T_.peer_name);
+  snprintf(line, sizeof line, TR("%s offers"), T_.peer_name);
   sk_text(line, IN_X + 4, y, 10.5f, SK_TEXT, 0, half);
-  sk_text("You offer", IN_X + 8 + half, y, 10.5f, SK_TEXT, 0, half);
+  sk_text(TR("You offer"), IN_X + 8 + half, y, 10.5f, SK_TEXT, 0, half);
   offer_grid(T_.theirs, T_.theirs_n, IN_X + 4, y + 16, half, false);
   offer_grid(T_.mine, T_.mine_n, IN_X + 8 + half, y + 16, half, true);
   float sy = y + 106;
-  sk_text(T_.ok_peer ? "They confirmed." : "Not confirmed yet.", IN_X + 4, sy, 9.5f, T_.ok_peer ? SK_GO : SK_DIM, 0, half);
-  sk_text(T_.ok_mine ? "You confirmed." : "Not confirmed yet.", IN_X + 8 + half, sy, 9.5f, T_.ok_mine ? SK_GO : SK_DIM, 0, half);
+  sk_text(T_.ok_peer ? TR("They confirmed.") : TR("Not confirmed yet."), IN_X + 4, sy, 9.5f, T_.ok_peer ? SK_GO : SK_DIM, 0, half);
+  sk_text(T_.ok_mine ? TR("You confirmed.") : TR("Not confirmed yet."), IN_X + 8 + half, sy, 9.5f, T_.ok_mine ? SK_GO : SK_DIM, 0, half);
   bool tokens = false;
   for (int i = 0; i < T_.mine_n; i++) { const FurniDef *d = def_get(T_.mine[i].def); tokens |= d && d->chips; }
   for (int i = 0; i < T_.theirs_n; i++) { const FurniDef *d = def_get(T_.theirs[i].def); tokens |= d && d->chips; }
   // Same rule as the web (server db.rs CHIP_TRADE_LOCK_SECS): said before anyone confirms.
-  if (tokens) sk_text("Received chip tokens: 24 h before redeeming (trading is fine).", IN_X + 4, sy + 13, 9, 0x9c1d23, 0, IN_W - 8);
-  else sk_text(T_.confirming?"Review the final offers and confirm again.":T_.mine_n?"Tap your furniture to take it back.":"", IN_X + 4, sy + 13, 9, SK_DIM, 0, IN_W - 8);
+  if (tokens) sk_text(TR("Received chip tokens: 24 h before redeeming (trading is fine)."), IN_X + 4, sy + 13, 9, 0x9c1d23, 0, IN_W - 8);
+  else sk_text(T_.confirming?TR("Review the final offers and confirm again."):T_.mine_n?TR("Tap your furniture to take it back."):"", IN_X + 4, sy + 13, 9, SK_DIM, 0, IN_W - 8);
   float by = IN_Y + IN_H - 26;
-  if (sk_button(IN_X + 4, by, 96, "Add (X)", T_.mine_n < TRADE_MAX) || (K.x && T_.mine_n < TRADE_MAX)) { T_.picking = true; T_.sel = 0; }
-  if (sk_button(IN_X + 106, by, 110, T_.ok_mine ? "Accepted" : T_.confirming?"Confirm (A)":"Accept (A)", !T_.ok_mine && (T_.mine_n || T_.theirs_n)) || (K.a && !T_.ok_mine && (T_.mine_n || T_.theirs_n))) act(T_.confirming?"confirm":"ready", 0, 0);
-  if (sk_button(IN_X + IN_W - 86, by, 82, "Cancel (B)", true) || K.b) { act("cancel", 0, 0); T_.active = false; ui_close(); }
+  if (sk_button(IN_X + 4, by, 96, TR("Add (X)"), T_.mine_n < TRADE_MAX) || (K.x && T_.mine_n < TRADE_MAX)) { T_.picking = true; T_.sel = 0; }
+  if (sk_button(IN_X + 106, by, 110, T_.ok_mine ? TR("Accepted") : T_.confirming?TR("Confirm (A)"):TR("Accept (A)"), !T_.ok_mine && (T_.mine_n || T_.theirs_n)) || (K.a && !T_.ok_mine && (T_.mine_n || T_.theirs_n))) act(T_.confirming?"confirm":"ready", 0, 0);
+  if (sk_button(IN_X + IN_W - 86, by, 82, TR("Cancel (B)"), true) || K.b) { act("cancel", 0, 0); T_.active = false; ui_close(); }
 }

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <errno.h>
 
 #define MAX_MESSAGE (2 * 1024 * 1024)
 
@@ -69,8 +70,10 @@ bool ws_connect(Ws *ws, const Endpoint *ep, const char *path, int timeout_ms, ch
     if (status == 404) snprintf(err, (size_t)err_cap, "This room does not exist.");
     else snprintf(err, (size_t)err_cap, "The server refused the connection (%d).", status);
     ws_close(ws);
+    ws->http_status = status;
     return false;
   }
+  ws->http_status = status;
   memmove(ws->rx, ws->rx + end, (size_t)(ws->rx_len - end));
   ws->rx_len -= end;
   return true;
@@ -98,6 +101,7 @@ static bool send_frame(Ws *ws, u8 opcode, const u8 *data, int len) {
 }
 
 bool ws_send(Ws *ws, const u8 *data, int len) { return ws->conn && send_frame(ws, 0x2, data, len); }
+bool ws_send_text(Ws *ws, const u8 *data, int len) { return ws->conn && send_frame(ws, 0x1, data, len); }
 
 /** Processes complete frames in the buffer. false on a close frame or a protocol error. */
 static bool parse(Ws *ws, WsHandler fn, void *ctx) {
@@ -114,7 +118,7 @@ static bool parse(Ws *ws, WsHandler fn, void *ctx) {
       for (int i = 0; i < 8; i++) len = len << 8 | b[2 + i];
       h = 10;
     }
-    if (len > MAX_MESSAGE) return false;
+    if (len > (ws->text_messages ? 65536u : MAX_MESSAGE)) return false;
     u8 mask[4] = {0};
     if (masked) { if (ws->rx_len < h + 4) return true; memcpy(mask, b + h, 4); h += 4; }
     if (ws->rx_len < h + (int)len) {
@@ -125,9 +129,10 @@ static bool parse(Ws *ws, WsHandler fn, void *ctx) {
     if (masked) for (u64 i = 0; i < len; i++) p[i] ^= mask[i & 3];
     if (op == 0x8) return false;
     if (op == 0x9) send_frame(ws, 0xA, p, (int)len);
-    else if (op == 0x2 || op == 0x0) {
-      if (op == 0x2 && fin && !ws->msg_len) fn(p, (int)len, ctx);
+    else if (op == (ws->text_messages ? 0x1 : 0x2) || op == 0x0) {
+      if (op == (ws->text_messages ? 0x1 : 0x2) && fin && !ws->msg_len) fn(p, (int)len, ctx);
       else {
+        if(ws->text_messages && ws->msg_len + len > 65536u)return false;
         if (!grow(&ws->msg, &ws->msg_cap, ws->msg_len + (int)len)) return false;
         memcpy(ws->msg + ws->msg_len, p, (size_t)len);
         ws->msg_len += (int)len;
@@ -269,20 +274,22 @@ static bool split_url(const char *url, Endpoint *ep, char *path, int cap) {
 
 int http_download_from(const char *url, long from, HttpSink sink, void *ctx, long *total, char *err, int err_cap) {
   // Signed redirect URLs (GitHub release assets) are close to 1 KB.
-  static char current[2048], next[2048], path[2048], req[2600];
+  char current[2048], next[2048], path[2048], req[2600];
+  *total = -1;
+  if (from < 0 || strlen(url) >= sizeof current) { snprintf(err, (size_t)err_cap, "Invalid download request."); return 0; }
   snprintf(current, sizeof current, "%s", url);
   err[0] = 0;
   *total = -1;
   for (int hop = 0; hop < 6; hop++) {
     Endpoint ep;
     if (!split_url(current, &ep, path, sizeof path)) { snprintf(err, (size_t)err_cap, "Invalid address."); return 0; }
-    Conn *c = conn_open(&ep, 20000, err, err_cap);
+    Conn *c = conn_open_download(&ep, 20000, err, err_cap);
     if (!c) return 0;
     // HTTP/1.0: no chunked encoding, the body arrives as-is until the connection closes.
     char range[48] = "";
     if (from > 0) snprintf(range, sizeof range, "Range: bytes=%ld-\r\n", from);
-    int n = snprintf(req, sizeof req, "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: Tweebbo-3DS\r\nAccept: */*\r\n%sConnection: close\r\n\r\n",
-                     path, ep.host, range);
+    int n = snprintf(req, sizeof req, "GET %s HTTP/1.0\r\nHost: %s:%d\r\nUser-Agent: Tweebbo-3DS\r\nAccept: */*\r\nAccept-Encoding: identity\r\n%sConnection: close\r\n\r\n",
+                     path, ep.host, ep.port, range);
     if (!conn_write(c, req, n, 15000)) { conn_close(c); snprintf(err, (size_t)err_cap, "Connection lost."); return 0; }
     u8 *head = NULL;
     int len = 0, cap = 0;
@@ -311,7 +318,18 @@ int http_download_from(const char *url, long from, HttpSink sink, void *ctx, lon
       continue;
     }
     char *cl = header((char *)head, "Content-Length");
-    long body = cl ? atol(cl) : -1;
+    char *tail = NULL;
+    errno = 0;
+    long body = cl ? strtol(cl, &tail, 10) : -1;
+    bool framing = !cl || (!errno && tail != cl && (*tail == '\r' || *tail == '\n' || !*tail) && body >= 0);
+    if (status == 206) {
+      long first, last, size;
+      char *cr = header((char *)head, "Content-Range");
+      framing = framing && cr && body > 0 && sscanf(cr, "bytes %ld-%ld/%ld", &first, &last, &size) == 3 &&
+                first == from && last >= first && size > last && last == size - 1 && last - first + 1 == body;
+    }
+    if (header((char *)head, "Transfer-Encoding")) framing = false;
+    if (!framing) { free(head); conn_close(c); snprintf(err, (size_t)err_cap, "Invalid download response."); return 0; }
     // 206 continues at `from`; a server that ignores Range sends everything again (200): skip
     // what the caller already has, so the sink always receives the bytes after `from`.
     long skip = status == 200 ? from : 0;
@@ -321,17 +339,20 @@ int http_download_from(const char *url, long from, HttpSink sink, void *ctx, lon
     if (!ok) { free(head); conn_close(c); snprintf(err, (size_t)err_cap, "The server answered %d.", status); return status; }
     long got = 0;
     u8 *buf = malloc(32768);
+    if (!buf) { free(head); conn_close(c); snprintf(err, (size_t)err_cap, "Not enough memory to download."); return 0; }
     int idle = 0;
     u8 *data = head + end;
     int r = len - end;
     while (ok && buf) {
       if (r > 0) {
+        if (body >= 0 && r > body - got) { snprintf(err, (size_t)err_cap, "Invalid download length."); ok = false; break; }
         got += r;
         int drop = skip > r ? r : (int)skip;
         skip -= drop;
         if (r > drop) ok = sink(data + drop, r - drop, ctx);
       }
       if (!ok) break;
+      if (body >= 0 && got == body) break;
       r = conn_read(c, buf, 32768, 200);
       data = buf;
       if (r < 0) break;

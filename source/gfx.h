@@ -2,6 +2,10 @@
 #pragma once
 #include <citro2d.h>
 #include "assets.h"
+bool gfx_battle_load(int arena);
+void gfx_battle_free(void);
+void gfx_battle_blend(int mode);
+void gfx_battle_sprite(unsigned id,float x,float y,float kx,float ky,u32 color,float left,float top,float right,float bottom);
 
 bool gfx_init(void);
 void gfx_exit(void);
@@ -56,3 +60,8 @@ void text_fit(char *s, float size, float max);
 
 void fill_rect(float x, float y, float w, float h, u32 color);
 void fill_round(float x, float y, float w, float h, float r, u32 color);
+
+bool gfx_fastfood_load(void);
+void gfx_fastfood_free(void);
+void gfx_fastfood_sprite(unsigned id, float x, float y, float kx, float ky, u32 color,
+                     float left, float top, float right, float bottom);

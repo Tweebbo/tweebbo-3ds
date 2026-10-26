@@ -1,6 +1,7 @@
 // On-screen keyboard drawn on the touch screen. Unlike the system keyboard applet it does not
 // suspend the app, so the room (or a Snow Storm match) keeps moving on the top screen while you type.
 #include "osk.h"
+#include "language.h"
 #include "skin.h"
 #include "gfx.h"
 #include "ui.h"
@@ -182,7 +183,7 @@ bool osk_draw(u64 now) {
     if (blink) fill_rect(10 + tw, 34, 1, 12, sk_rgb(0x1d2a33));
     if (first > 0) text_draw("…", BOT_W - 14, 24, 10, sk_rgb(0x9a9a9a), 0);
   }
-  if (!O.text[0]) text_draw("Type with the keys or the buttons", 12, 29, 10, sk_rgb(0x9a9a9a), 0);
+  if (!O.text[0]) sk_text(TR("Type with the keys or the buttons"), 12, 29, 10, SK_DIM, 0, BOT_W-24);
   for (int r = 0; r < 4; r++)
     for (int c = 0; c < 10; c++) {
       char buf[8];

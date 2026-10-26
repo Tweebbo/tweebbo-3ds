@@ -1,4 +1,5 @@
 #include "scene.h"
+#include "language.h"
 #include "igloo.h"
 #include "avatar.h"
 #include <jansson.h>
@@ -709,10 +710,10 @@ void scene_draw(u64 now) {
     if (appearance(e) & AV_FOUNDER) {
       PoseInfo p = pose_of(e, now, ent_moving(e, now));
       float bx = scr_x(sx + p.dx), by = scr_y(sy + HALF_H + p.dy - p.anchor_y + 11 - p.lift);
-      float width = text_width("OWNER", 10) + 10;
+      float width = text_width(TR("OWNER"), 10) + 10;
       fill_rect(bx - width / 2, by - 15, width, 15, rgba(0xdfb54d, 255));
       fill_rect(bx - width / 2 + 1, by - 14, width - 2, 13, rgba(0x26373a, 255));
-      text_draw("OWNER", bx, by - 15, 10, rgba(0xffe3a0, 255), 1);
+      text_draw(TR("OWNER"), bx, by - 15, 10, rgba(0xffe3a0, 255), 1);
       raise = 16;
     }
     int device = e->device ? e->device : (e->flags & FLAG_3DS ? DEVICE_3DS : 0);

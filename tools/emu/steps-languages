@@ -1,0 +1,26 @@
+# LAN debug only. Touch origin is 480,490.
+wait 25
+click 777 712
+wait 2
+shot language-help
+click 640 683
+wait 2
+shot language-picker
+click 560 578
+wait 3
+shot language-chinese
+click 710 578
+wait 3
+shot language-japanese
+click 560 608
+wait 2
+shot language-french
+click 710 608
+wait 2
+shot language-portuguese
+click 710 548
+wait 2
+shot language-spanish
+click 640 672
+wait 2
+shot language-help-spanish

@@ -56,6 +56,7 @@ int main(void) {
   differs("hold drink (coffee)", std, draw(POSE_STD, 0, 0, 8, false));
   differs("sip", draw(POSE_STD, 0, 0, 8, false), draw(POSE_STD, 0, 0, 8, true));
   differs("sit", std, draw(POSE_SIT, 0, 0, 0, false));
+  differs("bounce hands over ball", draw(POSE_SIT, 0, 0, 0, false), draw(POSE_BOUNCE, 0, 0, 0, false));
   for (int pose = POSE_SIT; pose <= POSE_FLOOR; pose++) {
     static const int gestures[] = {1,4,5,7,8};
     for (int g = 0; g < 5; g++) {

@@ -1,3 +1,4 @@
+#include "language.h"
 // Build mode: place and move furniture with the Circle Pad / D-Pad,
 // rotate with L/R, place with A and cancel with B. Mirrors the rules of
 // renderer.canPlace() and ui.ts (startPlacing, placeAt) in the web edition.
@@ -144,8 +145,8 @@ static void wall_apply(void) {
 
 void build_start(u16 def, u32 inv_id, u32 moving) {
   if (!world_can_decorate()) {
-    ui_toast(moving ? "You can arrange furniture only in rooms you create."
-                    : "You can place furniture only in rooms you create. Open Rooms to create your own.", now_ms());
+    ui_toast(moving ? TR("You can arrange furniture only in rooms you create.")
+                    : TR("You can place furniture only in rooms you create. Open Rooms to create your own."), now_ms());
     return;
   }
   const FurniDef *d = def_get(def);
@@ -185,7 +186,7 @@ void build_cancel(void) {
 static void place(void) {
   if (B.pending) return;
   G.ok = can_place(&G);
-  if (!G.ok) { ui_toast(G.wall ? "Choose a free spot on the wall." : "That spot is not free.", now_ms()); return; }
+  if (!G.ok) { ui_toast(G.wall ? TR("Choose a free spot on the wall.") : TR("That spot is not free."), now_ms()); return; }
   B.pending = true;
   B.pending_since = now_ms();
   if (B.moving) send_move(B.moving, G.x, G.y, G.rot, G.z);
@@ -263,26 +264,26 @@ bool build_input(u32 down, u32 held, u64 now) {
 void build_draw_panel(u64 now) {
   (void)now;
   const FurniDef *d = def_get(G.def);
-  sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, B.moving ? "Move item" : "Place item");
+  sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, B.moving ? TR("Move item") : TR("Place item"));
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   fill_round(IN_X + 6, IN_Y + 6, 52, 52, 4, sk_rgb(SK_WHITE));
   gfx_furni_icon(G.def, IN_X + 32, IN_Y + 32, 46);
-  sk_text(d ? d->name : "Item", IN_X + 66, IN_Y + 8, 12, SK_TEXT, 0, IN_W - 72);
+  sk_text(d ? d->name : TR("Item"), IN_X + 66, IN_Y + 8, 12, SK_TEXT, 0, IN_W - 72);
   const char *state = B.pending ? "Placing…" : G.ok ? "Free spot: press A to place." : G.wall ? "Choose a free spot on the wall." : "This spot is taken.";
   sk_text(state, IN_X + 66, IN_Y + 26, 10.5f, B.pending ? SK_DIM : G.ok ? SK_GO : SK_DANGER, 0, IN_W - 72);
   char pos[48];
   snprintf(pos, sizeof pos, "Tile %d, %d  ·  height %d", G.x, G.y, G.z);
   sk_text(pos, IN_X + 66, IN_Y + 42, 10, SK_DIM, 0, IN_W - 72);
   float y = IN_Y + 66;
-  sk_paragraph(G.wall ? "Circle Pad / D-Pad: slide along the wall\nL / R: lower / raise\nA: place   B: cancel   Tap the map to jump"
-                      : "Circle Pad / D-Pad: move\nL / R: rotate\nA: place   B: cancel   Tap the map to jump",
+  sk_paragraph(G.wall ? TR("Circle Pad / D-Pad: slide along the wall\nL / R: lower / raise\nA: place   B: cancel   Tap the map to jump")
+                      : TR("Circle Pad / D-Pad: move\nL / R: rotate\nA: place   B: cancel   Tap the map to jump"),
                IN_X + 8, y, IN_W - 16, 10.5f, SK_TEXT, 4);
   float by = IN_Y + IN_H - 24, bw = (IN_W - 24) / 3;
-  if (sk_button(IN_X + 6, by, bw, G.wall ? "Raise (R)" : "Rotate (L/R)", !B.pending)) {
+  if (sk_button(IN_X + 6, by, bw, G.wall ? TR("Raise (R)") : TR("Rotate (L/R)"), !B.pending)) {
     if (G.wall) G.z = G.z + 6 > 110 ? 110 : G.z + 6;
     else G.rot = def_rotation(G.def, (u8)((G.rot + 1) & 3));
     G.ok = can_place(&G);
   }
-  if (sk_button(IN_X + 12 + bw, by, bw, "Place (A)", G.ok && !B.pending)) place();
-  if (sk_button(IN_X + 18 + bw * 2, by, bw, "Cancel (B)", !B.pending)) build_cancel();
+  if (sk_button(IN_X + 12 + bw, by, bw, TR("Place (A)"), G.ok && !B.pending)) place();
+  if (sk_button(IN_X + 18 + bw * 2, by, bw, TR("Cancel (B)"), !B.pending)) build_cancel();
 }

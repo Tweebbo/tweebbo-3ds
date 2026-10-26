@@ -24,6 +24,14 @@ await build({
     b.onResolve({ filter: /^\.\.\/avatar$/ }, () => ({ path: 'avatar', namespace: 'native-avatar' }));
     b.onLoad({ filter: /.*/, namespace: 'native-avatar' }, () => ({ contents: shim.join('\n'), loader: 'ts' }));
     b.onResolve({ filter: /^wardrobe$/ }, () => ({ path: path.join(web, 'client/src/wardrobe-data.json') }));
+    // Native menus translate through the bounded C dictionary, outside the simulation VM.
+    b.onResolve({ filter: /^\.\.\/i18n$/ }, () => ({ path: 'i18n', namespace: 'native-language' }));
+    b.onLoad({ filter: /.*/, namespace: 'native-language' }, () => ({ contents: `
+      export const CANVAS_FONT = 'sans-serif';
+      export const t = (text,vars) => {
+        const translated = globalThis.nativeTranslate ? globalThis.nativeTranslate(text) : text;
+        return vars ? translated.replace(/\\{(\\w+)\\}/g,(all,key)=>Object.prototype.hasOwnProperty.call(vars,key)?String(vars[key]):all) : translated;
+      };` }));
   }}],
 });
 console.log('Snow Storm engine, renderer, wardrobe and native adapter bundled.');

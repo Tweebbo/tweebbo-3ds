@@ -1,4 +1,5 @@
 #include "gfx.h"
+#include "language.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -6,6 +7,8 @@
 #include "world.h"
 #include <stdlib.h>
 #include "gen/snow_assets.h"
+#include "gen/fastfood_assets.h"
+#include "gen/battle_assets.h"
 
 #define MAX_PAGES 24
 #define MAX_ROOMS 8
@@ -20,12 +23,16 @@ static u32 page_used[MAX_PAGES], page_retry[MAX_PAGES];
 static struct { const RoomBackground *bg; C3D_Tex tex[4]; bool loaded; char wall[9], floor[9]; } rooms[MAX_ROOMS];
 static C2D_TextBuf text_buf;
 static C3D_Tex font_texture;
+static C3D_Tex cjk_texture;
+static bool cjk_loaded;
 static bool linear;
 static void scene_free(void);
 static bool furni_release_all(void);
 static void draw_tex(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float scale, bool flip, u32 color);
 static void draw_tex_xy(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool flip, u32 color);
 static C3D_Tex snow_pages[12];
+static C3D_Tex fastfood_pages[2];
+static unsigned fastfood_loaded;
 static unsigned snow_loaded;
 
 // Furniture textures: one per definition, within a linear-memory budget.
@@ -79,6 +86,18 @@ bool gfx_init(void) {
   C2D_SetTintMode(C2D_TintMult);
   return true;
 }
+
+bool gfx_language_font(int language) {
+  C3D_FrameSync();
+  if(language==TW_ZH||language==TW_JA){
+    C3D_Tex next;
+    if(!load_t3x(language==TW_JA?"romfs:/gfx/font-ja.t3x":"romfs:/gfx/font-zh.t3x",&next))return false;
+    if(cjk_loaded)C3D_TexDelete(&cjk_texture);
+    cjk_texture=next;cjk_loaded=true;
+  }else{if(cjk_loaded)C3D_TexDelete(&cjk_texture);cjk_loaded=false;}
+  return true;
+}
+void gfx_cjk_sprite(int sx,int sy,int sw,int sh,float x,float y,unsigned color){if(cjk_loaded)draw_tex(&cjk_texture,sx,sy,sw,sh,x,y,1,false,color);}
 
 static int furni_victim(int exclude) {
   int victim = -1;
@@ -228,12 +247,15 @@ void gfx_frame(void) {
 
 void gfx_exit(void) {
   gfx_snow_free();
+  gfx_fastfood_free();
+  gfx_battle_free();
   scene_free();
   for (int i = 0; i < PET_SLOTS; i++) if (pet_tex[i].loaded) C3D_TexDelete(&pet_tex[i].tex);
   for (int i = 0; i < FURNI_SLOTS; i++) if (furni[i].loaded) C3D_TexDelete(&furni[i].tex);
   for (int i = 0; i < page_count; i++) if (page_loaded[i]) C3D_TexDelete(&pages[i]);
   for (int i = 0; i < MAX_ROOMS; i++) if (rooms[i].loaded) for (int j = 0; j < rooms[i].bg->tile_count; j++) C3D_TexDelete(&rooms[i].tex[j]);
   C3D_TexDelete(&font_texture);
+  if(cjk_loaded)C3D_TexDelete(&cjk_texture);
   C2D_TextBufDelete(text_buf);
 }
 
@@ -269,6 +291,48 @@ void gfx_snow_sprite(unsigned id,float x,float y,float kx,float ky,u32 color,flo
   if(r<=l||b<=t)return;
   int sx=s->x+(flip?s->w-r:l);
   draw_tex_xy(&snow_pages[s->page],sx,s->y+t,r-l,b-t,x+l*scale,y+t*ky,scale,ky,flip,color);
+}
+
+bool gfx_fastfood_load(void) {
+  if(fastfood_loaded==fastfood_page_count)return true;
+  gfx_fastfood_free();
+  if(fastfood_page_count>COUNT(fastfood_pages))return false;
+  for(unsigned i=0;i<fastfood_page_count;i++) {
+    char path[96];snprintf(path,sizeof path,"romfs:/fastfood/%s.t3x",fastfood_page_files[i]);
+    if(!load_t3x(path,&fastfood_pages[i])){gfx_fastfood_free();return false;}
+    C3D_TexSetFilter(&fastfood_pages[i], GPU_LINEAR, GPU_LINEAR);
+    fastfood_loaded++;
+  }
+  return true;
+}
+void gfx_fastfood_free(void) {
+  for(unsigned i=0;i<fastfood_loaded;i++)C3D_TexDelete(&fastfood_pages[i]);
+  fastfood_loaded=0;
+}
+void gfx_fastfood_sprite(unsigned id,float x,float y,float kx,float ky,u32 color,float left,float top,float right,float bottom) {
+  if(id>=fastfood_sprite_count||!kx||ky<=0)return;
+  const FastfoodSprite *s=&fastfood_sprites[id];
+  if(s->page>=fastfood_loaded)return;
+  bool flip=kx<0;float scale=fabsf(kx);
+  x+=flip?-(s->ox+s->w)*scale:s->ox*scale;y+=s->oy*ky;
+  int l=(int)fmaxf(0,ceilf((left-x)/scale)),t=(int)fmaxf(0,ceilf((top-y)/ky));
+  int r=(int)fminf(s->w,floorf((right-x)/scale)),b=(int)fminf(s->h,floorf((bottom-y)/ky));
+  if(r<=l||b<=t)return;
+  int sx=s->x+(flip?s->w-r:l);
+  draw_tex_xy(&fastfood_pages[s->page],sx,s->y+t,r-l,b-t,x+l*scale,y+t*ky,scale,ky,flip,color);
+}
+
+#define BATTLE_TEXTURE C3D_Tex
+#define BATTLE_FREE(tex) C3D_TexDelete(&(tex))
+#define BATTLE_LOAD(path,target) load_t3x(path,target)
+#define BATTLE_DRAW(tex,...) draw_tex_xy(&(tex),__VA_ARGS__)
+#define BATTLE_DIRECTORY "romfs:/battle"
+#define BATTLE_EXTENSION ".t3x"
+#include "battle_textures.inc"
+
+void gfx_battle_blend(int mode){
+  C2D_Flush();
+  C3D_AlphaBlend(mode==2?GPU_BLEND_REVERSE_SUBTRACT:GPU_BLEND_ADD,GPU_BLEND_ADD,GPU_SRC_ALPHA,mode?GPU_ONE:GPU_ONE_MINUS_SRC_ALPHA,GPU_ZERO,GPU_ONE);
 }
 
 static void draw_tex_xy(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool flip, u32 color) {
@@ -323,8 +387,10 @@ const Scene *gfx_scene(const char *model) {
 
 void gfx_scene_sprite(const SceneSprite *s, float x, float y, float zoom, u8 alpha) {
   if (s->page >= scene_tex_n) return;
+  if (s->additive) gfx_additive(true);
   draw_tex_xy(&scene_tex[s->page], s->sx, s->sy, s->w, s->h, x, y, zoom * s->dw / s->w, zoom * s->dh / s->h, false,
               C2D_Color32(255, 255, 255, alpha));
+  if (s->additive) gfx_additive(false);
 }
 
 const SceneArt *gfx_art(const char *name) {
@@ -625,7 +691,7 @@ static const FontGlyph *glyph(unsigned code, int size) {
     if (key == k) return g;
     if (k < key) lo = mid + 1; else hi = mid - 1;
   }
-  return NULL;
+  return cjk_loaded?tw_cjk_glyph(code):NULL;
 }
 
 static float bitmap_width(const char *s, int size) {
@@ -651,7 +717,8 @@ float text_draw(const char *s, float x, float y, float size, u32 color, int alig
     x = roundf(x); y = roundf(y);
     while (*s) {
       const FontGlyph *g = glyph(utf8_next(&s), px);
-      draw_tex(&font_texture, g->x, g->y, g->w, g->h, x + g->left, y + px + g->top, 1, false, color);
+      bool cjk=cjk_loaded&&g->code>255&&g==tw_cjk_glyph(g->code);
+      draw_tex(cjk?&cjk_texture:&font_texture, g->x, g->y, g->w, g->h, x + g->left, y + px + g->top, 1, false, color);
       x += g->advance;
     }
     return width;

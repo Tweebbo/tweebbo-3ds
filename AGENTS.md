@@ -1,5 +1,7 @@
 # Tweebbo 3DS: notes for contributors
 
+Unpublished games candidate (2026-10-25): read `docs/GAME-PORTS.md` for the reusable Director room import, production featured-room rules, native Fast Food/Battle Ball/Snow contracts, memory budgets and LAN-only validation. Scope is 3DS, Switch and Vita; DS is deferred. Emulator evidence does not replace physical-device acceptance.
+
 Emulator verification must use a LAN-restricted debug/showcase build. The public build rejects saved LAN server URLs and falls back to the public hotel, even with isolated emulator storage. Build with an explicit isolated test-server address before launching Azahar; do not use a public CIA/3DSX for integration tests.
 
 Read `README.md` and `docs/ONLINE.md`. This is the Nintendo 3DS client of Tweebbo and it plays in the same world as tweebbo.lol; the reference behaviour is the web edition (client and server).

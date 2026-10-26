@@ -1,0 +1,192 @@
+# LAN debug. Old 3DS profile, Spanish UI, touch origin 480,490.
+wait 25
+key F4 120
+wait 1
+shot review-01-reception
+key F4 120
+wait 1
+click 549 712
+wait 4
+key F4 120
+wait 1
+shot review-02-navigator
+key F4 120
+wait 1
+click 640 540
+wait 3
+key F4 120
+wait 1
+shot review-03-public
+key F4 120
+wait 1
+click 740 540
+wait 3
+key F4 120
+wait 1
+shot review-04-my-rooms
+key F4 120
+wait 1
+click 594 712
+wait 4
+key F4 120
+wait 1
+shot review-05-catalogue
+key F4 120
+wait 1
+down 650 650
+move 650 575
+wait 1
+up
+wait 2
+key F4 120
+wait 1
+shot review-06-catalogue-scroll
+key F4 120
+wait 1
+click 503 712
+wait 2
+key F4 120
+wait 1
+shot review-07-me
+key F4 120
+wait 1
+click 777 712
+wait 2
+key F4 120
+wait 1
+shot review-08-help
+key F4 120
+wait 1
+click 640 683
+wait 2
+key F4 120
+wait 1
+shot review-09-languages
+key F4 120
+wait 1
+click 710 578
+wait 3
+key F4 120
+wait 1
+shot review-10-japanese
+key F4 120
+wait 1
+click 710 548
+wait 2
+click 640 672
+wait 1
+key s 120
+wait 2
+click 505 530
+wait 2
+key F4 120
+wait 1
+shot review-11-game-center
+key F4 120
+wait 1
+click 710 660
+wait 8
+key F4 120
+wait 1
+shot review-12-snow-lobby
+key F4 120
+wait 1
+key Right 1200
+key Up 900
+wait 3
+key F4 120
+wait 1
+shot review-13-snow-walk
+key F4 120
+wait 1
+click 505 530
+wait 2
+click 640 600
+wait 8
+key F4 120
+wait 1
+shot review-14-snow-menu
+key F4 120
+wait 1
+click 640 674
+wait 12
+key F4 120
+wait 1
+shot review-15-snow-practice
+key F4 120
+wait 1
+key Right 600
+key Up 600
+key z 120
+wait 2
+key a 120
+wait 4
+key F4 120
+wait 1
+shot review-16-snow-actions
+key F4 120
+wait 1
+key s 120
+wait 2
+key a 120
+wait 4
+key F4 120
+wait 1
+shot review-17-snow-return
+key F4 120
+wait 1
+click 505 530
+wait 2
+click 640 570
+wait 5
+key F4 120
+wait 1
+shot review-18-fastfood-menu
+key F4 120
+wait 1
+click 525 605
+wait 6
+key a 120
+wait 1
+key z 120
+wait 3
+key F4 120
+wait 1
+shot review-19-fastfood-play
+key F4 120
+wait 1
+key s 120
+wait 3
+click 505 530
+wait 2
+click 640 630
+wait 4
+key F4 120
+wait 1
+shot review-20-battle-menu
+key F4 120
+wait 1
+click 700 630
+wait 6
+key Right 1200
+key a 120
+wait 3
+key F4 120
+wait 1
+shot review-21-battle-play
+key F4 120
+wait 1
+key s 120
+wait 3
+key F4 120
+wait 1
+shot review-22-return
+key F4 120
+wait 1
+click 549 712
+wait 3
+key F4 120
+wait 1
+shot review-23-final-navigator
+key F4 120
+wait 1

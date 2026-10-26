@@ -2,6 +2,7 @@
 // (redirects, embedded root certificates) and checks the SHA-256, like the in-game updater.
 // Runs in ubuntu:24.04: make -C tests update
 #include "../source/ws.h"
+#include "../source/download.h"
 #include <mbedtls/sha256.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -35,6 +36,7 @@ static void field(const char *json, const char *key, char *out, int cap) {
 }
 
 int main(int argc, char **argv) {
+  int connections = argc > 2 ? atoi(argv[2]) : 2;
   const char *manifest = argc > 1 ? argv[1] : "https://github.com/Tweebbo/tweebbo-3ds/releases/latest/download/latest.json";
   char err[160];
   if (!conn_global_init(err, sizeof err)) return 1;
@@ -49,7 +51,7 @@ int main(int argc, char **argv) {
   Sink c = {0};
   mbedtls_sha256_init(&c.sha); mbedtls_sha256_starts_ret(&c.sha, 0);
   u64 t0 = now_ms();
-  st = http_download(cia, to_hash, &c, &total, err, sizeof err);
+  st = http_download_optimized_from(cia, 0, connections, to_hash, &c, &total, err, sizeof err);
   u8 digest[32]; char hex[65];
   mbedtls_sha256_finish_ret(&c.sha, digest);
   for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
@@ -61,7 +63,7 @@ int main(int argc, char **argv) {
   mbedtls_sha256_init(&r.sha); mbedtls_sha256_starts_ret(&r.sha, 0);
   st = http_download(cia, to_hash_capped, &r, &total, err, sizeof err);
   long cut = r.bytes;
-  st = http_download_from(cia, cut, to_hash, &r, &total, err, sizeof err);
+  st = http_download_optimized_from(cia, cut, connections, to_hash, &r, &total, err, sizeof err);
   mbedtls_sha256_finish_ret(&r.sha, digest);
   for (int i = 0; i < 32; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
   printf("resume %d after %ld bytes, total %ld, %ld bytes, sha256 %s\n", st, cut, total, r.bytes, strcmp(hex, sha) ? "MISMATCH" : "ok");

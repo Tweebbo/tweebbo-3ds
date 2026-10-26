@@ -2,6 +2,15 @@ Tweebbo for Nintendo 3DS: the same hotel as [tweebbo.lol](https://tweebbo.lol), 
 
 > Tweebbo is in development and may be unstable.
 
+**New in 1.3.0**
+- Play Fast Food, Battle Ball and Snow Storm from Game Center, including practice and online matches with browser, Switch and Vita players.
+- Visit the classic Battle Ball and Snow Storm lobbies, also listed in offline navigation. Saved rooms that no longer exist return you to reception.
+- Choose English, Spanish, Chinese, Japanese, French or Brazilian Portuguese from Help / Language.
+- Fast Food has more detailed textures and smoother scaling within the same 4 MiB texture budget. Games release their textures and audio when closed.
+- Update downloads can use two connections, reuse connections and resume interrupted transfers with SHA-256 verification.
+
+Host and emulator checks passed for the game ports and download engine. Physical-console performance, sound and suspend/resume have not been certified.
+
 **New in 1.2.5**
 - Stack mode for room builders: type `:stackmode 1` in chat to stack furniture on top of anything, `:stackmode 2` to place items in the same floor space, and `:stackmode 0` to turn it off. Items can be picked up or moved from the middle of a stack.
 - Room layouts P, Q, R, S, X and Z show a proper doorway in the wall.

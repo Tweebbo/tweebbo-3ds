@@ -11,6 +11,8 @@ tests/anim_test
 tests/tls_test
 source/gen/
 tests/update_test
+tests/download_test
+tests/room-recovery
 
 obj-debug/
 tests/protocol_test

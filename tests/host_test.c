@@ -157,6 +157,17 @@ int main(void) {
   }
   printf("avatars in the room: %d (online=%d), chats=%d, notices=%d\n", ents, W.online, chats, notices);
   assert(ents == 1 && W.online == ents+5);
+  for(int game=0;game<2;game++){
+    const char *slug=game?"snowstorm":"battleball",*model=game?"snowwar_lobby_1":"bb_lobby_1";
+    sim_start(slug,clock_ms);w_begin(&w,C_HELLO);w_u16(&w,PROTOCOL_VERSION);w_str(&w,"");w_str(&w,"");send_msg(&w);
+    assert(!strcmp(W.model,model));run(3000);me=world_ent(W.me);assert(me);
+    assert(me->z==(game?32:0));
+    if(!game){w_begin(&w,C_WALK);w_u8(&w,14);w_u8(&w,12);send_msg(&w);run(8000);me=world_ent(W.me);assert(me->x==14&&me->y==12&&me->z==32);}
+    const Scene *scene=NULL;for(int i=0;i<scene_count;i++)if(!strcmp(scenes[i].model,model))scene=&scenes[i];
+    assert(scene&&scene->pages<=4);int lights=0;for(int i=0;i<scene->count;i++)lights+=!!scene->sprites[i].additive;
+    assert(game?lights==2:lights==0);
+    printf("Game room %s: floor, walking and light layers checked.\n",slug);
+  }
   puts("OK");
   return 0;
 }

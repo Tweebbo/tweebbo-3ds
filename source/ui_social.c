@@ -1,3 +1,4 @@
+#include "language.h"
 // Friends Console (social.ts): friends with their room, requests, search,
 // ignored players and private messages, through /api/social.
 #include <3ds.h>
@@ -122,7 +123,7 @@ void friends_poll(u64 now) {
       json_error_t err;
       json_t *j = r.body ? json_loads(r.body, 0, &err) : NULL;
       const char *msg = j ? json_string_value(json_object_get(j, "error")) : NULL;
-      ui_toast(msg ? msg : r.err[0] ? r.err : "Could not connect to the messenger.", now);
+      ui_toast(msg ? msg : r.err[0] ? r.err : TR("Could not connect to the messenger."), now);
       if (j) json_decref(j);
     }
     free(r.body);
@@ -150,12 +151,12 @@ void friends_opened(void) {
 }
 
 void friends_act(const char *action, u32 peer, const char *text) {
-  if (!net_online()) { ui_toast("Connect to the hotel to use the Friends Console.", now_ms()); return; }
+  if (!net_online()) { ui_toast(TR("Connect to the hotel to use the Friends Console."), now_ms()); return; }
   if(S.act_job)return;
   json_t *j=json_pack("{s:s,s:I,s:s}","action",action,"peer",(json_int_t)peer,"text",text?text:"");
   char *body=j?json_dumps(j,JSON_COMPACT):NULL;json_decref(j);
   S.act_job=body?net_http("POST","/api/social",body,true):0;free(body);
-  if(!S.act_job)ui_toast("Could not send. Please try again.",now_ms());
+  if(!S.act_job)ui_toast(TR("Could not send. Please try again."),now_ms());
 }
 
 static void load_messages(void) {
@@ -183,7 +184,7 @@ static void search_done(const char *q, void *ctx) {
   esc[o] = 0;
   snprintf(path, sizeof path, "/api/social?q=%s", esc);
   S.search_job = net_http("GET", path, NULL, true);
-  snprintf(S.status, sizeof S.status, "Searching…");
+  snprintf(S.status, sizeof S.status,"%s",TR("Searching…"));
 }
 
 static void message_done(const char *text, void *ctx) {
@@ -198,25 +199,25 @@ static void conversation(u64 now) {
   float x = IN_X + 4, w = IN_W - 8;
   sk_head(c->look, x + 10, IN_Y + 12);
   sk_text(c->name, x + 26, IN_Y + 3, 11.5f, SK_TEXT, 0, 150);
-  sk_text(c->room[0] ? "Online" : "Offline", x + 26, IN_Y + 16, 9, c->room[0] ? SK_GO : SK_DIM, 0, 100);
-  if (sk_button(x + w - 50, IN_Y + 3, 50, "Back", true)) { S.peer = 0; return; }
-  if (c->room[0] && sk_button(x + w - 128, IN_Y + 3, 74, "Visit room", strcmp(c->room, public_slug(W.slug)) != 0)) {
+  sk_text(c->room[0] ? TR("Online") : TR("Offline"), x + 26, IN_Y + 16, 9, c->room[0] ? SK_GO : SK_DIM, 0, 100);
+  if (sk_button(x + w - 50, IN_Y + 3, 50, TR("Back"), true)) { S.peer = 0; return; }
+  if (c->room[0] && sk_button(x + w - 128, IN_Y + 3, 74, TR("Visit room"), strcmp(c->room, public_slug(W.slug)) != 0)) {
     net_goto(c->room, "");
     ui_close();
     return;
   }
   sk_paragraph(c->mission,IN_X+6,IN_Y+29,IN_W-12,9,SK_DIM,2);
   Message *m=S.nm?&S.msgs[S.nm-1-S.message_page]:NULL;
-  sk_text(m?(m->sender==W.guest_id?W.name:c->name):S.msg_job?"Loading…":"No messages yet.",IN_X+6,IN_Y+54,10,SK_TEXT,0,IN_W-12);
+  sk_text(m?(m->sender==W.guest_id?W.name:c->name):S.msg_job?TR("Loading…"):TR("No messages yet."),IN_X+6,IN_Y+54,10,SK_TEXT,0,IN_W-12);
   if(m && S.text_offset>(int)strlen(m->text))S.text_offset=0;
   int next=m?sk_paragraph_page(m->text,S.text_offset,IN_X+6,IN_Y+70,IN_W-12,10,SK_TEXT,3):0;
   float by=IN_Y+IN_H-44;
-  if(S.text_offset && (sk_button(IN_X+4,by,110,"Start (Up)",true)||K.up))S.text_offset=0;
-  if(m && next<(int)strlen(m->text) && (sk_button(IN_X+IN_W-114,by,110,"More (Down)",true)||K.dn))S.text_offset=next;
+  if(S.text_offset && (sk_button(IN_X+4,by,110,TR("Start (Up)"),true)||K.up))S.text_offset=0;
+  if(m && next<(int)strlen(m->text) && (sk_button(IN_X+IN_W-114,by,110,TR("More (Down)"),true)||K.dn))S.text_offset=next;
   by=IN_Y+IN_H-21;
-  if(sk_button(IN_X+4,by,90,"Older",S.message_page+1<S.nm)||K.left){if(S.message_page+1<S.nm){S.message_page++;S.text_offset=0;}}
-  if(sk_button(IN_X+98,by,90,"Newer",S.message_page>0)||K.right){if(S.message_page>0){S.message_page--;S.text_offset=0;}}
-  if(sk_button(IN_X+IN_W-96,by,92,"Write (A)",!S.act_job)||(K.a&&!S.act_job))osk_open("Message",NULL,500,message_done,NULL);
+  if(sk_button(IN_X+4,by,90,TR("Older"),S.message_page+1<S.nm)||K.left){if(S.message_page+1<S.nm){S.message_page++;S.text_offset=0;}}
+  if(sk_button(IN_X+98,by,90,TR("Newer"),S.message_page>0)||K.right){if(S.message_page>0){S.message_page--;S.text_offset=0;}}
+  if(sk_button(IN_X+IN_W-96,by,92,TR("Write (A)"),!S.act_job)||(K.a&&!S.act_job))osk_open(TR("Message"),NULL,500,message_done,NULL);
   static u64 refreshed;
   if (now - refreshed > 3000) { refreshed = now; load_messages(); }
 }
@@ -226,23 +227,23 @@ static void mission_done(const char *text,void *ctx) {
   json_t *j=json_pack("{s:s,s:i,s:s}","action","mission","peer",0,"text",text);
   char *body=j?json_dumps(j,JSON_COMPACT):NULL;json_decref(j);
   S.act_job=body?net_http("POST","/api/social",body,true):0;free(body);
-  if(!S.act_job)ui_toast("Could not save the mission.",now_ms());
+  if(!S.act_job)ui_toast(TR("Could not save the mission."),now_ms());
 }
 void friends_draw(u64 now) {
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Friends Console")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Friends Console"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   if (!net_online()) {
-    sk_paragraph(net_state() == NET_OFFLINE ? "The Friends Console works online. Open Help to connect to tweebbo.lol."
-                                             : "Connecting to the hotel…",
+    sk_paragraph(net_state() == NET_OFFLINE ? TR("The Friends Console works online. Open Help to connect to tweebbo.lol.")
+                                             : TR("Connecting to the hotel…"),
                  IN_X + 8, IN_Y + 10, IN_W - 16, 11, SK_TEXT, 4);
     return;
   }
   if (S.peer) { conversation(now); return; }
   char tabs[4][32];
-  snprintf(tabs[0], sizeof tabs[0], "Friends (%d)", S.nf);
-  snprintf(tabs[1], sizeof tabs[1], S.ni ? "Requests (%d)" : "Requests", S.ni);
-  snprintf(tabs[2], sizeof tabs[2], "Search");
-  snprintf(tabs[3],sizeof tabs[3],"My info");
+  snprintf(tabs[0], sizeof tabs[0], TR("Friends (%d)"), S.nf);
+  snprintf(tabs[1], sizeof tabs[1], S.ni ? TR("Requests (%d)") : TR("Requests"), S.ni);
+  snprintf(tabs[2], sizeof tabs[2],"%s",TR("Search"));
+  snprintf(tabs[3],sizeof tabs[3],"%s",TR("My info"));
   float tw = (IN_W - 10) / 4;
   for (int i = 0; i < 4; i++)
     if (sk_tab(IN_X + 2 + i * (tw + 2), IN_Y + 2, tw, 16, tabs[i], S.view == i)) { S.view = i; S.list.scroll = 0; S.list.focus = -1; }
@@ -250,15 +251,15 @@ void friends_draw(u64 now) {
   float ly = IN_Y + 22, lh = IN_H - 24;
   if(S.view==3) {
     sk_text(W.name,IN_X+8,ly+6,11,SK_TEXT,0,IN_W-16);
-    sk_text("Mission",IN_X+8,ly+27,10,SK_DIM,0,IN_W-16);
+    sk_text(TR("Mission"),IN_X+8,ly+27,10,SK_DIM,0,IN_W-16);
     sk_paragraph(S.mission,IN_X+8,ly+45,IN_W-16,11,SK_TEXT,4);
-    if(sk_button(IN_X+8,IN_Y+IN_H-27,IN_W-16,"Edit mission (A)",!S.act_job) || (K.a&&!S.act_job))osk_open("Mission (up to 50 characters)",S.mission,50,mission_done,NULL);
+    if(sk_button(IN_X+8,IN_Y+IN_H-27,IN_W-16,TR("Edit mission (A)"),!S.act_job) || (K.a&&!S.act_job))osk_open(TR("Mission (up to 50 characters)"),S.mission,50,mission_done,NULL);
     return;
   }
   const float row = 24;
   if (S.view == 2) {
-    if (sk_field(IN_X + 4, ly, IN_W - 72, S.query, "Player name") || sk_button(IN_X + IN_W - 64, ly, 60, "Search", true) || K.x) {
-      osk_open("Search for a player", S.query, 40, search_done, NULL);
+    if (sk_field(IN_X + 4, ly, IN_W - 72, S.query, TR("Player name")) || sk_button(IN_X + IN_W - 64, ly, 60, TR("Search"), true) || K.x) {
+      osk_open(TR("Search for a player"), S.query, 40, search_done, NULL);
     }
     ly += 22; lh -= 22;
   }
@@ -280,29 +281,29 @@ void friends_draw(u64 now) {
     sk_text(c->name, IN_X + 28, y + 2, 10.5f, SK_TEXT, 0, 120);
     float bx = IN_X + IN_W - 6;
     if (S.view == 0) {
-      sk_text(c->room[0] ? "Online" : "Offline", IN_X + 28, y + 13, 8.5f, c->room[0] ? SK_GO : SK_DIM, 0, 80);
+      sk_text(c->room[0] ? TR("Online") : TR("Offline"), IN_X + 28, y + 13, 8.5f, c->room[0] ? SK_GO : SK_DIM, 0, 80);
       if (c->unread) {
         char u[8];
         snprintf(u, sizeof u, "%d", c->unread);
         C2D_DrawCircleSolid(IN_X + 156, y + 12, 0.5f, 7, sk_rgb(0xd33a2c));
         text_draw(u, IN_X + 156, y + 6, 8.5f, sk_rgb(SK_WHITE), 1);
       }
-      if (sk_go(bx - 46, y + 3, 44, 17, "Chat", true) || (focus && K.a)) { S.peer = c->id; S.nm = 0; S.message_page=0;S.text_offset=0;load_messages(); }
-      if (c->room[0] && sk_go(bx - 94, y + 3, 44, 17, "Visit", true)) { net_goto(c->room, ""); ui_close(); return; }
-      if (sk_button(bx - 150, y + 3, 52, "Remove", true)) friends_act("remove", c->id, "");
+      if (sk_go(bx - 46, y + 3, 44, 17, TR("Chat"), true) || (focus && K.a)) { S.peer = c->id; S.nm = 0; S.message_page=0;S.text_offset=0;load_messages(); }
+      if (c->room[0] && sk_go(bx - 94, y + 3, 44, 17, TR("Visit"), true)) { net_goto(c->room, ""); ui_close(); return; }
+      if (sk_button(bx - 150, y + 3, 52, TR("Remove"), true)) friends_act("remove", c->id, "");
     } else if (S.view == 1 && !outgoing) {
-      sk_text("wants to be your friend", IN_X + 28, y + 13, 8.5f, SK_DIM, 0, 120);
-      if (sk_go(bx - 52, y + 3, 50, 17, "Accept", true) || (focus && K.a)) friends_act("accept", c->id, "");
-      if (sk_button(bx - 110, y + 3, 54, "Decline", true)) friends_act("reject", c->id, "");
+      sk_text(TR("wants to be your friend"), IN_X + 28, y + 13, 8.5f, SK_DIM, 0, 120);
+      if (sk_go(bx - 52, y + 3, 50, 17, TR("Accept"), true) || (focus && K.a)) friends_act("accept", c->id, "");
+      if (sk_button(bx - 110, y + 3, 54, TR("Decline"), true)) friends_act("reject", c->id, "");
     } else if (outgoing) {
-      sk_text("request sent", IN_X + 28, y + 13, 8.5f, SK_DIM, 0, 120);
-      if (sk_button(bx - 60, y + 3, 58, "Cancel", true)) friends_act("cancel", c->id, "");
+      sk_text(TR("request sent"), IN_X + 28, y + 13, 8.5f, SK_DIM, 0, 120);
+      if (sk_button(bx - 60, y + 3, 58, TR("Cancel"), true)) friends_act("cancel", c->id, "");
     } else {
       bool friend_ = find(S.friends, S.nf, c->id) != NULL, pending = find(S.outgoing, S.no, c->id) != NULL;
-      if (c->id == W.guest_id) sk_text("You", bx - 4, y + 6, 9.5f, SK_DIM, 2, 60);
-      else if (friend_) sk_text("Friend", bx - 4, y + 6, 9.5f, SK_DIM, 2, 60);
-      else if (pending) sk_text("Request sent", bx - 4, y + 6, 9.5f, SK_DIM, 2, 80);
-      else if (sk_go(bx - 74, y + 3, 72, 17, "Add friend", true) || (focus && K.a)) friends_act("request", c->id, "");
+      if (c->id == W.guest_id) sk_text(TR("You"), bx - 4, y + 6, 9.5f, SK_DIM, 2, 60);
+      else if (friend_) sk_text(TR("Friend"), bx - 4, y + 6, 9.5f, SK_DIM, 2, 60);
+      else if (pending) sk_text(TR("Request sent"), bx - 4, y + 6, 9.5f, SK_DIM, 2, 80);
+      else if (sk_go(bx - 74, y + 3, 72, 17, TR("Add friend"), true) || (focus && K.a)) friends_act("request", c->id, "");
     }
   }
   sk_list_end();

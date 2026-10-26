@@ -39,6 +39,7 @@ void sim_update(u64 n) { (void)n; }
 
 static const char *server;
 static u8 browser_build;
+const char *tw_reception_slug(void) { return "lobby-es"; }
 static char store_dir[] = "/tmp/tweebbo-3ds-online-XXXXXX";
 bool store_load(const char *key, char *out, int cap) {
   if (!strcmp(key, "server")) { snprintf(out, (size_t)cap, "%s", server); return true; }

@@ -4,12 +4,23 @@ OBJS := $(SRC)/proto.c $(SRC)/path.c $(SRC)/sim.c $(SRC)/world.c $(SRC)/catalog.
 
 all: host_test door_test anim_test protocol_test
 
+download_test: download_test.c $(SRC)/download.c $(SRC)/ws.c $(SRC)/conn.c
+	cc $(CFLAGS) -DNO_TLS -pthread -o $@ $^
+downloads: download_test
+	node download-fixture.mjs
+.PHONY: downloads
+
 QJS := ../vendor/quickjs
 snow_host: snow_host.c $(QJS)/quickjs.c $(QJS)/libregexp.c $(QJS)/libunicode.c $(QJS)/cutils.c $(QJS)/dtoa.c
 	cc -std=gnu11 -O2 -D_GNU_SOURCE -DCONFIG_VERSION='"2026-06-04"' -I$(QJS) -o $@ $^ -lm -lpthread
 snow: snow_host
 	node snow-determinism.mjs
+	./snow_host ../romfs/snow/game.js snow-bridge.js
 .PHONY: snow
+games: snow_host
+	node fastfood-determinism.mjs
+	node battle-render.mjs
+.PHONY: games
 
 door_test: door_test.c $(OBJS)
 	cc $(CFLAGS) -o $@ $^ -lm
@@ -55,7 +66,7 @@ online-tls:
 update:
 	podman run --rm -v $(CURDIR)/..:/w:Z -w /w/tests docker.io/library/ubuntu:24.04 bash -c '\
 	  apt-get -qq update >/dev/null && apt-get -qq install -y gcc libmbedtls-dev >/dev/null 2>&1 && \
-	  cc -std=gnu11 -O1 -I../source -o /tmp/update_test update_test.c ../source/ws.c ../source/conn.c ../source/certs.c -lmbedtls -lmbedx509 -lmbedcrypto && \
+	  cc -std=gnu11 -O1 -I../source -o /tmp/update_test update_test.c ../source/download.c ../source/ws.c ../source/conn.c ../source/certs.c -lmbedtls -lmbedx509 -lmbedcrypto -lpthread && \
 	  for i in 1 2 3 4 5 6; do /tmp/update_test | head -2; done'
 .PHONY: update
 
@@ -69,6 +80,13 @@ transport_test: transport_test.c $(NET_OBJS)
 transport: transport_test
 	node transport-fixture.mjs
 .PHONY: transport
+
+room-recovery: room-recovery.c transport_test.c $(NET_OBJS)
+	cc $(CFLAGS) -DNO_TLS -DTWEEBBO_DEBUG -pthread -o $@ room-recovery.c $(NET_OBJS) -lm
+
+recovery: room-recovery
+	node room-recovery.mjs
+.PHONY: recovery
 
 input-latency: input-latency.c $(NET_OBJS)
 	cc $(CFLAGS) -DNO_TLS -DTWEEBBO_DEBUG -pthread -o $@ $^ -lm

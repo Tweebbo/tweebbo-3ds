@@ -16,6 +16,7 @@ import io
 import json
 import re
 import sys
+import subprocess
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -32,6 +33,7 @@ HD = os.environ.get('PACK_HD') == '1'
 WITH_STATE = os.environ.get('PACK_STATE') == '1'
 GFX = OUT / 'gfx' if OUT else ROOT / 'build/gfx'
 GEN = OUT / 'gen' if OUT else ROOT / 'source/gen'
+subprocess.run([sys.executable, str(ROOT / 'tools/pack-game-rooms.py'), str(SRC), str(GEN)], check=True)
 PAGE = 1024
 GAP = 1
 GENERATED_PNGS = set()
@@ -554,6 +556,17 @@ def main():
     wardrobe = json.loads((SRC / 'data/wardrobe-data.json').read_text())
     anims = json.loads((SRC / 'data/models/people.json').read_text())['animations']
     public_rooms = json.loads((SRC / 'data/public-rooms/index.json').read_text())
+    ports_path = SRC / 'data/public-rooms/ports.json'
+    ports = json.loads(ports_path.read_text()) if ports_path.exists() else {'version': 1, 'rooms': []}
+    if ports['version'] != 1:
+        raise ValueError('Unsupported public-room port manifest')
+    for port in ports['rooms']:
+        key = port['model']
+        room = public_rooms[key]
+        if room.get('heightUnit', 16) != 32:
+            raise ValueError(f'{key}: native layered game rooms require 32-pixel height units')
+        for collection in (ROOMS, SCENES, DRAWN_SEAT_ROOMS):
+            if key not in collection: collection.append(key)
     drinks_src = (SRC / 'data/drinks.ts').read_text()
 
     out = []
@@ -812,7 +825,7 @@ def main():
                     page, x, y, w_, h_ = sp.add(img)
                     depth = -10000.0 if l['name'] == bg_name else -20000.0 if role_ == ROLE_UNDER else float(l['depth'])
                     sprites.append((page, x, y, w_, h_, fr['x'], fr['y'], fr['w'], fr['h'], depth, round(l['alpha'] * 255),
-                                    len(frames_), fi, 1 if l['name'] == bg_name or role_ == ROLE_UNDER else 0, role_))
+                                    len(frames_), fi, 1 if l['name'] == bg_name or role_ == ROLE_UNDER else 0, role_, int(l.get('blend') == 'lighter')))
         art = []
         if key == 'igloo_waddle':
             penguin = json.loads((SRC / 'data/igloo/penguin.json').read_text())
@@ -858,8 +871,8 @@ def main():
                 page = page.crop((0, 0, PAGE, max(8, 1 << (used - 1).bit_length())))
             save_png(page, GFX / f'scene_{key}_{i}.png')
             if key == 'igloo_waddle': soft_alpha.append(f'scene_{key}_{i}')
-        if key == 'igloo_waddle' and len(sp.pages) > 4:
-            raise ValueError('Igloo exceeds the four-page native scene budget')
+        if len(sp.pages) > 4:
+            raise ValueError(f'{key} exceeds the four-page native scene budget')
         scenes.append((key, r, len(sp.pages), sprites, art))
 
     choices = []
@@ -887,8 +900,8 @@ def main():
     w('')
     for key, r, pages_n, sprites, art in scenes:
         w(f'static const SceneSprite scene_sprites_{key}[] = {{')
-        for (page, x, y, w_, h_, dx, dy, dw, dh, depth, alpha, frames, fi, bg, role) in sprites:
-            w(f'  {{{page}, {x}, {y}, {w_}, {h_}, {dx}, {dy}, {dw}, {dh}, {depth:.3f}f, {alpha}, {frames}, {fi}, {bg}, {role}}},')
+        for (page, x, y, w_, h_, dx, dy, dw, dh, depth, alpha, frames, fi, bg, role, additive) in sprites:
+            w(f'  {{{page}, {x}, {y}, {w_}, {h_}, {dx}, {dy}, {dw}, {dh}, {depth:.3f}f, {alpha}, {frames}, {fi}, {bg}, {role}, {additive}}},')
         w('};')
         # Sorted by name (strcmp order) for the binary search in source/pool.c.
         art.sort(key=lambda a: a[0].encode())

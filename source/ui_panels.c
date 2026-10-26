@@ -1,3 +1,5 @@
+#include "language.h"
+#include "gen/game_rooms.h"
 // Web edition windows ported to the bottom screen: room navigator
 // (with creation), catalogue, hand (inventory), furniture panel and pets.
 #include <3ds.h>
@@ -18,7 +20,7 @@
 
 static bool online_or_toast(void) {
   if (net_state() == NET_OFFLINE) {
-    ui_toast("Offline practice: connect to tweebbo.lol in Help.", now_ms());
+    ui_toast(TR("Offline practice: connect to tweebbo.lol in Help."), now_ms());
     return false;
   }
   return true;
@@ -75,9 +77,21 @@ static void offline_rows(void) {
     snprintf(row->slug, sizeof row->slug, "%s", OFFLINE_ROOMS[i].slug);
     utf8_copy(row->title, sizeof row->title, OFFLINE_ROOMS[i].title);
     row->pub = true;
-    row->mine=false;row->locked=false;row->credits=!strcmp(row->slug,"casino");row->bar=!strcmp(row->slug,"afterhours");row->igloo=!strcmp(row->slug,"igloo");row->featured=row->credits||row->bar||!strcmp(row->slug,"lobby");
-    row->online=0;row->priority=!strcmp(row->slug,"lobby")?10:row->credits?20:row->bar?25:2147483647;
+    row->mine=false;row->locked=false;row->credits=!strcmp(row->slug,"casino");row->bar=!strcmp(row->slug,"afterhours");row->igloo=!strcmp(row->slug,"igloo");row->featured=row->credits||row->bar||!strcmp(row->slug,tw_reception_slug());
+    row->online=0;row->priority=!strcmp(row->slug,tw_reception_slug())?10:row->credits?20:row->bar?25:2147483647;
     utf8_copy(row->activity,sizeof row->activity,row->credits?"Casino games":row->bar?"Drinks and smokes":row->featured?"Welcome":"");
+  }
+  for (const GameRoomPort *p = game_room_ports; p->model && NV.n < MAX_ROOMS; p++) {
+    for (int i = 0; i < room_model_count; i++) {
+      if (strcmp(room_models[i].key, p->model)) continue;
+      RoomRow *row = &NV.rooms[NV.n++];
+      memset(row, 0, sizeof *row);
+      snprintf(row->slug, sizeof row->slug, "%s", p->slug);
+      utf8_copy(row->title, sizeof row->title, room_models[i].name);
+      row->pub = true;
+      row->priority = 2147483647;
+      break;
+    }
   }
   qsort(NV.rooms,NV.n,sizeof NV.rooms[0],room_order);
   NV.loaded = true;
@@ -121,7 +135,7 @@ static void nav_poll(void) {
         row->mine = json_is_true(json_object_get(v, "mine"));
         row->locked = json_is_true(json_object_get(v, "locked"));
         json_t *featured = json_object_get(v, "featured");
-        row->featured = row->pub && json_integer_value(json_object_get(v,"ownerId"))==0 && json_is_object(featured) && (!lang || !strcmp(lang,"en"));
+        row->featured = row->pub && json_integer_value(json_object_get(v,"ownerId"))==0 && json_is_object(featured) && (!lang || !strcmp(lang,tw_reception_language()));
         row->priority = row->featured ? (int)json_integer_value(json_object_get(featured,"order")) : 2147483647;
         const char *accent = json_string_value(json_object_get(featured, "accent"));
         row->credits = row->featured && accent && !strcmp(accent, "credits");
@@ -150,7 +164,7 @@ static void nav_poll(void) {
     NV.rename_job=0;
     json_t *j=r.body?json_loads(r.body,0,NULL):NULL;
     const char *message=j?json_string_value(json_object_get(j,"error")):NULL;
-    ui_toast(r.status==200?"Room name saved.":message?message:"Could not rename the room.",now_ms());
+    ui_toast(r.status==200?TR("Room name saved."):message?message:TR("Could not rename the room."),now_ms());
     if(r.status==200)nav_refresh();
     json_decref(j);free(r.body);
   }
@@ -158,7 +172,7 @@ static void nav_poll(void) {
     NV.delete_job=0;
     json_t *j=r.body?json_loads(r.body,0,NULL):NULL;
     const char *message=j?json_string_value(json_object_get(j,"error")):NULL;
-    ui_toast(r.status==200?"Room deleted.":message?message:"Could not delete the room.",now_ms());
+    ui_toast(r.status==200?TR("Room deleted."):message?message:TR("Could not delete the room."),now_ms());
     if(r.status==200)nav_refresh();
     json_decref(j);free(r.body);
   }
@@ -166,11 +180,11 @@ static void nav_poll(void) {
     NV.lock_job = 0;
     json_t *j = r.body ? json_loads(r.body, 0, NULL) : NULL;
     if (r.status == 200 && j) {
-      ui_toast(json_is_true(json_object_get(j, "locked")) ? "Room locked: only people with the password can enter." : "Room open to everybody.", now_ms());
+      ui_toast(json_is_true(json_object_get(j, "locked")) ? TR("Room locked: only people with the password can enter.") : TR("Room open to everybody."), now_ms());
       nav_refresh();
     } else {
       const char *msg = j ? json_string_value(json_object_get(j, "error")) : NULL;
-      ui_toast(msg ? msg : r.err[0] ? r.err : "Could not change the password.", now_ms());
+      ui_toast(msg ? msg : r.err[0] ? r.err : TR("Could not change the password."), now_ms());
     }
     if (j) json_decref(j);
     free(r.body);
@@ -182,7 +196,7 @@ static void nav_poll(void) {
     const char *slug = j ? json_string_value(json_object_get(j, "slug")) : NULL;
     dbg_log("Create room: HTTP %d%s", r.status, slug ? "" : " without a room");
     if (r.status == 200 && slug) {
-      ui_toast("Room created. Taking you there…", now_ms());
+      ui_toast(TR("Room created. Taking you there…"), now_ms());
       NV.creating = false;
       NV.new_title[0] = 0;
       memset(NV.new_password, 0, sizeof NV.new_password);
@@ -190,7 +204,7 @@ static void nav_poll(void) {
       ui_close();
     } else {
       const char *msg = j ? json_string_value(json_object_get(j, "error")) : NULL;
-      ui_toast(msg ? msg : r.err[0] ? r.err : "Could not create the room.", now_ms());
+      ui_toast(msg ? msg : r.err[0] ? r.err : TR("Could not create the room."), now_ms());
     }
     if (j) json_decref(j);
     free(r.body);
@@ -201,7 +215,7 @@ static void nav_create(void) {
   if (NV.create_job || !NV.model_n) return;
   char title[400];
   int len = (int)strlen(NV.new_title);
-  if (len < 3) { ui_toast("Room names need 3 to 40 characters.", now_ms()); return; }
+  if (len < 3) { ui_toast(TR("Room names need 3 to 40 characters."), now_ms()); return; }
   json_escape(NV.new_title, title, sizeof title);
   char token[200], password[140], body[1000];
   json_escape(net_token(), token, sizeof token);
@@ -227,7 +241,7 @@ static void nav_lock_send(const char *password) {
 
 static void nav_lock_done(const char *password, void *ctx) {
   (void)ctx;
-  if (strlen(password) < 4) { ui_toast("Use a password of 4-32 characters.", now_ms()); return; }
+  if (strlen(password) < 4) { ui_toast(TR("Use a password of 4-32 characters."), now_ms()); return; }
   nav_lock_send(password);
 }
 
@@ -235,7 +249,7 @@ static void nav_lock(const RoomRow *r) {
   utf8_copy(lock_slug_pending, sizeof lock_slug_pending, r->slug);
   // Locked: open it again. Open: ask for the new password on the touch keyboard.
   if (r->locked) nav_lock_send("");
-  else osk_open_secret("New room password (4-32 characters)", 32, nav_lock_done, NULL);
+  else osk_open_secret(TR("New room password (4-32 characters)"), 32, nav_lock_done, NULL);
 }
 
 static char rename_slug_pending[48];
@@ -248,7 +262,7 @@ static void nav_delete_confirmed(void *ctx) {
 }
 static void nav_delete(const RoomRow *r) {
   utf8_copy(delete_slug_pending,sizeof delete_slug_pending,r->slug);
-  ui_confirm("Delete this room? Everyone leaves. Items and pets return to their owners.","Delete",nav_delete_confirmed,NULL);
+  ui_confirm(TR("Delete this room? Everyone leaves. Items and pets return to their owners."),TR("Delete"),nav_delete_confirmed,NULL);
 }
 static void nav_rename_done(const char *text, void *ctx) {
   (void)ctx;
@@ -257,56 +271,56 @@ static void nav_rename_done(const char *text, void *ctx) {
   char *body=j?json_dumps(j,JSON_COMPACT):NULL;json_decref(j);
   NV.rename_job=body?net_http("POST","/api/rooms/rename",body,true):0;
   free(body);
-  if(!NV.rename_job)ui_toast("Could not rename the room.",now_ms());
+  if(!NV.rename_job)ui_toast(TR("Could not rename the room."),now_ms());
 }
 static void nav_rename(const RoomRow *r) {
   utf8_copy(rename_slug_pending,sizeof rename_slug_pending,r->slug);
-  osk_open("New room name (3-40 characters)",r->title,40,nav_rename_done,NULL);
+  osk_open(TR("New room name (3-40 characters)"),r->title,40,nav_rename_done,NULL);
 }
 
 static void room_name_done(const char *text, void *ctx) { (void)ctx; utf8_copy(NV.new_title, sizeof NV.new_title, text); }
 static void room_password_done(const char *text, void *ctx) {
   (void)ctx;
-  if (strlen(text) < 4) { ui_toast("Use a password of 4-32 characters.", now_ms()); return; }
+  if (strlen(text) < 4) { ui_toast(TR("Use a password of 4-32 characters."), now_ms()); return; }
   utf8_copy(NV.new_password, sizeof NV.new_password, text);
 }
 
 static void nav_create_view(void) {
   float x = IN_X + 6, y = IN_Y + 4, w = IN_W - 12;
-  sk_text("Create a room", x, y, 12, SK_TEXT, 0, w);
-  text_draw("Create a room", x + 0.6f, y, 12, sk_rgb(SK_TEXT), 0);
+  sk_text(TR("Create a room"), x, y, 12, SK_TEXT, 0, w);
+  text_draw(TR("Create a room"), x + 0.6f, y, 12, sk_rgb(SK_TEXT), 0);
   y += 18;
-  sk_text("Room name", x, y - 1, 9, SK_DIM, 0, w);
-  if (sk_field(x, y + 11, w, NV.new_title, "Tap to type a name"))
-    osk_open("Room name (3-40 characters)", NV.new_title, 40, room_name_done, NULL);
+  sk_text(TR("Room name"), x, y - 1, 9, SK_DIM, 0, w);
+  if (sk_field(x, y + 11, w, NV.new_title, TR("Tap to type a name")))
+    osk_open(TR("Room name (3-40 characters)"), NV.new_title, 40, room_name_done, NULL);
   y += 34;
-  sk_text("Layout", x, y - 1, 9, SK_DIM, 0, w);
+  sk_text(TR("Layout"), x, y - 1, 9, SK_DIM, 0, w);
   if (NV.model_n) {
     if (sk_button(x, y + 11, 24, "<", true) || K.left) NV.model = (NV.model + NV.model_n - 1) % NV.model_n;
     if (sk_button(x + w - 24, y + 11, 24, ">", true) || K.right) NV.model = (NV.model + 1) % NV.model_n;
     fill_round(x + 28, y + 11, w - 56, 18, 3, sk_rgb(SK_WHITE));
     sk_text(NV.models[NV.model].name, x + w / 2, y + 13, 10.5f, SK_TEXT, 1, w - 64);
-  } else sk_text("Loading layouts…", x, y + 13, 10, SK_DIM, 0, w);
+  } else sk_text(TR("Loading layouts…"), x, y + 13, 10, SK_DIM, 0, w);
   y += 34;
   // Door: open, or a password (4-32 characters) like the web's "Password (optional)".
-  sk_text("Door", x, y - 1, 9, SK_DIM, 0, w);
+  sk_text(TR("Door"), x, y - 1, 9, SK_DIM, 0, w);
   bool locked = NV.new_password[0] != 0;
   sk_sprite(locked ? "door_password@18" : "building_icon@18", x, y + 11, 1);
-  if (sk_button(x + 22, y + 11, w - 22 - (locked ? 72 : 0), locked ? "Locked with a password (Y)" : "Open to everyone · add a password (Y)", true) || K.y)
-    osk_open_secret("Room password (4-32 characters)", 32, room_password_done, NULL);
-  if (locked && sk_button(x + w - 68, y + 11, 68, "Remove", true)) memset(NV.new_password, 0, sizeof NV.new_password);
+  if (sk_button(x + 22, y + 11, w - 22 - (locked ? 72 : 0), locked ? TR("Locked with a password (Y)") : TR("Open to everyone · add a password (Y)"), true) || K.y)
+    osk_open_secret(TR("Room password (4-32 characters)"), 32, room_password_done, NULL);
+  if (locked && sk_button(x + w - 68, y + 11, 68, TR("Remove"), true)) memset(NV.new_password, 0, sizeof NV.new_password);
   y += 30;
-  sk_text(locked ? "Only people who know the password can enter." : "Create your own rooms. Only you can decorate them.", x, y, 8.5f, SK_DIM, 0, w);
+  sk_text(locked ? TR("Only people who know the password can enter.") : TR("Create your own rooms. Only you can decorate them."), x, y, 8.5f, SK_DIM, 0, w);
   float by = IN_Y + IN_H - 24, bw = (w - 8) / 2;
-  if (sk_button(x, by, bw, "Back", true)) NV.creating = false;
-  if (sk_button_big(x + bw + 8, by - 3, bw, NV.create_job ? "Creating…" : "Create room (A)",
+  if (sk_button(x, by, bw, TR("Back"), true)) NV.creating = false;
+  if (sk_button_big(x + bw + 8, by - 3, bw, NV.create_job ? TR("Creating…") : TR("Create room (A)"),
                     !NV.create_job && strlen(NV.new_title) >= 3 && NV.model_n) || (K.a && strlen(NV.new_title) >= 3))
     nav_create();
 }
 
 void nav_draw(u64 now) {
   nav_poll();
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Navigator")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Navigator"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   bool offline = net_state() == NET_OFFLINE;
   if (offline && !NV.n) offline_rows();
@@ -315,14 +329,14 @@ void nav_draw(u64 now) {
     static const char *TABS[] = {"All Rooms", "Public Rooms", "My Rooms"};
     float tw = (IN_W - 8) / 3;
     for (int i = 0; i < 3; i++)
-      if (sk_tab(IN_X + 2 + i * (tw + 2), IN_Y + 2, tw, 16, TABS[i], NV.tab == i) && NV.tab != i) {
+      if (sk_tab(IN_X + 2 + i * (tw + 2), IN_Y + 2, tw, 16, TR(TABS[i]), NV.tab == i) && NV.tab != i) {
         NV.tab = i; NV.n = 0; NV.loaded = false; NV.list.scroll = 0; nav_refresh();
       }
     if (K.left || K.right) { NV.tab = (NV.tab + (K.right ? 1 : 2)) % 3; NV.n = 0; NV.loaded = false; nav_refresh(); }
     // An open navigator refreshes every 15 s, like the web.
     if (now - NV.refreshed > 15000) nav_refresh();
   } else {
-    sk_text("Offline practice · public rooms with bots", IN_X + 4, IN_Y + 4, 10.5f, SK_DIM, 0, IN_W - 8);
+    sk_text(TR("Offline practice · public rooms with bots"), IN_X + 4, IN_Y + 4, 10.5f, SK_DIM, 0, IN_W - 8);
   }
   const float row = 26;
   // Whole rows only: a half-clipped last row made its icon look broken.
@@ -343,41 +357,41 @@ void nav_draw(u64 now) {
     else if (r->bar && !r->locked) sk_sprite("bar_cigar_icon@18", IN_X + 5, y + 4, 1);
     else if (r->igloo && !r->locked) sk_sprite("igloo_icon@18", IN_X + 5, y + 4, 1);
     else sk_sprite(r->locked ? "door_password@18" : "building_icon@18", IN_X + 5, y + 4, 1);
-    sk_text(r->title, IN_X + 28, y + 2, 10.5f, r->credits ? SK_CREDITS_INK : SK_TEXT, 0, r->mine && NV.tab==2?IN_W-180:IN_W-120);
+    sk_text(r->pub?TR(r->title):r->title, IN_X + 28, y + 2, 10.5f, r->credits ? SK_CREDITS_INK : SK_TEXT, 0, r->mine && NV.tab==2?IN_W-180:IN_W-120);
     char sub[96];
-    if (r->featured) snprintf(sub, sizeof sub, "Featured · %s", r->activity);
-    else if (r->pub) snprintf(sub, sizeof sub, "Public room");
-    else snprintf(sub, sizeof sub, r->locked ? "by %s · locked" : "by %s", r->owner);
+    if (r->featured) snprintf(sub, sizeof sub, TR("Featured · %s"), TR(r->activity));
+    else if (r->pub) snprintf(sub, sizeof sub,"%s",TR("Public room"));
+    else snprintf(sub, sizeof sub, r->locked ? TR("by %s · locked") : TR("by %s"), r->owner);
     sk_text(sub, IN_X + 28, y + 13, 9, SK_DIM, 0, r->mine && NV.tab==2?IN_W-180:IN_W-120);
     bool here = !strcmp(public_slug(W.slug), r->slug);
     if (r->mine && NV.tab == 2) {
       // Owners lock their room with a password or open it again, as in the web's My Rooms.
       bool busy = NV.lock_job != 0 || NV.rename_job != 0 || NV.delete_job != 0;
-      if(sk_go(IN_X + IN_W - 145,y+4,48,18,"Rename",!busy) || (focus && K.y && !busy))nav_rename(r);
-      if (sk_go(IN_X + IN_W - 94, y + 4, 46, 18, busy && !strcmp(NV.lock_slug, r->slug) ? "…" : r->locked ? "Open" : "Lock", !busy))
+      if(sk_go(IN_X + IN_W - 145,y+4,48,18,TR("Rename"),!busy) || (focus && K.y && !busy))nav_rename(r);
+      if (sk_go(IN_X + IN_W - 94, y + 4, 46, 18, busy && !strcmp(NV.lock_slug, r->slug) ? "…" : r->locked ? TR("Open") : TR("Lock"), !busy))
         nav_lock(r);
     } else {
       char inside[16];
-      snprintf(inside, sizeof inside, "%d inside", r->online);
+      snprintf(inside, sizeof inside, TR("%d inside"), r->online);
       sk_text(inside, IN_X + IN_W - 50, y + 7, 9, SK_DIM, 2, 60);
     }
-    if (sk_go(IN_X + IN_W - 44, y + 4, 34, 18, here ? "Here" : "Go", offline || r->online > 0) || (focus && K.a)) {
+    if (sk_go(IN_X + IN_W - 44, y + 4, 34, 18, here ? TR("Here") : TR("Go"), offline || r->online > 0) || (focus && K.a)) {
       // A locked room asks for its password on the status screen (owners enter without one).
       if (!here) { net_goto(r->slug, ""); ui_close(); }
     }
   }
   sk_list_end();
-  if (!NV.n) sk_text(NV.error[0] ? NV.error : NV.job ? "Loading rooms…" : offline ? "No rooms packed for offline play." : NV.tab == 2 ? "You have not created any rooms yet." : "No rooms.",
+  if (!NV.n) sk_text(NV.error[0] ? NV.error : NV.job ? TR("Loading rooms…") : offline ? TR("No rooms packed for offline play.") : NV.tab == 2 ? TR("You have not created any rooms yet.") : TR("No rooms."),
                      BOT_W / 2, ly + 30, 10.5f, NV.error[0] ? SK_DANGER : SK_DIM, 1, IN_W - 20);
   float by = IN_Y + IN_H - 22;
   if (offline) {
-    sk_text("Help changes the server or returns online.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, IN_W - 8);
+    sk_text(TR("Help changes the server or returns online."), IN_X + 4, by + 3, 9.5f, SK_DIM, 0, IN_W - 8);
   } else {
     if(NV.tab==2&&NV.list.focus>=0&&NV.list.focus<NV.n&&NV.rooms[NV.list.focus].mine){
-      if(sk_button(IN_X+4,by,108,"Delete room",!NV.delete_job&&!NV.rename_job&&!NV.lock_job))nav_delete(&NV.rooms[NV.list.focus]);
-    }else sk_text(NV.tab == 2 ? "Select a room to edit." : "Featured rooms first.", IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
-    if (sk_button(IN_X + IN_W - 182, by, 76, NV.job ? "Loading…" : "Refresh", !NV.job)) nav_refresh();
-    if (sk_button(IN_X + IN_W - 102, by, 100, "Create a room", true) || K.x) { NV.creating = true; NV.new_title[0] = 0; memset(NV.new_password, 0, sizeof NV.new_password); }
+      if(sk_button(IN_X+4,by,108,TR("Delete room"),!NV.delete_job&&!NV.rename_job&&!NV.lock_job))nav_delete(&NV.rooms[NV.list.focus]);
+    }else sk_text(NV.tab == 2 ? TR("Select a room to edit.") : TR("Featured rooms first."), IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
+    if (sk_button(IN_X + IN_W - 182, by, 76, NV.job ? TR("Loading…") : TR("Refresh"), !NV.job)) nav_refresh();
+    if (sk_button(IN_X + IN_W - 102, by, 100, TR("Create a room"), true) || K.x) { NV.creating = true; NV.new_title[0] = 0; memset(NV.new_password, 0, sizeof NV.new_password); }
   }
 }
 
@@ -411,9 +425,9 @@ static void buy_confirmed(void *ctx) {
 static void place_bought(void *ctx) { (void)ctx; hand_select_def(SH.bought_def); ui_open(P_HAND); SH.bought_def = 0; }
 
 static const char *offer_name(const CatOffer *o) {
-  if (o->name[0]) return o->name;
+  if (o->name[0]) return TR(o->name);
   const FurniDef *d = def_get(o->def);
-  return d ? d->name : "Item";
+  return TR(d ? d->name : "Item");
 }
 
 static struct { int kind, index; bool trial; char wall[9], floor[9]; u32 revision; } SP = {.kind = 1};
@@ -434,8 +448,8 @@ static void finish_buy(void *ctx) {
 
 static void spaces_draw(float x, float y, float w, u64 now) {
   if (SP.trial && SP.revision != W.finish_rev) spaces_reset(false);
-  if (sk_tab(x, y, w / 2, 18, "Wallpaper", SP.kind == 1)) { spaces_reset(true); SP.kind = 1; SP.index = 0; }
-  if (sk_tab(x + w / 2, y, w / 2, 18, "Floor", SP.kind == 2)) { spaces_reset(true); SP.kind = 2; SP.index = 0; }
+  if (sk_tab(x, y, w / 2, 18, TR("Wallpaper"), SP.kind == 1)) { spaces_reset(true); SP.kind = 1; SP.index = 0; }
+  if (sk_tab(x + w / 2, y, w / 2, 18, TR("Floor"), SP.kind == 2)) { spaces_reset(true); SP.kind = 2; SP.index = 0; }
   int choices[256], count = 0;
   for (int i = 0; i < finish_choice_count && count < 256; i++) if (finish_choices[i].kind == SP.kind) choices[count++] = i;
   if (!count) return;
@@ -448,7 +462,7 @@ static void spaces_draw(float x, float y, float w, u64 now) {
   fill_rect(x + 6, y + 52, 24, 24, sk_rgb(choice->color));
   snprintf(label, sizeof label, "%s #%s", SP.kind == 1 ? "Wallpaper" : "Floor", choice->id);
   sk_text(label, x + 37, y + 57, 10, SK_TEXT, 0, w - 39);
-  if (sk_button(x, y + 79, w, SP.trial ? "Stop preview" : "Preview in room", true)) {
+  if (sk_button(x, y + 79, w, SP.trial ? TR("Stop preview") : TR("Preview in room"), true)) {
     if (SP.trial) spaces_reset(true);
     else {
       snprintf(SP.wall, sizeof SP.wall, "%s", W.wall); snprintf(SP.floor, sizeof SP.floor, "%s", W.floor);
@@ -456,11 +470,11 @@ static void spaces_draw(float x, float y, float w, u64 now) {
       snprintf(SP.kind == 1 ? W.wall : W.floor, 9, "%s", choice->id);
     }
   }
-  snprintf(label, sizeof label, "Buy - %d credits", finish_price);
+  snprintf(label, sizeof label, TR("Buy - %d credits"), finish_price);
   bool owned = !strcmp(SP.kind == 1 ? (SP.trial ? SP.wall : W.wall) : (SP.trial ? SP.floor : W.floor), choice->id);
-  if (sk_button(x, y + 103, w, !world_can_decorate() ? "Buy in your own room" : owned ? "Already applied" : label, world_can_decorate() && !owned && W.credits >= (u32)finish_price)) {
-    snprintf(label, sizeof label, "Apply this finish for %d credits?", finish_price);
-    ui_confirm(label, "Buy", finish_buy, (void *)choice);
+  if (sk_button(x, y + 103, w, !world_can_decorate() ? TR("Buy in your own room") : owned ? TR("Already applied") : label, world_can_decorate() && !owned && W.credits >= (u32)finish_price)) {
+    snprintf(label, sizeof label, TR("Apply this finish for %d credits?"), finish_price);
+    ui_confirm(label, TR("Buy"), finish_buy, (void *)choice);
   }
   (void)now;
 }
@@ -472,13 +486,13 @@ void shop_draw(u64 now) {
       found = true;
       static char q[160];
       const FurniDef *d = def_get(SH.bought_def);
-      snprintf(q, sizeof q, "%s is in your hand. Place it in your room now?", d ? d->name : "Your item");
-      ui_confirm(q, "Place it", place_bought, NULL);
+      snprintf(q, sizeof q, TR("%s is in your hand. Place it in your room now?"), d ? d->name : "Your item");
+      ui_confirm(q, TR("Place it"), place_bought, NULL);
     }
     SH.bought_rev = W.inv_rev;
     if (!found) SH.bought_def = 0;
   }
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Catalogue")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Catalogue"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   // Page column on the right, grouped like the web's catalogue tree: the sections (Furniture
   // lines, Room building, Seasonal…) fold, only the open one lists its pages. L/R jump to the
@@ -533,7 +547,7 @@ void shop_draw(u64 now) {
       bool here = !strcmp(name, open);
       fill_rect(px, y, pw, prow - 1, sk_rgb(here ? SK_WINDOW : 0xd5dde1));
       text_draw(here ? "-" : "+", px + 5, y + 2, 10, sk_rgb(here ? 0xffffff : SK_TEXT), 0);
-      sk_text(name, px + 14, y + 3, 9.5f, here ? 0xffffff : SK_TEXT, 0, pw - 18);
+      sk_text(TR(name), px + 14, y + 3, 9.5f, here ? 0xffffff : SK_TEXT, 0, pw - 18);
       if (sk_list_row_clicked(r)) { SH.page = groups[-v - 1]; SH.offer = -1; SH.grid.scroll = 0; }
       continue;
     }
@@ -541,34 +555,35 @@ void shop_draw(u64 now) {
     fill_rect(px, y, pw, prow - 1, sk_rgb(on ? 0xe8eef1 : SK_WHITE));
     if (on) fill_rect(px, y, 3, prow - 1, sk_rgb(SK_WINDOW));
     fill_rect(px + 8, y + prow - 1, pw - 12, 1, sk_rgb(SK_LINE));
-    sk_text(cat_pages[v].name, px + 10, y + 3, 9.5f, SK_TEXT, 0, pw - 14);
+    sk_text(TR(cat_pages[v].name), px + 10, y + 3, 9.5f, SK_TEXT, 0, pw - 14);
     if (sk_list_row_clicked(r)) { SH.page = v; SH.offer = -1; SH.grid.scroll = 0; SH.page_focus = false; }
   }
   sk_list_end();
 
   const CatPage *pg = &cat_pages[SH.page];
   float gx = IN_X + 3, gw = px - gx - 4;
-  sk_text(pg->name, gx + 2, IN_Y + 3, 12, SK_TEXT, 0, gw);
+  sk_text(TR(pg->name), gx + 2, IN_Y + 3, 12, SK_TEXT, 0, gw);
   fill_rect(gx, IN_Y + 19, gw, 1, sk_rgb(SK_LINE));
 
   if (!strcmp(pg->layout, "ctlg_spaces")) { spaces_draw(gx + 2, IN_Y + 25, gw - 4, now); return; }
   spaces_reset(true);
   if(!strcmp(pg->id,"60")){
-    sk_paragraph("Donate $5.00 USD or more for Tweebbo Club for life, Club and VIP badges and extra credits. Review the amount before paying.",gx+2,IN_Y+26,gw-4,10,SK_TEXT,7);
-    if(sk_button(gx+2,IN_Y+112,gw-4,"Get Tweebbo Club",net_online()))ui_open(P_SUPPORT);
+    sk_paragraph(TR("Donate $5.00 USD or more for Tweebbo Club for life, Club and VIP badges and extra credits. Review the amount before paying."),gx+2,IN_Y+26,gw-4,10,SK_TEXT,7);
+    if(sk_button(gx+2,IN_Y+112,gw-4,TR("Get Tweebbo Club"),net_online()))ui_open(P_SUPPORT);
     return;
   }
   if (!strcmp(pg->layout, "ctlg_pets")) {
-    sk_paragraph("Dogs, cats and crocodiles with their original coats. Adopt one and bring them to your room.", gx + 2, IN_Y + 26,
+    sk_paragraph(TR("Dogs, cats and crocodiles with their original coats. Adopt one and bring them to your room."), gx + 2, IN_Y + 26,
                  gw - 4, 10, SK_TEXT, 4);
-    if (sk_button(gx + 2, IN_Y + 80, gw - 4, "Open Pets", true)) ui_open(P_PETS);
+    if (sk_button(gx + 2, IN_Y + 80, gw - 4, TR("Open Pets"), true)) ui_open(P_PETS);
     return;
   }
   static int offers[400];
   int n = page_offers(pg->id, offers, COUNT(offers));
   memcpy(SH.shown, offers, sizeof(int) * (size_t)n); SH.shown_n = n;
   if (!n) {
-    sk_paragraph(pg->body[0] ? pg->body : "Choose a collection on the right to find furniture for your room.", gx + 2, IN_Y + 26,
+    const char *body=!strcmp(pg->id,"1")?TR("Browse the ranges with L/R or the tabs on the right. Seasonal ranges change regularly, so check back for new items."):pg->body[0]?TR(pg->body):TR("Choose a collection on the right to find furniture for your room.");
+    sk_paragraph(body, gx + 2, IN_Y + 26,
                  gw - 4, 10, SK_TEXT, 9);
     return;
   }
@@ -600,7 +615,7 @@ void shop_draw(u64 now) {
       if (sel) { fill_rect(x + 1, y + 1, slot - 2, 1, sk_rgb(SK_WINDOW)); fill_rect(x + 1, y + slot - 2, slot - 2, 1, sk_rgb(SK_WINDOW)); }
       gfx_furni_icon(o->def, x + slot / 2, y + slot / 2 - 4, slot - 14);
       char tag[12];
-      snprintf(tag, sizeof tag, "%uc", (unsigned)o->price);
+      snprintf(tag, sizeof tag, TR("%uc"), (unsigned)o->price);
       sk_text(tag, x + slot / 2, y + slot - 12, 8.5f, o->available && W.credits >= o->price ? SK_DIM : SK_DANGER, 1, slot - 4);
       if (!o->available) fill_round(x + 1, y + 1, slot - 2, slot - 2, 3, sk_rgba(0xffffff, 140));
       if (T.released && T.x0 >= x && T.x0 < x + slot && T.y0 >= y && T.y0 < y + slot && T.y0 >= gy && T.y0 < gy + gh) {
@@ -616,20 +631,20 @@ void shop_draw(u64 now) {
     const CatOffer *o = &cat_offers[offers[SH.offer]];
     sk_text(offer_name(o), gx + 2, dy + 2, 11, SK_TEXT, 0, gw - 4);
     char price[48];
-    if (o->amount > 1) snprintf(price, sizeof price, "%u credits · %u items", (unsigned)o->price, o->amount);
-    else snprintf(price, sizeof price, "%u credits", (unsigned)o->price);
-    sk_text(o->available ? price : "Not available yet", gx + 2, dy + 17, 10, o->available ? SK_DIM : SK_DANGER, 0, gw - 70);
+    if (o->amount > 1) snprintf(price, sizeof price, TR("%u credits · %u items"), (unsigned)o->price, o->amount);
+    else snprintf(price, sizeof price, TR("%u credits"), (unsigned)o->price);
+    sk_text(o->available ? price : TR("Not available yet"), gx + 2, dy + 17, 10, o->available ? SK_DIM : SK_DANGER, 0, gw - 70);
     bool can = o->available && W.credits >= o->price && net_state() != NET_CONNECTING;
-    if (sk_button(gx + gw - 66, dy + 14, 64, "Buy (A)", can) || (K.a && can && !SH.page_focus)) {
+    if (sk_button(gx + gw - 66, dy + 14, 64, TR("Buy (A)"), can) || (K.a && can && !SH.page_focus)) {
       static char q[160];
-      snprintf(q, sizeof q, "Buy %s for %u credits? It will go to your hand.", offer_name(o), (unsigned)o->price);
-      ui_confirm(q, "Buy", buy_confirmed, (void *)o);
+      snprintf(q, sizeof q, TR("Buy %s for %u credits? It will go to your hand."), offer_name(o), (unsigned)o->price);
+      ui_confirm(q, TR("Buy"), buy_confirmed, (void *)o);
     }
-    if (o->desc[0]) sk_text(o->desc, gx + 2, dy + 33, 9, SK_DIM, 0, gw - 4);
+    if (o->desc[0]) sk_text(TR(o->desc), gx + 2, dy + 33, 9, SK_DIM, 0, gw - 4);
   } else {
     char cr[48];
-    snprintf(cr, sizeof cr, "%u credits", (unsigned)W.credits);
-    sk_text("Select an item for a closer look.", gx + 2, dy + 4, 10, SK_DIM, 0, gw - 4);
+    snprintf(cr, sizeof cr, TR("%u credits"), (unsigned)W.credits);
+    sk_text(TR("Select an item for a closer look."), gx + 2, dy + 4, 10, SK_DIM, 0, gw - 4);
     sk_text(cr, gx + 2, dy + 20, 10, SK_TEXT, 0, gw - 4);
   }
 }
@@ -662,14 +677,14 @@ void hand_select_def(u16 def) {
 
 void hand_draw(u64 now) {
   (void)now;
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Hand")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Hand"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   static Stack list[MAX_INV];
   int n = stacks(list, MAX_INV);
   if (!n) {
-    sk_paragraph("Your hand is empty. Buy furniture in the Catalogue and it will appear here, ready to place in your room.",
+    sk_paragraph(TR("Your hand is empty. Buy furniture in the Catalogue and it will appear here, ready to place in your room."),
                  IN_X + 8, IN_Y + 10, IN_W - 16, 11, SK_TEXT, 5);
-    if (sk_button(IN_X + 8, IN_Y + 80, 120, "Open Catalogue", true)) ui_open(P_SHOP);
+    if (sk_button(IN_X + 8, IN_Y + 80, 120, TR("Open Catalogue"), true)) ui_open(P_SHOP);
     return;
   }
   const float slot = 42, detail_h = 44;
@@ -707,12 +722,12 @@ void hand_draw(u64 now) {
   fill_rect(IN_X + 4, dy - 1, IN_W - 8, 1, sk_rgb(SK_LINE));
   if (HD.sel >= 0) {
     const FurniDef *d = def_get(list[HD.sel].def);
-    sk_text(d ? d->name : "Item", IN_X + 6, dy + 3, 11, SK_TEXT, 0, IN_W - 120);
-    sk_text(world_can_decorate() ? "Place it in your room." : "Furniture can be placed only in rooms you create.", IN_X + 6, dy + 20, 9.5f,
+    sk_text(TR(d ? d->name : "Item"), IN_X + 6, dy + 3, 11, SK_TEXT, 0, IN_W - 120);
+    sk_text(world_can_decorate() ? TR("Place it in your room.") : TR("Furniture can be placed only in rooms you create."), IN_X + 6, dy + 20, 9.5f,
             SK_DIM, 0, IN_W - 120);
-    if (sk_button(IN_X + IN_W - 104, dy + 10, 100, "Place in room", world_can_decorate()) || (K.a && world_can_decorate()))
+    if (sk_button(IN_X + IN_W - 104, dy + 10, 100, TR("Place in room"), world_can_decorate()) || (K.a && world_can_decorate()))
       build_start(list[HD.sel].def, list[HD.sel].first, 0);
-  } else sk_text("Select an item.", IN_X + 6, dy + 12, 10.5f, SK_DIM, 0, IN_W - 12);
+  } else sk_text(TR("Select an item."), IN_X + 6, dy + 12, 10.5f, SK_DIM, 0, IN_W - 12);
 }
 
 // ================================================================ furniture panel
@@ -732,15 +747,15 @@ void item_draw(u64 now) {
   Item *it = world_item(item_id());
   if (!it) { ui_close(); return; }
   const FurniDef *d = def_get(it->def);
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, d ? d->name : "Item")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR(d ? d->name : "Item"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   fill_round(IN_X + 4, IN_Y + 4, 60, 60, 4, sk_rgb(SK_WHITE));
   gfx_furni_icon(it->def, IN_X + 34, IN_Y + 34, 54);
   float x = IN_X + 72, w = IN_W - 78;
-  sk_text(d ? d->name : "Item", x, IN_Y + 4, 12, SK_TEXT, 0, w);
+  sk_text(TR(d ? d->name : "Item"), x, IN_Y + 4, 12, SK_TEXT, 0, w);
   const char *who = it->owner == 0 ? "Fixed room furniture." : it->owner == W.guest_id ? "You own this item." : "Someone else placed this item.";
   sk_text(who, x, IN_Y + 21, 10, SK_DIM, 0, w);
-  if (d && d->desc && d->desc[0]) sk_paragraph(d->desc, x, IN_Y + 35, w, 9.5f, SK_DIM, 2);
+  if (d && d->desc && d->desc[0]) sk_paragraph(TR(d->desc), x, IN_Y + 35, w, 9.5f, SK_DIM, 2);
   float y = IN_Y + 70, bw = (IN_W - 16) / 3;
   int col = 0;
 #define NEXT_X (IN_X + 4 + (col % 3) * (bw + 4))
@@ -755,11 +770,11 @@ void item_draw(u64 now) {
       fill_round(IN_X + 30, y, IN_W - 160, 18, 3, sk_rgb(SK_WHITE));
       sk_text(drink_name(ids[drink_sel]), IN_X + 30 + (IN_W - 160) / 2, y + 2, 10.5f, SK_TEXT, 1, IN_W - 168);
       if (sk_button(IN_X + IN_W - 126, y, 22, ">", n > 1) || K.right) drink_sel = (drink_sel + 1) % n;
-      if (sk_button(IN_X + IN_W - 100, y, 96, "Get a drink", true) || K.a) { send_drink(it->id, ids[drink_sel]); ui_close(); return; }
+      if (sk_button(IN_X + IN_W - 100, y, 96, TR("Get a drink"), true) || K.a) { send_drink(it->id, ids[drink_sel]); ui_close(); return; }
       y += 24;
     }
     if (d->kind == KIND_SIT || (d->flags & DEF_LAY)) {
-      if (sk_button(NEXT_X, NEXT_Y, bw, (d->flags & DEF_LAY) ? "Lie down" : "Sit", true)) { send_walk(it->x, it->y); ui_close(); return; }
+      if (sk_button(NEXT_X, NEXT_Y, bw, (d->flags & DEF_LAY) ? TR("Lie down") : TR("Sit"), true)) { send_walk(it->x, it->y); ui_close(); return; }
       col++;
     }
     if (d->casino || d->kind == KIND_DICE || (d->flags & DEF_TELEPORTER) ||
@@ -770,32 +785,32 @@ void item_draw(u64 now) {
       col++;
       // Kepler DICE_OFF: close a die that shows a face (the server checks you stand next to it).
       if (d->kind == KIND_DICE && it->state >= 1 && it->state <= 6) {
-        if (sk_button(NEXT_X, NEXT_Y, bw, "Close", true)) send_use_op(it->id, 1);
+        if (sk_button(NEXT_X, NEXT_Y, bw, TR("Close"), true)) send_use_op(it->id, 1);
         col++;
       }
     }
     // Players with rights move and rotate anything here; picking up stays with the item's owner
     // and the room's owner (Kepler's room rights).
     if (world_can_arrange(it) && it->owner) {
-      if (sk_button(NEXT_X, NEXT_Y, bw, "Move", world_can_decorate())) { build_start(it->def, 0, it->id); return; }
+      if (sk_button(NEXT_X, NEXT_Y, bw, TR("Move"), world_can_decorate())) { build_start(it->def, 0, it->id); return; }
       col++;
-      if (sk_button(NEXT_X, NEXT_Y, bw, "Rotate", true)) send_rotate(it->id);
+      if (sk_button(NEXT_X, NEXT_Y, bw, TR("Rotate"), true)) send_rotate(it->id);
       col++;
       if (world_can_manage(it)) {
-        if (sk_button(NEXT_X, NEXT_Y, bw, "Pick up", true)) { send_pickup(it->id); ui_close(); return; }
+        if (sk_button(NEXT_X, NEXT_Y, bw, TR("Pick up"), true)) { send_pickup(it->id); ui_close(); return; }
         col++;
       }
     }
     if (it->owner == W.guest_id && ((d->flags & DEF_REDEEM) || d->chips)) {
-      if (sk_button(NEXT_X, NEXT_Y, bw, "Redeem", true)) {
+      if (sk_button(NEXT_X, NEXT_Y, bw, TR("Redeem"), true)) {
         // Chip tokens (Tweebbo Exchange) pay chips, the PC Casino's currency; the server keeps a
         // token received in a trade locked for 24 hours and says how long is left.
         static char question[200];
         if (d->chips)
           snprintf(question, sizeof question, "Redeem this token for %lu chips? Chips play in the PC Casino at tweebbo.lol. "
                    "Tokens received in a trade cannot be redeemed for 24 hours (they can still be traded).", (unsigned long)d->chips);
-        else snprintf(question, sizeof question, "Redeem this item for credits? It will disappear from the room.");
-        ui_confirm(question, "Redeem", redeem_confirmed, (void *)(uintptr_t)it->id);
+        else snprintf(question, sizeof question,"%s",TR("Redeem this item for credits? It will disappear from the room."));
+        ui_confirm(question, TR("Redeem"), redeem_confirmed, (void *)(uintptr_t)it->id);
       }
       col++;
     }
@@ -875,49 +890,49 @@ static void pet_name_done(const char *text, void *ctx) { (void)ctx; snprintf(PT.
 
 void pets_draw(u64 now) {
   (void)now;
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Pets")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Pets"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   if (!online_or_toast()) { ui_close(); return; }
   pets_parse();
   float tw = (IN_W - 8) / 2;
-  if (sk_tab(IN_X + 2, IN_Y + 2, tw, 16, "My pets", !PT.adopt)) { PT.adopt = false; PT.sel = 0; send_pet("{\"action\":\"list\"}"); }
-  if (sk_tab(IN_X + 4 + tw, IN_Y + 2, tw, 16, "Adopt a pet", PT.adopt)) PT.adopt = true;
+  if (sk_tab(IN_X + 2, IN_Y + 2, tw, 16, TR("My pets"), !PT.adopt)) { PT.adopt = false; PT.sel = 0; send_pet("{\"action\":\"list\"}"); }
+  if (sk_tab(IN_X + 4 + tw, IN_Y + 2, tw, 16, TR("Adopt a pet"), PT.adopt)) PT.adopt = true;
   float x = IN_X + 6, y = IN_Y + 24, w = IN_W - 12;
   if (PT.adopt) {
     const PetKind *k = &pet_kinds[PT.kind];
     char line[64];
-    sk_text("Species", x, y + 2, 10, SK_DIM, 0, 60);
+    sk_text(TR("Species"), x, y + 2, 10, SK_DIM, 0, 60);
     if (sk_button(x + 64, y, 22, "<", true)) { PT.kind = (PT.kind + pet_kind_count - 1) % pet_kind_count; PT.breed = PT.color = 0; }
     sk_text(k->name, x + 64 + (w - 64) / 2, y + 2, 10.5f, SK_TEXT, 1, w - 120);
     if (sk_button(x + w - 22, y, 22, ">", true)) { PT.kind = (PT.kind + 1) % pet_kind_count; PT.breed = PT.color = 0; }
     y += 22;
-    sk_text("Coat", x, y + 2, 10, SK_DIM, 0, 60);
+    sk_text(TR("Coat"), x, y + 2, 10, SK_DIM, 0, 60);
     if (sk_button(x + 64, y, 22, "<", k->breeds > 1)) PT.breed = (PT.breed + k->breeds - 1) % k->breeds;
-    snprintf(line, sizeof line, "Coat %d", PT.breed + 1);
+    snprintf(line, sizeof line, TR("Coat %d"), PT.breed + 1);
     sk_text(line, x + 64 + (w - 64) / 2, y + 2, 10.5f, SK_TEXT, 1, w - 120);
     if (sk_button(x + w - 22, y, 22, ">", k->breeds > 1)) PT.breed = (PT.breed + 1) % k->breeds;
     y += 22;
-    sk_text("Color", x, y + 2, 10, SK_DIM, 0, 60);
+    sk_text(TR("Color"), x, y + 2, 10, SK_DIM, 0, 60);
     if (sk_button(x + 64, y, 22, "<", true)) PT.color = (PT.color + k->color_count - 1) % k->color_count;
     fill_round(x + 92, y + 2, w - 120, 14, 3, sk_rgb(k->colors[PT.color]));
     if (sk_button(x + w - 22, y, 22, ">", true)) PT.color = (PT.color + 1) % k->color_count;
     y += 22;
-    sk_text("Name", x, y + 2, 10, SK_DIM, 0, 60);
-    if (sk_field(x + 64, y, w - 64, PT.name, "Your pet's name")) osk_open("Pet name (2-16 characters)", PT.name, 16, pet_name_done, NULL);
+    sk_text(TR("Name"), x, y + 2, 10, SK_DIM, 0, 60);
+    if (sk_field(x + 64, y, w - 64, PT.name, TR("Your pet's name"))) osk_open(TR("Pet name (2-16 characters)"), PT.name, 16, pet_name_done, NULL);
     y += 26;
-    snprintf(line, sizeof line, "Adopt · %d credits", pet_price);
+    snprintf(line, sizeof line, TR("Adopt · %d credits"), pet_price);
     bool ok = strlen(PT.name) >= 2 && W.credits >= (u32)pet_price;
     if (sk_button_big(x, y, w, line, ok)) {
       static char q[96];
-      snprintf(q, sizeof q, "Adopting %s costs %d credits.", PT.name, pet_price);
-      ui_confirm(q, "Confirm adoption", adopt_confirmed, NULL);
+      snprintf(q, sizeof q, TR("Adopting %s costs %d credits."), PT.name, pet_price);
+      ui_confirm(q, TR("Confirm adoption"), adopt_confirmed, NULL);
     }
     return;
   }
   PetRow *sel = NULL;
   for (int i = 0; i < PT.n; i++) if (PT.rows[i].id == PT.sel) sel = &PT.rows[i];
   if (!sel) {
-    if (!PT.n) { sk_paragraph("Adopt a companion and bring them to your room. All your pets will appear here.", x, y, w, 10.5f, SK_TEXT, 4); return; }
+    if (!PT.n) { sk_paragraph(TR("Adopt a companion and bring them to your room. All your pets will appear here."), x, y, w, 10.5f, SK_TEXT, 4); return; }
     int first = sk_list_begin(&PT.list, IN_X + 2, y, IN_W - 4, IN_H - 26, PT.n, 22);
     for (int i = first; i < PT.n; i++) {
       float ry = sk_list_row_y(i);
@@ -925,8 +940,8 @@ void pets_draw(u64 now) {
       fill_rect(IN_X + 2, ry, IN_W - 4, 21, sk_rgb(i % 2 ? SK_ROW_ALT : SK_ROW));
       C2D_DrawCircleSolid(IN_X + 14, ry + 10, 0.5f, 6, sk_rgb(pet_kinds[p->kind % pet_kind_count].colors[p->color % 35]));
       sk_text(p->name, IN_X + 26, ry + 4, 10.5f, SK_TEXT, 0, 120);
-      sk_text(p->room[0] ? "In a room" : "With you", IN_X + 150, ry + 5, 9.5f, SK_DIM, 0, 80);
-      if (sk_go(IN_X + IN_W - 52, ry + 2, 46, 17, "View", true) || sk_list_row_clicked(i)) PT.sel = p->id;
+      sk_text(p->room[0] ? TR("In a room") : TR("With you"), IN_X + 150, ry + 5, 9.5f, SK_DIM, 0, 80);
+      if (sk_go(IN_X + IN_W - 52, ry + 2, 46, 17, TR("View"), true) || sk_list_row_clicked(i)) PT.sel = p->id;
     }
     sk_list_end();
     return;
@@ -941,7 +956,7 @@ void pets_draw(u64 now) {
   stat_bar("Energy", sel->energy, x, y, w); y += 13;
   stat_bar("Mood", sel->happiness, x, y, w); y += 17;
   if (!sel->room[0]) {
-    if (sk_button(x, y, 120, "Place in room", world_can_decorate())) {
+    if (sk_button(x, y, 120, TR("Place in room"), world_can_decorate())) {
       Ent *me = world_ent(W.me);
       if (me) {
         // Next to the player, like dropping it on the web.
@@ -950,9 +965,9 @@ void pets_draw(u64 now) {
         send_pet(json);
       }
     }
-    if (!world_can_decorate()) sk_text("Pets can be placed only in rooms you create.", x, y + 22, 9.5f, SK_DIM, 0, w);
+    if (!world_can_decorate()) sk_text(TR("Pets can be placed only in rooms you create."), x, y + 22, 9.5f, SK_DIM, 0, w);
   } else if (strcmp(public_slug(sel->room), public_slug(W.slug))) {
-    if (sk_button(x, y, 120, "Visit room", true)) { net_goto(public_slug(sel->room), ""); ui_close(); }
+    if (sk_button(x, y, 120, TR("Visit room"), true)) { net_goto(public_slug(sel->room), ""); ui_close(); }
   } else {
     static const char *L[][2] = {{"Follow me", "follow"}, {"Stay", "stay"}, {"Sit", "sit"}, {"Sleep", "sleep"},
                                  {"Play", "play"}, {"Feed", "feed"}, {"Give water", "drink"}, {"Pick up pet", "pickup"}};
@@ -960,7 +975,7 @@ void pets_draw(u64 now) {
     for (int i = 0; i < 8; i++)
       if (sk_button(x + (i % 4) * (bw + 3), y + (i / 4) * 21, bw, L[i][0], true)) pet_send(L[i][1], sel->id);
   }
-  if (sk_button(IN_X + IN_W - 60, IN_Y + IN_H - 20, 56, "Back", true)) PT.sel = 0;
+  if (sk_button(IN_X + IN_W - 60, IN_Y + IN_H - 20, 56, TR("Back"), true)) PT.sel = 0;
 }
 
 // The furniture panel keeps its id in ui.c.
@@ -978,15 +993,15 @@ void shop_top(u64 now) {
   fill_round(x - 1, y - 1, w + 2, h + 2, 6, sk_rgb(0x202020));
   fill_round(x, y, w, h, 5, sk_rgb(0xeeeeee));
   fill_round(x, y, w, 17, 5, sk_rgb(SK_WINDOW));
-  sk_text("Catalogue", x + w / 2, y + 2, 10, SK_WHITE, 1, w - 8);
+  sk_text(TR("Catalogue"), x + w / 2, y + 2, 10, SK_WHITE, 1, w - 8);
   // Whole-number zoom keeps the original pixels sharp.
   int box = 72, k = 1;
   while ((k + 1) * d->icon_w <= box && (k + 1) * d->icon_h <= box && k < 4) k++;
   gfx_furni_icon_scaled(o->def, x + w / 2, y + 22 + box / 2, (float)k);
   sk_text(offer_name(o), x + w / 2, y + 98, 10.5f, SK_TEXT, 1, w - 8);
   char line[48];
-  snprintf(line, sizeof line, o->amount > 1 ? "%u credits · %u items" : "%u credits", (unsigned)o->price, o->amount);
+  snprintf(line, sizeof line, o->amount > 1 ? TR("%u credits · %u items") : TR("%u credits"), (unsigned)o->price, o->amount);
   bool can = o->available && W.credits >= o->price;
-  sk_text(o->available ? line : "Not available yet", x + w / 2, y + 111, 9.5f, can ? SK_DIM : SK_DANGER, 1, w - 8);
-  sk_text(!o->available ? "" : can ? "Press A to buy" : "Not enough credits", x + w / 2, y + 123, 8.5f, SK_DIM, 1, w - 8);
+  sk_text(o->available ? line : TR("Not available yet"), x + w / 2, y + 111, 9.5f, can ? SK_DIM : SK_DANGER, 1, w - 8);
+  sk_text(!o->available ? "" : can ? TR("Press A to buy") : TR("Not enough credits"), x + w / 2, y + 123, 8.5f, SK_DIM, 1, w - 8);
 }

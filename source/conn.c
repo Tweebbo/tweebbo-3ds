@@ -110,6 +110,13 @@ static int verify_ignore_clock(void *data, mbedtls_x509_crt *crt, int depth, uin
   return 0;
 }
 
+static int locked_random(void *ctx, unsigned char *out, size_t len) {
+  TLS_LOCK();
+  int result = mbedtls_ctr_drbg_random(ctx, out, len);
+  TLS_UNLOCK();
+  return result;
+}
+
 static bool tls_init(char *err, int err_cap) {
   if (T.ready) return true;
 #ifdef __3DS__
@@ -129,7 +136,7 @@ static bool tls_init(char *err, int err_cap) {
   mbedtls_ssl_conf_authmode(&T.conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
   mbedtls_ssl_conf_ca_chain(&T.conf, &T.roots, NULL);
   mbedtls_ssl_conf_verify(&T.conf, verify_ignore_clock, NULL);
-  mbedtls_ssl_conf_rng(&T.conf, mbedtls_ctr_drbg_random, &T.drbg);
+  mbedtls_ssl_conf_rng(&T.conf, locked_random, &T.drbg);
   T.ready = true;
   return true;
 }
@@ -192,7 +199,7 @@ static int bio_recv(void *ctx, unsigned char *buf, size_t len) {
 }
 #endif
 
-Conn *conn_open(const Endpoint *ep, int timeout_ms, char *err, int err_cap) {
+static Conn *open_socket(const Endpoint *ep, int timeout_ms, char *err, int err_cap, bool download) {
   err[0] = 0;
   char port[8];
   snprintf(port, sizeof port, "%d", ep->port);
@@ -204,6 +211,12 @@ Conn *conn_open(const Endpoint *ep, int timeout_ms, char *err, int err_cap) {
   int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
   if (fd < 0) { freeaddrinfo(res); snprintf(err, (size_t)err_cap, "No network (socket error %d).", errno); return NULL; }
 #ifdef __3DS__
+  if (download) {
+    // SOC shared memory does not set the TCP window negotiated at connect time.
+    int bytes = 48 * 1024;
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bytes, sizeof bytes);
+    setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bytes, sizeof bytes);
+  }
   // On the console, use a blocking connect: polling SO_ERROR in non-blocking mode is not reliable
   // on every firmware. The network thread can wait; drawing continues on the main thread.
   (void)timeout_ms;
@@ -240,6 +253,7 @@ Conn *conn_open(const Endpoint *ep, int timeout_ms, char *err, int err_cap) {
   }
 #endif
   Conn *c = calloc(1, sizeof *c);
+  if (!c) { close(fd); snprintf(err, (size_t)err_cap, "Not enough memory for the connection."); return NULL; }
   c->fd = fd;
   c->tls = ep->tls;
   if (!c->tls) return c;
@@ -273,6 +287,14 @@ Conn *conn_open(const Endpoint *ep, int timeout_ms, char *err, int err_cap) {
   if (vf && vf != (u32)-1) dbg_log("tls: certificate not fully verified (0x%08lx); continuing", (unsigned long)vf);
   return c;
 #endif
+}
+
+Conn *conn_open(const Endpoint *ep, int timeout_ms, char *err, int err_cap) {
+  return open_socket(ep, timeout_ms, err, err_cap, false);
+}
+
+Conn *conn_open_download(const Endpoint *ep, int timeout_ms, char *err, int err_cap) {
+  return open_socket(ep, timeout_ms, err, err_cap, true);
 }
 
 void conn_close(Conn *c) {

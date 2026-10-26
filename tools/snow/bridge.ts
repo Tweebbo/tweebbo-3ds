@@ -3,6 +3,7 @@ import { Engine, TILE, SUBTURNS_PER_TURN, SUBTURN_MS, leadPoint } from 'snow-ori
 const TURN_MS=SUBTURNS_PER_TURN*SUBTURN_MS;
 import { Assets } from 'snow-original/assets';
 import { View } from 'snow-original/view';
+import { SNOW_CONTRACT } from 'snow-original/contract';
 import data from 'snow-data';
 import sheet from 'snow-sheet';
 import lookup from 'snow-lookup';
@@ -63,7 +64,12 @@ function receive(buffer:ArrayBuffer,eid:number,now:number){
       for(let p=r.n(16);p--;)g.roster.push({id:r.v(),name:r.s(),team:r.u()});
       list.push(g);
     }
-    games=list;
+    if(r.p<r.b.length){
+      const contracts=new Map<number,string>();
+      for(let n=r.n(8);n--;)contracts.set(r.v(),r.s());
+      for(const g of list)g.contract=contracts.get(g.id)||'';
+    }
+    games=list.filter(g=>g.contract===SNOW_CONTRACT);
     // Our match is gone from the server (it ended while we were away, or its state was lost).
     // Only after a resync request, so a normal ending still shows the results.
     if(engine&&!local&&game&&engine.status!=='over'&&syncAt&&now-received>3000&&!list.some((g:any)=>g.id===game&&g.running)){
@@ -72,6 +78,9 @@ function receive(buffer:ArrayBuffer,eid:number,now:number){
   }else if(op===2){
     const id=r.v(),seed=r.v(),arena=r.u(),teams=r.u(),players=r.u(),minutes=r.u(),level=r.u(),roster=[],ids=[];
     for(let n=r.n(16);n--;){const eid=r.v(),name=r.s(),look=r.v(),team=r.u();ids.push(eid);roster.push({name,look,team,bot:eid===0});}
+    const contract=r.p<r.b.length?r.s():'';
+    if(contract!==SNOW_CONTRACT){send(4);throw Error('Snow Storm game versions differ. Update the client to play together.');}
+    if(!ids.includes(me))throw Error('Snow Storm roster does not include this player');
     if(![1,2,3,7].includes(arena)||teams<1||teams>4||players<1||players>8||![2,3,5].includes(minutes)||level>2||!roster.length)throw Error('Invalid Snow Storm match');
     local=false;begin({arena,teams,players,minutes,level,seed:seed>>>0,roster,me:ids.indexOf(me)},ids,id,now);
   }else if(op===3){
@@ -82,6 +91,8 @@ function receive(buffer:ArrayBuffer,eid:number,now:number){
     if(pending.length>6000)throw Error('Snow Storm replay is too large');
     for(let sub=0;sub<SUBTURNS_PER_TURN;sub++)pending.push(commands.filter(c=>Math.min(c.sub,SUBTURNS_PER_TURN-1)===sub));
     nextTurn++;received=now;
+  }else if(op===5){
+    if(r.u()===1)throw Error('Snow Storm game versions differ. Update the client to play together.');
   }else if(op===4){
     const id=r.v(),eid=r.v(),name=r.s(),text=r.s();
     if(id!==game&&!games.some(g=>g.id===id&&g.roster.some((p:any)=>p.id===me)))return;
@@ -146,9 +157,9 @@ function status(now:number){
 const Snow={
   open(eid:number){me=eid;send(1);send(8);},receive,tick,status,
   draw(now:number){view.hoverAvatar=target();view.draw(now,settings.arena);},
-  list(){send(1);},join(id:number){send(3,id);},start(id:number){send(5,id);},
+  list(){send(1);},join(id:number){new Writer().u(3).v(id).s(SNOW_CONTRACT).send();},start(id:number){send(5,id);},
   create(arena:number,teams:number,players:number,minutes:number,level:number,fill:number){
-    settings={arena,teams,players,minutes,level,fill};new Writer().u(2).u(arena).u(teams).u(players).u(minutes).u(level).u(fill).send();
+    settings={arena,teams,players,minutes,level,fill};new Writer().u(2).u(arena).u(teams).u(players).u(minutes).u(level).u(fill).s(SNOW_CONTRACT).send();
   },
   practice(eid:number,look:number,name:string,now:number){
     me=eid;local=true;localTurn=0;

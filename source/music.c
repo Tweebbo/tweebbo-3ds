@@ -1,3 +1,4 @@
+#include "language.h"
 // Room playlist and native Trax playback (see music.h). The server owns the queue and the
 // shared position; this file follows it like client/src/music.ts and trax.ts: four channels of
 // original samples on two-second slots (SoundMachine Component Class).
@@ -241,7 +242,7 @@ const char *music_now_playing(void) {
   const Track *t = playing_track();
   if (!t) return "";
   bool trax = !strcmp(t->provider, "trax");
-  snprintf(M.line, sizeof M.line, trax ? "Now playing: %s" : "Now playing: %s (on PC)", t->title);
+  snprintf(M.line, sizeof M.line, trax ? TR("Now playing: %s") : TR("Now playing: %s (on PC)"), t->title);
   return M.line;
 }
 
@@ -317,7 +318,7 @@ bool music_context(char *label, int cap, u64 now) {
   for (int i = 0; i < MAX_ITEMS; i++) {
     const Item *it = &W.items[i];
     if (!it->used || !music_machine(it->def) || abs(it->x - me->x) > 1 || abs(it->y - me->y) > 1) continue;
-    snprintf(label, cap, "Open the playlist");
+    snprintf(label, cap,"%s",TR("Open the playlist"));
     if (!M.machine) M.machine = it->id;
     return true;
   }
@@ -332,7 +333,7 @@ static void command(const char *op, const char *extra) {
 }
 
 void music_draw(u64 now) {
-  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, "Room playlist")) { ui_close(); return; }
+  if (sk_window(WIN_X, WIN_Y, WIN_W, WIN_H, TR("Room playlist"))) { ui_close(); return; }
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   float x = IN_X + 6, y = IN_Y + 4;
   if (!M.known) { send_music("{\"op\":\"sync\"}"); M.known = true; }
@@ -340,8 +341,8 @@ void music_draw(u64 now) {
   if (t) {
     bool trax = !strcmp(t->provider, "trax");
     sk_text(t->title, x, y, 11, SK_TEXT, 0, IN_W - 12);
-    sk_text(trax ? (M.listening ? "Trax · playing here" : "Trax · muted on this console")
-                 : !strcmp(t->provider, "youtube") ? "YouTube · plays on PC and phones" : "Spotify · plays on PC and phones",
+    sk_text(trax ? (M.listening ? TR("Trax · playing here") : TR("Trax · muted on this console"))
+                 : !strcmp(t->provider, "youtube") ? TR("YouTube · plays on PC and phones") : TR("Spotify · plays on PC and phones"),
             x, y + 14, 9, SK_DIM, 0, IN_W - 12);
     if (t->duration > 0) {
       s64 at = M.position + ((s64)now + M.offset - M.started);
@@ -350,12 +351,12 @@ void music_draw(u64 now) {
       fill_round(x, y + 28, IN_W - 12, 5, 2, sk_rgb(0xc9c9c9));
       fill_round(x, y + 28, (IN_W - 12) * k, 5, 2, sk_rgb(0x4f7486));
     }
-  } else sk_text(M.track_n ? "Nothing is playing. Choose a track." : "The playlist is empty. Add tracks on PC or below.", x, y + 6, 10, SK_DIM, 0, IN_W - 12);
+  } else sk_text(M.track_n ? TR("Nothing is playing. Choose a track.") : TR("The playlist is empty. Add tracks on PC or below."), x, y + 6, 10, SK_DIM, 0, IN_W - 12);
   float by = y + 38;
-  if (sk_button(x, by, 92, M.listening ? "Mute (Y)" : "Listen (Y)", true) || K.y) { M.listening = !M.listening; if (!M.listening) { silence(); M.heard_key = 0; } }
-  if (t && (sk_button(x + 96, by, 92, "Pause (X)", true) || K.x)) command("pause", NULL);
-  if (t && sk_button(x + 192, by, 96, "Next track", true)) command("next", NULL);
-  if (!t && M.track_n && (sk_button(x + 96, by, 92, "Play (X)", true) || K.x)) { char e[16]; snprintf(e, sizeof e, "\"index\":%d", M.index < M.track_n ? M.index : 0); command("play", e); }
+  if (sk_button(x, by, 92, M.listening ? TR("Mute (Y)") : TR("Listen (Y)"), true) || K.y) { M.listening = !M.listening; if (!M.listening) { silence(); M.heard_key = 0; } }
+  if (t && (sk_button(x + 96, by, 92, TR("Pause (X)"), true) || K.x)) command("pause", NULL);
+  if (t && sk_button(x + 192, by, 96, TR("Next track"), true)) command("next", NULL);
+  if (!t && M.track_n && (sk_button(x + 96, by, 92, TR("Play (X)"), true) || K.x)) { char e[16]; snprintf(e, sizeof e, "\"index\":%d", M.index < M.track_n ? M.index : 0); command("play", e); }
   // The queue, then the room's saved Trax songs that can be added to it.
   int rows = M.track_n + (M.song_n ? M.song_n + 1 : 0);
   const float row = 22;
@@ -372,13 +373,13 @@ void music_draw(u64 now) {
       char title[96]; snprintf(title, sizeof title, "%s%s", (M.active == M.machine && i == M.index && M.playing) ? "> " : "", q->title);
       sk_text(title, IN_X + 8, ry + 5, 9.5f, SK_TEXT, 0, IN_W - 100);
       sk_text(q->provider, IN_X + IN_W - 92, ry + 6, 8.5f, SK_DIM, 0, 40);
-      if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, "Play", true) || (focus && K.a)) { char e[16]; snprintf(e, sizeof e, "\"index\":%d", i); command("play", e); }
+      if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, TR("Play"), true) || (focus && K.a)) { char e[16]; snprintf(e, sizeof e, "\"index\":%d", i); command("play", e); }
     } else if (i == M.track_n) {
-      sk_text("Room songs (Trax)", IN_X + 8, ry + 5, 9.5f, SK_DIM, 0, IN_W - 20);
+      sk_text(TR("Room songs (Trax)"), IN_X + 8, ry + 5, 9.5f, SK_DIM, 0, IN_W - 20);
     } else {
       const SavedSong *s = &M.songs[i - M.track_n - 1];
       sk_text(s->title, IN_X + 8, ry + 5, 9.5f, SK_TEXT, 0, IN_W - 60);
-      if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, "Add", true) || (focus && K.a)) { char e[24]; snprintf(e, sizeof e, "\"song\":%u", (unsigned)s->id); command("add_song", e); }
+      if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, TR("Add"), true) || (focus && K.a)) { char e[24]; snprintf(e, sizeof e, "\"song\":%u", (unsigned)s->id); command("add_song", e); }
     }
   }
   sk_list_end();

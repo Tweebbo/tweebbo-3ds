@@ -93,7 +93,7 @@ else
 
 DEPENDS := $(OFILES:.o=.d)
 
-$(OUTPUT).3dsx: $(OUTPUT).elf $(_3DSXDEPS)
+$(OUTPUT).3dsx: $(OUTPUT).elf $(_3DSXDEPS) $(wildcard $(TOPDIR)/romfs/lang/* $(TOPDIR)/romfs/gfx/font*.t3x)
 $(OUTPUT).elf: $(OFILES)
 
 # QuickJS relies on wrapping signed arithmetic and loose pointer aliasing, like its

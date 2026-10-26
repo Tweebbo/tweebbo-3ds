@@ -22,6 +22,8 @@ bool conn_ready(void);
 
 /** Connects (and negotiates TLS) with a time limit. NULL on failure; `err` describes why. */
 Conn *conn_open(const Endpoint *ep, int timeout_ms, char *err, int err_cap);
+/** Bulk transfer socket; platform-specific window tuning happens before connect. */
+Conn *conn_open_download(const Endpoint *ep, int timeout_ms, char *err, int err_cap);
 void conn_close(Conn *c);
 /** Writes everything or fails (false). */
 bool conn_write(Conn *c, const void *data, int len, int timeout_ms);

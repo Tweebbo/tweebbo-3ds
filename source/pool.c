@@ -1,3 +1,4 @@
+#include "language.h"
 // Lido activities on the console: the server decides everything (server/src/room/activities.rs,
 // diving.rs); this file reads its ACTIVITY state, offers the actions with A and draws the original
 // game artwork packed into the scene pages (tools/pack.py SCENE_ART), like the web edition's
@@ -370,7 +371,7 @@ bool pool_context(char *label, int cap, u64 now) {
     best = d; spot = s;
   }
   if (!spot) return false;
-  snprintf(label, cap, "%s", spot->label);
+  snprintf(label, cap, "%s", TR(spot->label));
   return true;
 }
 
@@ -385,11 +386,11 @@ void pool_context_run(u64 now) {
       break;
     case SPOT_BOOTH: send_walk(spot->tx, spot->ty); scene_mark_destination(spot->tx, spot->ty, now); break;
     case SPOT_DIVE:
-      if (pool_swimsuit(W.me) < 0) { ui_toast("Change into a swimsuit at The Pool first.", now); break; }
+      if (pool_swimsuit(W.me) < 0) { ui_toast(TR("Change into a swimsuit at The Pool first."), now); break; }
       command("{\"op\":\"dive_queue\"}");
       break;
     case SPOT_POLE:
-      if (pool_swimsuit(W.me) < 0) { ui_toast("Use the changing booth before joining Wobble Squabble.", now); break; }
+      if (pool_swimsuit(W.me) < 0) { ui_toast(TR("Use the changing booth before joining Wobble Squabble."), now); break; }
       command("{\"op\":\"wobble_join\"}");
       break;
   }
@@ -485,7 +486,7 @@ void pool_draw_panel(u64 now) {
   sk_content(IN_X, IN_Y, IN_W, IN_H);
   float x = IN_X + 6, y = IN_Y + 6;
   if (mode == HUD_BOOTH) {
-    sk_paragraph("Choose a swimsuit (D-Pad and A). Your usual clothes stay saved.", x, y, IN_W - 12, 10, SK_TEXT, 2);
+    sk_paragraph(TR("Choose a swimsuit (D-Pad and A). Your usual clothes stay saved."), x, y, IN_W - 12, 10, SK_TEXT, 2);
     for (int c = 0; c < 16; c++) {
       float bx = x + (c % 8) * 37, by = y + 30 + (c / 8) * 37;
       if (c == booth_pick) fill_round(bx - 2, by - 2, 35, 35, 5, sk_rgb(SK_ACCENT));
@@ -497,18 +498,18 @@ void pool_draw_panel(u64 now) {
     if (button(x + 160, y + 110, 120, "Leave (B)")) command("{\"op\":\"leave\"}");
   } else if (mode == HUD_DIVE) {
     if (!P.dive.m.airborne) {
-      sk_paragraph("Run along the board: Left and Right in turn. Jump with A before the end.", x, y, IN_W - 12, 10, SK_TEXT, 2);
+      sk_paragraph(TR("Run along the board: Left and Right in turn. Jump with A before the end."), x, y, IN_W - 12, 10, SK_TEXT, 2);
       if (button(x, y + 40, 90, "Left")) dive_move(1);
       if (button(x + 96, y + 40, 90, "Right")) dive_move(2);
-      if (sk_button_big(x + 192, y + 36, 98, "Jump (A)", true)) dive_move(8);
+      if (sk_button_big(x + 192, y + 36, 98, TR("Jump (A)"), true)) dive_move(8);
     } else {
-      sk_paragraph("Combine moves in the air. B turns a somersault.", x, y, IN_W - 12, 10, SK_TEXT, 2);
+      sk_paragraph(TR("Combine moves in the air. B turns a somersault."), x, y, IN_W - 12, 10, SK_TEXT, 2);
       static const char *names[] = {"Up", "Right", "Down", "Left"};
-      for (int i = 0; i < 4; i++) if (button(x + (i % 2) * 140, y + 34 + (i / 2) * 28, 130, names[i])) dive_move(3 + i);
-      if (sk_button_big(x + 70, y + 94, 150, "Somersault (B)", true)) dive_move(7);
+      for (int i = 0; i < 4; i++) if (button(x + (i % 2) * 140, y + 34 + (i / 2) * 28, 130, TR(names[i]))) dive_move(3 + i);
+      if (sk_button_big(x + 70, y + 94, 150, TR("Somersault (B)"), true)) dive_move(7);
     }
   } else if (mode == HUD_VOTE) {
-    sk_paragraph("How was the dive? The room's average is the score.", x, y, IN_W - 12, 10, SK_TEXT, 2);
+    sk_paragraph(TR("How was the dive? The room's average is the score."), x, y, IN_W - 12, 10, SK_TEXT, 2);
     for (int s = 1; s <= 10; s++) {
       char n[4]; snprintf(n, sizeof n, "%d", s);
       if (button(x + ((s - 1) % 5) * 58, y + 34 + ((s - 1) / 5) * 28, 52, n)) {
@@ -520,8 +521,8 @@ void pool_draw_panel(u64 now) {
     const Wobbler *me = P.wob.p[0].eid == W.me ? &P.wob.p[0] : &P.wob.p[1];
     s64 t = server_now(now);
     char status[64];
-    if (t < P.wob.starts) snprintf(status, sizeof status, "Get ready… %d", (int)((P.wob.starts - t + 999) / 1000));
-    else snprintf(status, sizeof status, "%d s left", (int)((P.wob.ends - t + 999) / 1000 > 0 ? (P.wob.ends - t + 999) / 1000 : 0));
+    if (t < P.wob.starts) snprintf(status, sizeof status, TR("Get ready… %d"), (int)((P.wob.starts - t + 999) / 1000));
+    else snprintf(status, sizeof status, TR("%d s left"), (int)((P.wob.ends - t + 999) / 1000 > 0 ? (P.wob.ends - t + 999) / 1000 : 0));
     sk_text(status, x, y, 11, SK_TEXT, 0, IN_W - 12);
     // Balance needle: falling off at ±100.
     float mx = x + 10, mw = IN_W - 32, my = y + 22;
@@ -536,6 +537,6 @@ void pool_draw_panel(u64 now) {
     if (button(x + 148, y + 74, 140, "Push right (A)")) wobble_move(4);
     if (button(x, y + 102, 140, "Step back (Left)")) wobble_move(5);
     if (button(x + 148, y + 102, 140, "Step on (Right)")) wobble_move(6);
-    if (!me->rebalanced && sk_button_big(x + 70, y + 128, 150, "Steady (X)", true)) wobble_move(7);
+    if (!me->rebalanced && sk_button_big(x + 70, y + 128, 150, TR("Steady (X)"), true)) wobble_move(7);
   }
 }

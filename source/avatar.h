@@ -4,7 +4,7 @@
 
 typedef enum { POSE_STD, POSE_WALK, POSE_SIT, POSE_FLOOR, POSE_WAVE, POSE_DANCE, POSE_LAY, POSE_SWIM, POSE_FLOAT,
                /* Expressions (server ACTION): blown kiss, laugh, thumb up and the held sign. */
-               POSE_KISS, POSE_LAUGH, POSE_THUMB, POSE_SIGN } Pose;
+               POSE_KISS, POSE_LAUGH, POSE_THUMB, POSE_SIGN, POSE_BOUNCE } Pose;
 /** POSE_DANCE frames carry the dance style (1-4) in the thousands: frame + 1000 * (style - 1). */
 #define DANCE_STYLE_STEP 1000
 enum { EXPR_TALK = 1, EXPR_BLINK = 2 };

@@ -27,11 +27,15 @@ typedef enum {
   P_MUSIC,    /* the room playlist (Jukebox / Trax) */
   P_ACTIONS,  /* expressions and dance styles (Me > Actions), as the web's character panel */
   P_FEEDBACK, P_DOORBELL,
+  P_FASTFOOD, P_BATTLE,
   P_COUNT
 } Panel;
 
 // Panel area (between the header and the icon bar).
 #define HEAD_H 18
+void battle_ui_open(void);
+void battle_ui_input(u32 down,u32 held,u64 now);
+void battle_ui_draw(u64 now);
 #define BAR_H 34
 #define BAR_Y (BOT_H - BAR_H)
 #define WIN_X 2
@@ -112,3 +116,7 @@ void casino_poll(u64 now);
 void casino_draw(u64 now);
 void casino_close(bool notify);
 void casino_notice(const char *text);
+
+void food_open(void);
+void food_input(u32 down);
+void food_draw(u64 now);

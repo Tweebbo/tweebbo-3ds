@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+let expected='';
+const context=vm.createContext({nativeSprite(){},nativeRect(){},nativeText(){},nativeMeasure(){return 0;},nativeSound(){},print(s){expected=s;}});
+vm.runInContext(fs.readFileSync('../romfs/fastfood/game.js','utf8'),context);vm.runInContext(fs.readFileSync('fastfood-bridge.js','utf8'),context);
+const result=spawnSync('./snow_host',['../romfs/fastfood/game.js','fastfood-bridge.js'],{env:{...process.env,QUICKJS_TEST_HEAP_MB:'4'},encoding:'utf8'});
+assert.equal(result.status,0,result.stderr);assert.equal(result.stdout.trim(),expected);
+console.log('PASS: browser JS and native QuickJS agree across complete 6, 12 and 18 dish practice matches, rendering and network state checks.');console.log(result.stderr.trim());

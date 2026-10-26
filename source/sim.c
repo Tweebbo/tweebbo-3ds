@@ -1,3 +1,4 @@
+#include "gen/game_rooms.h"
 #include "sim.h"
 #include "assets.h"
 #include "catalog.h"
@@ -313,6 +314,14 @@ static void enter(SEnt *e) {
       }
 }
 
+static u16 public_floor(int x,int y) {
+  for(const GameRoomPort *p=game_room_ports;p->model;p++)if(!strcmp(S.model->key,p->model)){
+    if(x<0||y<0||x>=S.w||y>=S.h)return 0;
+    char cell=S.rows[y*S.w+x];return cell>='0'&&cell<='9'?(cell-'0')*p->height_unit:0;
+  }
+  return 0;
+}
+
 static SEnt *add_ent(const char *name, u64 look, bool bot) {
   SEnt *e = NULL;
   for (int i = 0; i < SIM_ENTS && !e; i++) if (!S.ents[i].used) e = &S.ents[i];
@@ -324,6 +333,7 @@ static SEnt *add_ent(const char *name, u64 look, bool bot) {
   snprintf(e->name, sizeof e->name, "%s", name);
   e->look = look;
   e->x = S.model->door_x; e->y = S.model->door_y; e->dir = S.model->dir;
+  e->z=public_floor(e->x,e->y);
   Writer w; w_begin(&w, S_ENTITY_ADD); w_ent(&w, e); send(&w);
   enter(e);
   online();
@@ -464,7 +474,7 @@ static void tick(u64 now) {
   for(int i=0;i<SIM_ENTS;i++) {
     SEnt *e=&S.ents[i];if(!e->used)continue;
     SItem *it=item_at(e->x,e->y);const FurniDef *d=it?def_get(it->def):NULL;
-    u16 z=it?it->z:0;
+    u16 z=it?it->z:public_floor(e->x,e->y);
     if(d&&(d->kind==KIND_FLOOR||(e->ppos>=e->plen&&!(e->flags&(FLAG_SIT|FLAG_LAY))&&(d->kind==KIND_SIT||(d->flags&DEF_LAY)))))z+=d->seat;
     if(e->z!=z){e->z=z;e->dirty=true;}
   }
@@ -489,6 +499,7 @@ static void tick(u64 now) {
 
 /** Public slug of a room model, as the server exposes it (lobby, park, pool…). */
 static const char *model_slug(const char *model) {
+  for(const GameRoomPort *p=game_room_ports;p->model;p++)if(!strcmp(model,p->model))return p->slug;
   if (!strcmp(model, "newbie_lobby")) return "lobby";
   if (!strcmp(model, "newbie_lobby_es")) return "lobby-es";
   if (!strcmp(model, "newbie_lobby_zh")) return "lobby-zh";
@@ -502,6 +513,7 @@ static const char *model_slug(const char *model) {
 
 /** Accepts either a public slug or the packed model key. */
 static const char *model_key(const char *room) {
+  for(const GameRoomPort *p=game_room_ports;p->model;p++)if(!strcmp(room,p->slug))return p->model;
   if (!strcmp(room, "lobby")) return "newbie_lobby";
   if (!strcmp(room, "lobby-es")) return "newbie_lobby_es";
   if (!strcmp(room, "lobby-zh")) return "newbie_lobby_zh";

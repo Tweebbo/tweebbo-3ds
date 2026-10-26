@@ -1,3 +1,5 @@
+#include "fastfood.h"
+#include "battle.h"
 // Tweebbo for Nintendo 3DS: online client for tweebbo.lol (or another server) with
 // an offline simulation as a fallback. Top screen: the room. Bottom screen: the interface.
 #include <3ds.h>
@@ -9,6 +11,7 @@
 #include <sys/stat.h>
 #include "conn.h"
 #include "gfx.h"
+#include "language.h"
 #include "net.h"
 #include "scene.h"
 #include "showcase.h"
@@ -42,7 +45,7 @@ void on_transfer(const char *slug, const char *arrival) { net_goto(slug, arrival
 void on_alert(const char *json) { ui_alert(json); }
 void on_casino(const char *json) { casino_receive(json, now_ms()); }
 void on_trade(const char *json) { trade_receive(json, now_ms()); }
-void on_activity(const char *json) { if (!bar_receive(json, now_ms())) pool_receive(json, now_ms()); }
+void on_activity(const char *json) { battle_receive(json,now_ms());if (!bar_receive(json, now_ms())) pool_receive(json, now_ms()); }
 void on_music(const char *json) { music_receive(json, now_ms()); }
 void on_snow(const u8 *data, int len) { snow_receive(data,len); }
 void on_social_changed(void) { ui_social_changed(); }
@@ -184,6 +187,7 @@ int main(int argc, char **argv) {
 #ifdef TWEEBBO_SHOWCASE
   dbg_log("TWEEBBO_SHOWCASE: poster build; cast cycles every 5 s");
 #endif
+  tw_language_init();
   net_start(now_ms());
 #ifdef TWEEBBO_SHOWCASE
   showcase_start(now_ms());
@@ -219,13 +223,18 @@ int main(int argc, char **argv) {
 #endif
     now = now_ms();
 
+    fastfood_update(now);
+    battle_update(now);
+    tw_language_update();
     gfx_frame();
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
     snow_frame(now);
     text_begin();
     C2D_TargetClear(top, C2D_Color32(0, 0, 0, 255));
     C2D_SceneBegin(top);
-    if (!snow_top(now) && !casino_top(now)) {
+    if(fastfood_active())fastfood_draw(0,0,TOP_W,TOP_H);
+    else if(battle_active())battle_draw(TOP_W,TOP_H,now);
+    else if (!snow_top(now) && !casino_top(now)) {
       scene_draw(now); gfx_filter(false); shop_top(now); look_top(now); ui_draw_top(now);
 #ifdef TWEEBBO_SHOWCASE
       showcase_top(now);
@@ -261,6 +270,8 @@ int main(int argc, char **argv) {
 
   music_exit();
   net_stop();
+  fastfood_close();
+  battle_close();
   snow_close(false);
   conn_global_exit();
   gfx_exit();

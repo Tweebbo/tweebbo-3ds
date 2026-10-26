@@ -1,6 +1,7 @@
 // Showcase mode: the five brand character models rotate with SET_LOOK, so every
 // console in the room (web, 3DS, Switch, Vita) sees the same character change.
 #include "showcase.h"
+#include "language.h"
 #include <stdio.h>
 #include "avatar.h"
 #include "gfx.h"
@@ -75,12 +76,12 @@ void showcase_update(u64 now) {
 void showcase_top(u64 now) {
   (void)now;
   char line[64];
-  snprintf(line, sizeof line, "Showcase model: %s", CAST_NAME[S.cast]);
-  float w1 = text_width("TWEEBBO SHOWCASE", 13), w2 = text_width(line, 11);
+  snprintf(line, sizeof line, TR("Showcase model: %s"), CAST_NAME[S.cast]);
+  float w1 = text_width(TR("TWEEBBO SHOWCASE"), 13), w2 = text_width(line, 11);
   float w = w1 > w2 ? w1 : w2;
   fill_round(6, 6, w + 16, 50, 4, C2D_Color32(0x0b, 0x0d, 0x0e, 190));
-  text_draw("TWEEBBO SHOWCASE", 14, 9, 13, C2D_Color32(0xff, 0xd1, 0x66, 255), 0);
-  text_draw(net_state() == NET_OFFLINE ? "Nintendo 3DS - offline" : "Nintendo 3DS - LAN hotel", 14, 25, 11, C2D_Color32(0xe8, 0xea, 0xe2, 255), 0);
+  text_draw(TR("TWEEBBO SHOWCASE"), 14, 9, 13, C2D_Color32(0xff, 0xd1, 0x66, 255), 0);
+  text_draw(TR(net_state() == NET_OFFLINE ? "Nintendo 3DS - offline" : "Nintendo 3DS - LAN hotel"), 14, 25, 11, C2D_Color32(0xe8, 0xea, 0xe2, 255), 0);
   text_draw(line, 14, 39, 11, C2D_Color32(0x8f, 0xd9, 0xff, 255), 0);
 }
 

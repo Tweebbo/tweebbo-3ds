@@ -1,4 +1,5 @@
 #include "update.h"
+#include "download.h"
 #include <3ds.h>
 #include <jansson.h>
 #include <mbedtls/sha256.h>
@@ -290,6 +291,7 @@ static bool download_file(const char *url, const char *path, const char *want, l
   }
   U.done = (long)s->offset;
   s->file = fopen(path, "ab");
+  if (s->file) setvbuf(s->file, NULL, _IONBF, 0);
   bool ok = false;
   if (!s->file) snprintf(err, (size_t)cap, "Could not save the update on the SD card. Is it full or locked?");
   for (int attempt = 0; s->file && attempt < DOWNLOAD_ATTEMPTS; attempt++) {
@@ -298,10 +300,10 @@ static bool download_file(const char *url, const char *path, const char *want, l
     if (expect > 0 && (long)s->offset >= expect) { ok = true; break; }
     long total;
     err[0] = 0;
-    int status = http_download_from(url, (long)s->offset, file_sink, s, &total, err, cap);
+    int status = http_download_optimized_from(url, (long)s->offset, 2, file_sink, s, &total, err, cap);
     if (total > 0) U.size = expect = total;
     bool flushed = flush_chunk(s);
-    fflush(s->file);
+    if (fflush(s->file)) s->write_failed = true;
     dbg_log("update: attempt %d status %d, %llu bytes, err '%s'", attempt, status, (unsigned long long)s->offset, err);
     if (!flushed || s->write_failed) { snprintf(err, (size_t)cap, "Could not save the update on the SD card. Is it full?"); break; }
     if (status == 200 || status == 206) { ok = true; break; }

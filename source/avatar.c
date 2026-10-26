@@ -287,7 +287,7 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
     if (src[i] == EY) order[n++] = EA;
     if (src[i] == HR) { order[n++] = HA; order[n++] = HE; }
   }
-  bool seated = pose == POSE_SIT || pose == POSE_FLOOR;
+  bool seated = pose == POSE_SIT || pose == POSE_FLOOR || pose == POSE_BOUNCE;
   Pose upper = pose;
   if (seated) switch (expr >> EXPR_GESTURE_SHIFT) {
     case 1: upper = POSE_WAVE; break;
@@ -318,6 +318,7 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
     if (upper == POSE_KISS && (part == RH || part == RS || part == RC)) { action = frame & 1 ? "crr" : "drk"; f = 0; }
     if (upper == POSE_THUMB && (part == RH || part == RS || part == RC)) { action = "crr"; f = 0; }
     if (upper == POSE_SIGN && (part == LH || part == LS || part == LC)) { action = "wav"; f = 1; }
+    if (pose == POSE_BOUNCE && (part == LH || part == RH || part == LS || part == RS || part == LC || part == RC)) { action = "crr"; f = 0; }
     if (pose == POSE_DANCE) {
       const DanceTrack *t = dance_track(founder && part == CC ? CH : part, 1 + frame / DANCE_STYLE_STEP);
       if (!t) t = dance_track(founder && part == CC ? CH : part, 1);

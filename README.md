@@ -1,5 +1,7 @@
 # Tweebbo for Nintendo 3DS
 
+Version 1.3.0: Fast Food, Battle Ball and Snow Storm in Game Center, classic game lobbies, six languages, improved Fast Food scaling and verified update downloads with two connections. See [release notes](docs/RELEASE.md). Existing hotel features are retained. Host/emulator checks passed; physical-device checks remain unverified.
+
 Release 1.2.5, 2026-10-23: builder stack mode (`:stackmode 0|1|2`, mirrored from the server for the placement preview in `source/build.c`) and Kepler-style doorways for room layouts P, Q, R, S, X and Z (regenerated room images and maps). Verified with host tests and a LAN-only Azahar run; physical-device checks remain pending.
 
 Release 1.2.4, 2026-10-23: the Catalogue, Hand and trade lists keep their position after a stylus drag (the D-Pad no longer snaps them back to the selected row), so long catalogue pages can be scrolled and every item bought. Verified with host tests and a LAN-only Azahar run; physical-device checks remain pending.

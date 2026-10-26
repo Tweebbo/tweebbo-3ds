@@ -37,7 +37,7 @@ extern const int finish_choice_count, finish_price;
 /** Public room layer: region (page,sx,sy,w,h) drawn at (x,y) with size (dw,dh). */
 /** `role`: 0 always, 1 under the floor (drawn first), 10 + 2k / 11 + 2k open / closed picture of
  *  switch k (booth curtains 1 and 2, the lift door), chosen by source/pool.c. */
-typedef struct { u8 page; u16 sx, sy, w, h; s16 x, y; u16 dw, dh; float depth; u8 alpha, frames, frame, background, role; } SceneSprite;
+typedef struct { u8 page; u16 sx, sy, w, h; s16 x, y; u16 dw, dh; float depth; u8 alpha, frames, frame, background, role, additive; } SceneSprite;
 /** Classic activity artwork packed in the scene pages: registration (rx, ry) like the web atlas. */
 typedef struct { const char *name; u8 page; u16 sx, sy, w, h; s16 rx, ry; } SceneArt;
 /** Layered public room (romfs:/gfx/scene_<model>_<page>.t3x). `water`: water height or -1. */

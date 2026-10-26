@@ -1,3 +1,4 @@
+#include "language.h"
 #include "ui_int.h"
 #include "gfx.h"
 #include "net.h"
@@ -38,7 +39,7 @@ void casino_close(bool notify) {
 }
 void casino_notice(const char *text) { if(strstr(text,"enough")||strstr(text,"Choose")||strstr(text,"Too late")||strstr(text,"Please wait"))C.sent_at=0; }
 void casino_poll(u64 now) {
-  if (C.sent_at && now-C.sent_at>5000) { C.sent_at=0; snprintf(C.status,sizeof C.status,"No result received. Reopen the machine to check your game."); }
+  if (C.sent_at && now-C.sent_at>5000) { C.sent_at=0; snprintf(C.status,sizeof C.status,"%s",TR("No result received. Reopen the machine to check your game.")); }
 }
 static void action(int op, int a, int b, int c, u64 now) {
   if(C.sent_at)return;
@@ -75,18 +76,18 @@ void casino_receive(const char *text, u64 now) {
     else if(!strcmp(type,"vp")&&C.kind==VIDEO) { replace(&C.state,j);C.held=json_is_true(json_object_get(j,"done"))?0:number(j,"held");C.sent_at=0; }
     else if(!strcmp(type,"slot")&&C.kind==SLOT) {
       replace(&C.state,j);C.slot=(unsigned)number(j,"game")%5;C.free_left=number(j,"freeLeft");C.sent_at=0;C.received_at=now;
-      snprintf(C.status,sizeof C.status,"Win: %d credits. Free spins: %d.",number(j,"win"),C.free_left);
+      snprintf(C.status,sizeof C.status,TR("Win: %d credits. Free spins: %d."),number(j,"win"),C.free_left);
     } else if(!strcmp(type,"dash")&&C.kind==DASH) {
       if(number(j,"step")==0&&!json_is_true(json_object_get(j,"done")))memset(C.pays,0,sizeof C.pays);
       replace(&C.state,j);C.sent_at=0;C.received_at=now;
       {int st=number(j,"step");if(st>0&&st<16&&number(j,"cashout"))C.pays[st]=number(j,"cashout");if(st+1<16&&number(j,"next"))C.pays[st+1]=number(j,"next");}
       if(json_is_true(json_object_get(j,"done"))) {
-        if(json_is_true(json_object_get(j,"lost")))snprintf(C.status,sizeof C.status,"Caught on step %d! The stake of %d credits is lost.",number(j,"step")+1,number(j,"stake"));
-        else snprintf(C.status,sizeof C.status,"Cashed out: %d credits.",number(j,"win"));
+        if(json_is_true(json_object_get(j,"lost")))snprintf(C.status,sizeof C.status,TR("Caught on step %d! The stake of %d credits is lost."),number(j,"step")+1,number(j,"stake"));
+        else snprintf(C.status,sizeof C.status,TR("Cashed out: %d credits."),number(j,"win"));
       } else C.status[0]=0;
     } else if(!strcmp(type,"roulette")&&C.kind==ROULETTE) {
       replace(&C.state,j);C.sent_at=0;
-      snprintf(C.status,sizeof C.status,"Number %d. Win: %d credits.",number(j,"n"),number(j,"win"));
+      snprintf(C.status,sizeof C.status,TR("Number %d. Win: %d credits."),number(j,"n"),number(j,"win"));
     }
   }
   json_decref(j);
@@ -174,7 +175,7 @@ static void dash_top(u64 now){
   tri(ax-34,ay-14,bx+30,by-14,bx+22,by+16,sk_rgb(0xe0a82e));tri(ax-34,ay-14,bx+22,by+16,ax-42,ay+16,sk_rgb(0xe0a82e));
   tri(ax-32,ay-12,bx+28,by-12,bx+20,by+14,sk_rgb(0x7a121d));tri(ax-32,ay-12,bx+20,by+14,ax-40,ay+14,sk_rgb(0x7a121d));
   diamond(ax,ay,20,10,sk_rgb(0x87a8b8));diamond(ax,ay,18,9,sk_rgb(0x2a3d45));
-  text_draw("START",ax,ay-5,8,sk_rgb(0xffffff),1);
+  text_draw(TR("START"),ax,ay-5,8,sk_rgb(0xffffff),1);
   furni_at(1107,2,bx+22,by+4);
   float rx=fminf(17,pitch*0.46f);
   for(int n=1;n<=steps;n++){
@@ -214,10 +215,10 @@ static void dash_top(u64 now){
   #undef AT_Y
   // Header like the web cabinet; the amounts sit there so nothing covers the carpet.
   fill_rect(0,0,400,20,sk_rgba(0x000000,140));
-  text_draw("VIP Dash",8,3,12,sk_rgb(0xf2d27a),0);
+  text_draw(TR("VIP Dash"),8,3,12,sk_rgb(0xf2d27a),0);
   char line[100];
-  if(C.state&&!done)snprintf(line,sizeof line,"Cash out %d - next pays %d",number(C.state,"cashout"),number(C.state,"next"));
-  else snprintf(line,sizeof line,"%s ladder - credits",risks[(C.state?number(C.state,"risk"):C.risk)%4]);
+  if(C.state&&!done)snprintf(line,sizeof line,TR("Cash out %d - next pays %d"),number(C.state,"cashout"),number(C.state,"next"));
+  else snprintf(line,sizeof line,TR("%s ladder - credits"),risks[(C.state?number(C.state,"risk"):C.risk)%4]);
   text_draw(line,392,5,10,sk_rgb(C.state&&!done?0xffd34d:0xffffff),2);
   if(done&&!lost&&number(C.state,"win")>0&&now-C.received_at<900){
     float progress=(now-C.received_at)/900.0f;
@@ -230,19 +231,19 @@ bool casino_top(u64 now) {
   fill_rect(0,0,400,240,sk_rgb(0x173c32));
   text_draw(titles[C.kind],200,5,16,sk_rgb(0xf2d27a),1);
   if(C.kind==BLACKJACK) {
-    char label[80];snprintf(label,sizeof label,"Dealer: %d",number(C.state,"dealerTotal"));text_draw(label,16,28,11,sk_rgb(0xffffff),0);
+    char label[80];snprintf(label,sizeof label,TR("Dealer: %d"),number(C.state,"dealerTotal"));text_draw(label,16,28,11,sk_rgb(0xffffff),0);
     cards(json_object_get(C.state,"dealer"),2,110,30,24);
-    snprintf(label,sizeof label,"You: %d",number(C.state,"total"));text_draw(label,16,132,11,sk_rgb(0xffffff),0);
+    snprintf(label,sizeof label,TR("You: %d"),number(C.state,"total"));text_draw(label,16,132,11,sk_rgb(0xffffff),0);
     cards(json_object_get(C.state,"player"),2,110,132,24);
-    text_draw("Blackjack pays 3:2. Dealer stands on 17.",200,218,11,sk_rgb(0xf2d27a),1);
+    text_draw(TR("Blackjack pays 3:2. Dealer stands on 17."),200,218,11,sk_rgb(0xf2d27a),1);
   } else if(C.kind==POKER) {
-    text_draw("Dealer",12,36,11,sk_rgb(0xffffff),0);cards(json_object_get(C.state,"dealer"),2,85,27,53);
-    text_draw("Table",12,105,11,sk_rgb(0xffffff),0);cards(json_object_get(C.state,"board"),5,85,98,53);
-    text_draw("You",12,180,11,sk_rgb(0xffffff),0);cards(json_object_get(C.state,"player"),2,85,170,53);
+    text_draw(TR("Dealer"),12,36,11,sk_rgb(0xffffff),0);cards(json_object_get(C.state,"dealer"),2,85,27,53);
+    text_draw(TR("Table"),12,105,11,sk_rgb(0xffffff),0);cards(json_object_get(C.state,"board"),5,85,98,53);
+    text_draw(TR("You"),12,180,11,sk_rgb(0xffffff),0);cards(json_object_get(C.state,"player"),2,85,170,53);
   } else if(C.kind==VIDEO) {
     json_t *array=json_object_get(C.state,"cards");
     for(int i=0;i<5;i++){json_t *v=json_array_get(array,i);card(v?(int)json_integer_value(v):-1,60+i*56,90,(C.held>>i)&1);}
-    text_draw("Jacks or Better",200,45,14,sk_rgb(0xf2d27a),1);
+    text_draw(TR("Jacks or Better"),200,45,14,sk_rgb(0xf2d27a),1);
     text_draw(string(C.state,"hand"),200,184,12,sk_rgb(0xffffff),1);
   } else if(C.kind==SLOT) {
     int cols=C.slot==1?3:C.slot==3?6:5,rows=C.slot==3?5:3;
@@ -274,7 +275,7 @@ bool casino_top(u64 now) {
         static const char *letters[]={"10","J","Q","K","A"};
         snprintf(label,sizeof label,"%s",C.slot==0&&n<5?letters[n]:"*");text_draw(label,x+cellw/2,y+cellh/2-6,14,sk_rgb(0x442b61),1);
       }
-      if(n>=100){snprintf(label,sizeof label,"%dx",n-100);text_draw(label,x+cellw/2,y+cellh-15,10,sk_rgb(0x222222),1);}
+      if(n>=100){snprintf(label,sizeof label,TR("%dx"),n-100);text_draw(label,x+cellw/2,y+cellh-15,10,sk_rgb(0x222222),1);}
     }
   } else if(C.kind==ROULETTE) {
     for(int n=0;n<=36;n++) {
@@ -282,16 +283,16 @@ bool casino_top(u64 now) {
       fill_round(x,y,n?28:22,n?34:106,2,sk_rgb(n==0?0x226b36:red(n)?0x9c2926:0x222222));
       char label[8];snprintf(label,sizeof label,"%d",n);text_draw(label,x+(n?14:11),y+(n?9:44),12,sk_rgb(0xffffff),1);
     }
-    char result[40];snprintf(result,sizeof result,"Last number: %d",number(C.state,"n"));text_draw(C.state?result:"Choose your bet below.",200,195,13,sk_rgb(0xf2d27a),1);
+    char result[40];snprintf(result,sizeof result,TR("Last number: %d"),number(C.state,"n"));text_draw(C.state?result:TR("Choose your bet below."),200,195,13,sk_rgb(0xf2d27a),1);
   } else if(C.kind==DASH) {
     dash_top(now);
   } else if(C.kind==CRASH) {
     const char *p=phase(now);char line[100];
-    snprintf(line,sizeof line,"%.2fx",multiplier(now));text_draw(line,200,40,16,sk_rgb(!strcmp(p,"crashed")?0xff9988:0xffd34d),1);
+    snprintf(line,sizeof line,TR("%.2fx"),multiplier(now));text_draw(line,200,40,16,sk_rgb(!strcmp(p,"crashed")?0xff9988:0xffd34d),1);
     json_t *v;size_t i;json_array_foreach(json_object_get(C.round,"bets"),i,v) {
       if(i>=10)break;
       json_t *out=json_object_get(v,"out");
-      snprintf(line,sizeof line,"%s  %d credits%s",string(v,"name"),number(v,"bet"),json_is_number(out)?" - cashed out":"");
+      snprintf(line,sizeof line,TR("%s  %d credits%s"),string(v,"name"),number(v,"bet"),json_is_number(out)?" - cashed out":"");
       text_draw(line,22,75+i*14,11,sk_rgb(0xffffff),0);
     }
   }
@@ -316,9 +317,9 @@ void casino_draw(u64 now) {
   if(C.rules) {
     int offset=0;for(int i=0;i<C.rules_page;i++)offset=sk_paragraph_page(rules[C.kind],offset,-1000,-1000,280,11,SK_TEXT,7);
     int next=sk_paragraph_page(rules[C.kind],offset,IN_X+10,IN_Y+8,280,11,SK_TEXT,7);
-    if(sk_button(20,174,85,"Previous",C.rules_page>0))C.rules_page--;
-    if(sk_button(117,174,85,"Back",true)||K.b)C.rules=false;
-    if(sk_button(214,174,85,"Next",rules[C.kind][next]!=0))C.rules_page++;
+    if(sk_button(20,174,85,TR("Previous"),C.rules_page>0))C.rules_page--;
+    if(sk_button(117,174,85,TR("Back"),true)||K.b)C.rules=false;
+    if(sk_button(214,174,85,TR("Next"),rules[C.kind][next]!=0))C.rules_page++;
     return;
   }
   bool playing=C.state && ((C.kind==BLACKJACK||C.kind==POKER)?!string(C.state,"result")[0]:(C.kind==VIDEO||C.kind==DASH)?!json_is_true(json_object_get(C.state,"done")):false);
@@ -335,7 +336,7 @@ void casino_draw(u64 now) {
     if((sk_button(272,78,28,">",ready&&!C.free_left)||(K.right&&ready&&!C.free_left))) {C.slot=(C.slot+1)%5;replace(&C.state,NULL);C.status[0]=0;}
     snprintf(line,sizeof line,"%s",C.status[0]?C.status:"Choose a game. Bet amounts are in hotel credits.");
     bool can=ready&&(C.free_left||W.credits>=(u32)C.bet);
-    if(sk_button_big(20,169,190,C.free_left?"Play free spin (A)":"Spin (A)",can)||(K.a&&can))action(2,C.bet,C.slot,0,now);
+    if(sk_button_big(20,169,190,C.free_left?TR("Play free spin (A)"):TR("Spin (A)"),can)||(K.a&&can))action(2,C.bet,C.slot,0,now);
   } else if(C.kind==ROULETTE) {
     static const char *choices[]={"Number","Red","Black","Odd","Even","1-18","19-36","Dozen"};
     if(sk_button(20,78,28,"<",ready)||(K.left&&ready))C.roulette_kind=(C.roulette_kind+7)%8;
@@ -346,35 +347,35 @@ void casino_draw(u64 now) {
     if(C.roulette_kind==0||C.roulette_kind==7){
       if(sk_button(20,103,28,"-",ready)||(K.dn&&ready))C.roulette_value=(C.roulette_value+max-1)%max;
       if(sk_button(272,103,28,"+",ready)||(K.up&&ready))C.roulette_value=(C.roulette_value+1)%max;
-      snprintf(line,sizeof line,C.roulette_kind==7?"Dozen %d":"Number %d",C.roulette_value+(C.roulette_kind==7));sk_text(line,160,105,12,SK_TEXT,1,180);
+      snprintf(line,sizeof line,C.roulette_kind==7?TR("Dozen %d"):TR("Number %d"),C.roulette_value+(C.roulette_kind==7));sk_text(line,160,105,12,SK_TEXT,1,180);
     }
     snprintf(line,sizeof line,"%s",C.status);
     bool can=ready&&W.credits>=(u32)C.bet;
-    if(sk_button_big(20,169,190,"Place bet (A)",can)||(K.a&&can))action(3,C.roulette_kind,C.roulette_value,C.bet,now);
+    if(sk_button_big(20,169,190,TR("Place bet (A)"),can)||(K.a&&can))action(3,C.roulette_kind,C.roulette_value,C.bet,now);
   } else if(C.kind==BLACKJACK||C.kind==POKER) {
     if(playing){
-      snprintf(line,sizeof line,C.kind==BLACKJACK?"Your total: %d. Hit or stand?":"Call costs %d credits, or fold.",number(C.state,C.kind==BLACKJACK?"total":"ante")*(C.kind==POKER?2:1));
-      if(sk_button(20,143,85,C.kind==BLACKJACK?"Hit (A)":"Call (A)",ready)||(K.a&&ready))action(C.kind==BLACKJACK?5:12,0,0,0,now);
-      else if(sk_button(113,143,85,C.kind==BLACKJACK?"Stand (X)":"Fold (X)",ready)||(K.x&&ready))action(C.kind==BLACKJACK?6:13,0,0,0,now);
+      snprintf(line,sizeof line,C.kind==BLACKJACK?TR("Your total: %d. Hit or stand?"):TR("Call costs %d credits, or fold."),number(C.state,C.kind==BLACKJACK?"total":"ante")*(C.kind==POKER?2:1));
+      if(sk_button(20,143,85,C.kind==BLACKJACK?TR("Hit (A)"):TR("Call (A)"),ready)||(K.a&&ready))action(C.kind==BLACKJACK?5:12,0,0,0,now);
+      else if(sk_button(113,143,85,C.kind==BLACKJACK?TR("Stand (X)"):TR("Fold (X)"),ready)||(K.x&&ready))action(C.kind==BLACKJACK?6:13,0,0,0,now);
       else {bool can=ready&&json_array_size(json_object_get(C.state,"player"))==2&&W.credits>=(u32)number(C.state,"bet");
-        if(C.kind==BLACKJACK&&(sk_button(206,143,94,"Double (Y)",can)||(K.y&&can)))action(7,0,0,0,now);}
+        if(C.kind==BLACKJACK&&(sk_button(206,143,94,TR("Double (Y)"),can)||(K.y&&can)))action(7,0,0,0,now);}
     }else{
-      snprintf(line,sizeof line,C.state?"Result: %s. Paid: %d credits.":"Choose your bet, then deal.",string(C.state,"result"),number(C.state,"win"));
+      snprintf(line,sizeof line,C.state?TR("Result: %s. Paid: %d credits."):TR("Choose your bet, then deal."),string(C.state,"result"),number(C.state,"win"));
       bool can=ready&&W.credits>=(u32)C.bet;
-      if(sk_button_big(20,169,190,"Deal (A)",can)||(K.a&&can))action(C.kind==BLACKJACK?4:11,C.bet,0,0,now);
+      if(sk_button_big(20,169,190,TR("Deal (A)"),can)||(K.a&&can))action(C.kind==BLACKJACK?4:11,C.bet,0,0,now);
     }
   } else if(C.kind==VIDEO) {
-    for(int i=0;i<5;i++){char b[16];snprintf(b,sizeof b,(C.held>>i)&1?"Held %d":"Hold %d",i+1);if(sk_button(12+i*60,86,56,b,playing&&ready))C.held^=1<<i;}
-    snprintf(line,sizeof line,playing?"Choose cards to hold, then draw.":C.state?"%s. Paid: %d credits.":"Jacks or Better. Choose your bet.",string(C.state,"hand"),number(C.state,"win"));
+    for(int i=0;i<5;i++){char b[16];snprintf(b,sizeof b,(C.held>>i)&1?TR("Held %d"):TR("Hold %d"),i+1);if(sk_button(12+i*60,86,56,b,playing&&ready))C.held^=1<<i;}
+    snprintf(line,sizeof line,playing?TR("Choose cards to hold, then draw."):C.state?TR("%s. Paid: %d credits."):TR("Jacks or Better. Choose your bet."),string(C.state,"hand"),number(C.state,"win"));
     bool can=ready&&(playing||W.credits>=(u32)C.bet);
-    if(sk_button_big(20,169,190,playing?"Draw (A)":"Deal (A)",can)||(K.a&&can))action(playing?15:14,playing?C.held:C.bet,0,0,now);
+    if(sk_button_big(20,169,190,playing?TR("Draw (A)"):TR("Deal (A)"),can)||(K.a&&can))action(playing?15:14,playing?C.held:C.bet,0,0,now);
   } else if(C.kind==DASH) {
     if(!playing){
       if(sk_button(20,78,28,"<",ready)||(K.left&&ready))C.risk=(C.risk+3)%4;
       if(sk_button(272,78,28,">",ready)||(K.right&&ready))C.risk=(C.risk+1)%4;
     }
     sk_text(risks[(playing?number(C.state,"risk"):C.risk)%4],160,80,12,SK_TEXT,1,200);
-    if(playing)snprintf(line,sizeof line,"Step %d/%d. Cash out %d. Next %d credits.",number(C.state,"step"),number(C.state,"steps"),number(C.state,"cashout"),number(C.state,"next"));
+    if(playing)snprintf(line,sizeof line,TR("Step %d/%d. Cash out %d. Next %d credits."),number(C.state,"step"),number(C.state,"steps"),number(C.state,"cashout"),number(C.state,"next"));
     else snprintf(line,sizeof line,"%s",C.status[0]?C.status:"Choose a ladder and a stake in credits, then start.");
     for(int n=1;n<=8;n++){
       float x=16+(n-1)*36;char tag[12];fill_round(x,108,34,27,2,sk_rgb(n<=number(C.state,"step")?0xe3edda:SK_WHITE));
@@ -383,21 +384,21 @@ void casino_draw(u64 now) {
       sk_text(tag,x+17,120,8,SK_TEXT,1,32);
     }
     if(playing){
-      if(sk_button(20,143,132,"Step (A)",ready)||(K.a&&ready))action(17,0,0,0,now);
+      if(sk_button(20,143,132,TR("Step (A)"),ready)||(K.a&&ready))action(17,0,0,0,now);
       bool can_out=ready&&number(C.state,"step")>0;
-      if(sk_button(160,143,140,"Cash out (X)",can_out)||(K.x&&can_out))action(18,0,0,0,now);
+      if(sk_button(160,143,140,TR("Cash out (X)"),can_out)||(K.x&&can_out))action(18,0,0,0,now);
     }else{
       int index=0;while(index<C.bet_count-1&&C.bets[index]!=C.bet)index++;
       bool can=ready&&W.credits>=(u32)C.bet;
-      if(sk_button_big(20,169,190,"Start (A)",can)||(K.a&&can)){replace(&C.state,NULL);action(16,C.risk,index,0,now);}
+      if(sk_button_big(20,169,190,TR("Start (A)"),can)||(K.a&&can)){replace(&C.state,NULL);action(16,C.risk,index,0,now);}
     }
   } else if(C.kind==CRASH) {
     const char *p=phase(now);json_t *mine=my_bet();bool out=json_is_number(json_object_get(mine,"out"));
-    snprintf(line,sizeof line,!strcmp(p,"running")?"Cash out before it crashes!":!strcmp(p,"crashed")?"Crashed. Wait for the next round.":"Place your bet before the round starts.");
+    snprintf(line,sizeof line,"%s",!strcmp(p,"running")?TR("Cash out before it crashes!"):!strcmp(p,"crashed")?TR("Crashed. Wait for the next round."):TR("Place your bet before the round starts."));
     bool can_bet=ready&&!mine&&strcmp(p,"running")&&strcmp(p,"crashed")&&W.credits>=(u32)C.bet,can_out=ready&&mine&&!out&&!strcmp(p,"running");
-    if(sk_button(20,143,132,"Place bet (A)",can_bet)||(K.a&&can_bet))action(8,C.bet,0,0,now);
-    if(sk_button(160,143,140,"Cash out (X)",can_out)||(K.x&&can_out))action(9,0,0,0,now);
+    if(sk_button(20,143,132,TR("Place bet (A)"),can_bet)||(K.a&&can_bet))action(8,C.bet,0,0,now);
+    if(sk_button(160,143,140,TR("Cash out (X)"),can_out)||(K.x&&can_out))action(9,0,0,0,now);
   }
   sk_paragraph(line,IN_X+12,C.kind==DASH?90:C.kind==ROULETTE?132:112,IN_W-24,C.kind==DASH?9:11,SK_TEXT,C.kind==DASH?1:2);
-  if(sk_button(220,169,80,"Rules",true)){C.rules=true;C.rules_page=0;}
+  if(sk_button(220,169,80,TR("Rules"),true)){C.rules=true;C.rules_page=0;}
 }

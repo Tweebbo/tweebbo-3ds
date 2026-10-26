@@ -1,0 +1,58 @@
+# Continue the same LAN debug guest; inspect room layers and an online Snow match.
+wait 25
+shot rooms-01-snow-entry
+key q 120
+wait 3
+shot rooms-02-snow-overview
+key Up 1600
+key Left 1000
+wait 10
+shot rooms-03-snow-interior-overview
+key q 120
+wait 3
+shot rooms-04-snow-interior
+click 505 530
+wait 2
+click 640 600
+wait 6
+click 737 645
+wait 2
+shot rooms-05-snow-create
+click 691 674
+wait 4
+shot rooms-06-snow-waiting
+click 691 674
+wait 25
+shot rooms-07-snow-online
+key Right 700
+key z 120
+wait 2
+key a 120
+wait 4
+shot rooms-08-snow-online-actions
+key s 120
+wait 2
+key a 120
+wait 5
+shot rooms-09-snow-return
+click 505 530
+wait 2
+click 560 660
+wait 8
+key q 120
+wait 3
+shot rooms-10-battle-lobby
+click 549 712
+wait 3
+click 640 540
+wait 2
+click 766 589
+wait 8
+shot rooms-11-casino
+click 549 712
+wait 3
+click 766 563
+wait 8
+shot rooms-12-reception-return
+wait 40
+shot rooms-13-idle-after-games
