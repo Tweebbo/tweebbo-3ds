@@ -201,27 +201,53 @@ def main():
             return ('s',) + soft_packer.add(img) if soft else ('c',) + color_packer.add(img)
     packer = Dual()
 
-    # Pets: the same layout in every texture, one texture per breed palette.
+    # Pets: one texture per breed palette holding only the parts of that palette's species, so a
+    # room with several breeds fits in linear memory (all species in every texture made each one
+    # 1024×1024 RGBA8, 4 MB). Parts shared between families (the shadow, the dog/cat/croco body)
+    # come first and keep the same place; each family then packs its own parts from there, so
+    # one PetPart table serves every texture.
     pets_data = json.loads((SRC / 'data/models/pets.json').read_text())
     pet_src = Image.open(SRC / 'data/models/pets-0.png').convert('RGBA')
     pet_names = sorted(pets_data['sprites'], key=lambda n: n.encode())
-    order = sorted(pet_names, key=lambda n: -pets_data['sprites'][n]['h'])
+    pet_model = lambda n: n.split('_')[3]
+    PET_SHARED = [{'001'}, {'round'}]
+    PET_FAMILIES = {'dogcat': {'001', 'round', 'dog', 'cat', 'short', 'long'}, 'croco': {'001', 'round', 'croco', 'flat'},
+                    'terrier': {'001', 'roundterrier', 'terrier'}, 'bear': {'001', 'roundbear', 'bear'}, 'pig': {'001', 'roundpig', 'pig'}}
     PW = 1024
-    x = y = shelf = 0
     pet_rects = {}
-    for n in order:
-        sp = pets_data['sprites'][n]
-        if x + sp['w'] + 1 > PW:
-            x, y, shelf = 0, y + shelf, 0
-        pet_rects[n] = (x, y)
-        x += sp['w'] + 1
-        shelf = max(shelf, sp['h'] + 1)
-    PH = max(8, 1 << (y + shelf - 1).bit_length())
+
+    def pet_shelf(names, cursor):
+        x, y, shelf = cursor
+        for n in sorted(names, key=lambda n: (-pets_data['sprites'][n]['h'], n.encode())):
+            sp = pets_data['sprites'][n]
+            if x + sp['w'] + 1 > PW:
+                x, y, shelf = 0, y + shelf, 0
+            pet_rects[n] = (x, y)
+            x += sp['w'] + 1
+            shelf = max(shelf, sp['h'] + 1)
+        return x, y, shelf
+    # The shared shelf rows end before any family starts, so later rows never overlap them.
+    cursor, shared_end = (0, 0, 0), {}
+    for models in PET_SHARED:
+        cursor = pet_shelf([n for n in pet_names if pet_model(n) in models], cursor)
+        cursor = (0, cursor[1] + cursor[2], 0)
+        shared_end[frozenset(models)] = cursor
+    pet_height = {}
+    for family, models in PET_FAMILIES.items():
+        start = shared_end[frozenset({'round'})] if 'round' in models else shared_end[frozenset({'001'})]
+        _, y, shelf = pet_shelf([n for n in pet_names if pet_model(n) in models - {'001', 'round'}], start)
+        pet_height[family] = max(8, 1 << (y + shelf - 1).bit_length())
+    assert set(pet_rects) == set(pet_names), set(pet_names) - set(pet_rects)
     pet_palettes = sorted(pets_data['palettes'])
     for pi, pal_name in enumerate(pet_palettes):
         pal = pets_data['palettes'][pal_name]
-        page = Image.new('RGBA', (PW, PH))
+        family = pal_name.split(' ')[1]
+        # Palettes of no species (petfood) only need the shadow.
+        models = PET_FAMILIES.get(family, {'001'})
+        page = Image.new('RGBA', (PW, pet_height.get(family, max(8, 1 << (shared_end[frozenset({'001'})][1] - 1).bit_length()))))
         for n in pet_names:
+            if pet_model(n) not in models:
+                continue
             sp = pets_data['sprites'][n]
             crop = pet_src.crop((sp['x'], sp['y'], sp['x'] + sp['w'], sp['y'] + sp['h']))
             if n == 'p_std_sd_001_0_0':

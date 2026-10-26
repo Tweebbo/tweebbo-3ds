@@ -173,9 +173,11 @@ void gfx_perf_take(u32 *loads, u32 *evictions, u32 *bytes, u32 *budget) {
   perf_loads = perf_evictions = 0;
 }
 
-// Pets: one 512×512 texture per breed palette; enough for a room (max. 5 pets).
+// Pets: one texture per breed palette with only its species' parts (at most 1024×512 RGBA8).
 #define PET_SLOTS 6
 static struct { int palette; bool loaded; C3D_Tex tex; u32 used; } pet_tex[PET_SLOTS];
+// A palette whose texture did not fit waits this long before reading romfs again.
+static u32 pet_retry[64];
 
 static C3D_Tex *pet_texture(int palette) {
   int victim = -1;
@@ -191,9 +193,14 @@ static C3D_Tex *pet_texture(int palette) {
     C3D_TexDelete(&pet_tex[victim].tex);
     pet_tex[victim].loaded = false;
   }
+  if (palette >= 0 && palette < (int)COUNT(pet_retry) && frame_no < pet_retry[palette]) return NULL;
   char path[48];
   snprintf(path, sizeof path, "romfs:/gfx/pets_%d.t3x", palette);
-  if (!load_t3x(path, &pet_tex[victim].tex)) return NULL;
+  // Like the atlas pages: furniture textures reload on demand, the pets would stay invisible.
+  if (!load_t3x(path, &pet_tex[victim].tex) && !(furni_release_all() && load_t3x(path, &pet_tex[victim].tex))) {
+    if (palette >= 0 && palette < (int)COUNT(pet_retry)) pet_retry[palette] = frame_no + 120;
+    return NULL;
+  }
   if (linear) C3D_TexSetFilter(&pet_tex[victim].tex, GPU_LINEAR, GPU_LINEAR);
   pet_tex[victim].loaded = true;
   pet_tex[victim].palette = palette;

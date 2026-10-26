@@ -2,6 +2,11 @@ Tweebbo for Nintendo 3DS: the same hotel as [tweebbo.lol](https://tweebbo.lol), 
 
 > Tweebbo is in development and may be unstable.
 
+**New in 1.3.1**
+- Fixed pets that were invisible in rooms with three or more different coats. Each coat texture now holds only its own species, using a quarter of the memory, and the console frees cached furniture textures if a pet still does not fit.
+
+Emulator checks passed on Old 3DS with five pets of different coats in a fully furnished room.
+
 **New in 1.3.0**
 - Play Fast Food, Battle Ball and Snow Storm from Game Center, including practice and online matches with browser, Switch and Vita players.
 - Visit the classic Battle Ball and Snow Storm lobbies, also listed in offline navigation. Saved rooms that no longer exist return you to reception.
