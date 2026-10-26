@@ -1,12 +1,12 @@
 # Original room and game ports
 
-For the shared language import, selector, fonts and reception rules, read `../../Tweebbo-games-candidate-20261025/docs/games-expansion/LANGUAGES.md`. Generate native dictionaries and fonts from the same reviewed web overrides before packaging any of the three consoles.
+For the shared language import, selector, fonts and reception rules, read `../../Tweebbo-Vercel/docs/games-expansion/LANGUAGES.md`. Generate native dictionaries and fonts from the same reviewed web overrides before packaging any of the three consoles.
 
-2026-10-25 candidate scope: Nintendo 3DS, Switch and Vita. Nintendo DS is explicitly deferred. These changes are unpublished; hardware acceptance remains separate from emulator and host tests.
+Published 2026-10-25: Nintendo 3DS 1.3.0, Switch 1.4.0 and Vita 1.4.0. Nintendo DS is explicitly deferred. Hardware acceptance remains separate from emulator and host tests.
 
 ## Source of truth
 
-The production candidate is `../../Tweebbo-games-candidate-20261025`, based on the current `prod-20261023-builders` hotel. Read its `docs/games-expansion/PRODUCTION-AND-CONSOLES.md` before merging or releasing. The older FastFood PoC is an art/game reference, not a replacement production tree.
+The maintained production source is `../../Tweebbo-Vercel`. The published snapshot is `../../Tweebbo-games-release-20261025`, merged onto the live `prod-20261023-effects` baseline. Read `docs/games-expansion/PUBLICATION.md` and `PRODUCTION-AND-CONSOLES.md` in the web source before merging or releasing. The older FastFood PoC is an art/game reference, not a replacement production tree.
 
 Set `TWEEBBO_WEB` to the reviewed web source when rebuilding. The new Fast Food, Battle Ball and audio exporters accept this variable; their current local fallback is the dated candidate. For a future release always set it explicitly. Snow's existing exporter must use the same source and contract.
 
