@@ -67,7 +67,7 @@ update:
 	podman run --rm -v $(CURDIR)/..:/w:Z -w /w/tests docker.io/library/ubuntu:24.04 bash -c '\
 	  apt-get -qq update >/dev/null && apt-get -qq install -y gcc libmbedtls-dev >/dev/null 2>&1 && \
 	  cc -std=gnu11 -O1 -I../source -o /tmp/update_test update_test.c ../source/download.c ../source/ws.c ../source/conn.c ../source/certs.c -lmbedtls -lmbedx509 -lmbedcrypto -lpthread && \
-	  for i in 1 2 3 4 5 6; do /tmp/update_test | head -2; done'
+	  /tmp/update_test'
 .PHONY: update
 
 protocol_test: protocol_test.c $(SRC)/world.c $(SRC)/proto.c $(SRC)/catalog.c $(SRC)/gen/assets.c
