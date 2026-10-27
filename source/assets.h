@@ -72,6 +72,8 @@ extern const FurniDef furni_defs[];
 /** Definitions of the jukeboxes and Trax machines (room playlist, source/music.c). */
 extern const u16 music_machines[];
 extern const int music_machine_count;
+extern const u16 floor_switches[];
+extern const int floor_switch_count;
 extern const int furni_def_count;
 extern const CatPage cat_pages[];
 extern const int cat_page_count;

@@ -778,7 +778,7 @@ void item_draw(u64 now) {
       col++;
     }
     if (d->casino || d->kind == KIND_DICE || (d->flags & DEF_TELEPORTER) ||
-        (W.room_owner && !d->drink && (d->kind == KIND_TOGGLE || (d->kind == KIND_WALL && d->states > 1) || (d->flags & DEF_GATE)))) {
+        (W.room_owner && !d->drink && (d->kind == KIND_TOGGLE || floor_switch(it->def) || (d->kind == KIND_WALL && d->states > 1) || (d->flags & DEF_GATE)))) {
       bool rolling = d->kind == KIND_DICE && it->state == 7;
       const char *label = d->casino ? "Play" : d->kind == KIND_DICE ? (rolling ? "Rolling…" : "Roll") : (d->flags & DEF_TELEPORTER) ? "Join" : "Use";
       if (sk_button(NEXT_X, NEXT_Y, bw, label, !rolling)) send_use(it->id);

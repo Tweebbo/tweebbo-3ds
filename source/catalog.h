@@ -3,6 +3,8 @@
 #include "assets.h"
 
 const FurniDef *def_get(u16 id);
+/** Walkable furniture the room owner switches (dance floors, disco balls; server room.rs use_item). */
+bool floor_switch(u16 def);
 /** Closest available graphic rotation (catalogue.ts: normalizeRotation). */
 u8 def_rotation(u16 id, u8 rot);
 /** Width and depth in tiles for the rotation. */

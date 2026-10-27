@@ -678,6 +678,10 @@ def main():
     music = [d['id'] for d in defs if d.get('sprite', '').split('*')[0] in ('sound_machine', 'sound_machine_pro', 'ads_idol_trax', 'jukebox', 'jukebox_ptv')]
     w(f'const u16 music_machines[{max(1, len(music))}] = {{{", ".join(map(str, music)) or "0"}}};')
     w(f'const int music_machine_count = {len(music)};')
+    # Walkable furniture the room owner switches (server room.rs use_item): dance floors, disco balls.
+    switches = [d['id'] for d in defs if d['kind'] == 2 and d['states'] > 1 and 'custom_data_numeric_on_off' in d['flags']]
+    w(f'const u16 floor_switches[{max(1, len(switches))}] = {{{", ".join(map(str, switches)) or "0"}}};')
+    w(f'const int floor_switch_count = {len(switches)};')
     w(f'const FurniDef furni_defs[{len(defs)}] = {{')
     for d in defs:
         bits = 0

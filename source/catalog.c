@@ -11,6 +11,11 @@ const FurniDef *def_get(u16 id) {
   return NULL;
 }
 
+bool floor_switch(u16 def) {
+  for (int i = 0; i < floor_switch_count; i++) if (floor_switches[i] == def) return true;
+  return false;
+}
+
 u8 def_rotation(u16 id, u8 rot) {
   const FurniDef *d = def_get(id);
   rot &= 3;

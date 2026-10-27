@@ -274,7 +274,7 @@ static bool context_find(Context *c, u64 now) {
     else if (d->kind == KIND_DICE) verb = it->state >= 1 && it->state <= 6 ? "Roll the dice (Y closes it)" : "Roll the dice";
     else if (d->flags & DEF_TELEPORTER) verb = "Enter the teleporter";
     else if ((d->flags & DEF_GATE) && W.room_owner) verb = it->state ? "Close the gate" : "Open the gate";
-    else if (d->kind == KIND_TOGGLE && W.room_owner) verb = it->state ? "Switch off" : "Switch on";
+    else if ((d->kind == KIND_TOGGLE || floor_switch(it->def)) && W.room_owner) verb = d->states > 2 ? "Change state" : it->state ? "Switch off" : "Switch on";
     else if (d->flags & DEF_LAY) verb = "Lie down";
     else if (d->kind == KIND_SIT) verb = (me->flags & FLAG_SIT) && me->x == it->x && me->y == it->y ? NULL : seat_taken(it) ? NULL : "Sit";
     if (!verb) continue;
