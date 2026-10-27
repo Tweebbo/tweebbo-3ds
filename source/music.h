@@ -13,6 +13,8 @@ bool music_machine(u16 def);
 /** A music machine within reach: "Press A" opens the playlist. */
 bool music_context(char *label, int cap, u64 now);
 void music_draw(u64 now);
+/** The room has a Jukebox or Trax machine: the room panel offers its playlist even when silent. */
+bool music_in_room(void);
 /** One line for the room panel while music plays ("" when silent). */
 const char *music_now_playing(void);
 void music_exit(void);

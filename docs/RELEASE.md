@@ -2,6 +2,13 @@ Tweebbo for Nintendo 3DS: the same hotel as [tweebbo.lol](https://tweebbo.lol), 
 
 > Tweebbo is in development and may be unstable.
 
+**New in 1.3.2**
+- Pressing A next to a Jukebox or Trax machine opens the room playlist in every language; it opened the bar menu outside English.
+- The Playlist button is in the room panel whenever the room has a music machine, also while nothing is playing.
+- Longer notices wrap to two lines, so messages such as who can change the playlist are no longer cut off.
+
+Emulator checks passed for the room owner in English and Spanish and for a visitor without room rights.
+
 **New in 1.3.1**
 - Fixed pets that were invisible in rooms with three or more different coats. Each coat texture now holds only its own species, using a quarter of the memory, and the console frees cached furniture textures if a pet still does not fit.
 

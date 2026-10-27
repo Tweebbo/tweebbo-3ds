@@ -325,6 +325,17 @@ bool music_context(char *label, int cap, u64 now) {
   return false;
 }
 
+bool music_in_room(void) {
+  for (int i = 0; i < MAX_ITEMS; i++) {
+    const Item *it = &W.items[i];
+    if (!it->used || !music_machine(it->def)) continue;
+    // Opened from the room panel, commands go to the first machine unless one is already chosen.
+    if (!M.machine) M.machine = it->id;
+    return true;
+  }
+  return false;
+}
+
 static void command(const char *op, const char *extra) {
   if (!M.machine) return;
   char json[128];

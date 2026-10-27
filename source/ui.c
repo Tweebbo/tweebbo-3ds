@@ -179,7 +179,8 @@ bool ui_chat_blocked(u32 eid) {
 
 void ui_toast(const char *text, u64 now) {
   utf8_copy(U.toast, sizeof U.toast, text);
-  U.toast_until = now + 3500;
+  // Two-line notices (server refusals) need a little longer to read.
+  U.toast_until = now + (text_width(U.toast, 10.5f) > BOT_W - 24 ? 5500 : 3500);
 }
 
 void ui_notice(const char *text) { (void)text; build_notice(); }
@@ -554,7 +555,7 @@ static void panel_room(u64 now) {
 
   // Social accounts as quiet text in the bottom corners of the map, only where no floor is drawn
   // (the music and bar strip takes that row in its rooms).
-  if (!bar_room() && !music_now_playing()[0]) {
+  if (!bar_room() && !music_now_playing()[0] && !music_in_room()) {
     float sy = MM_Y + MM_H - 24;
     const float lw = 100, rw = 112;
     if (mm_corner_free(0, sy - 2, lw, 26)) {
@@ -583,10 +584,11 @@ static void panel_room(u64 now) {
   // The room's music and, in After Hours Bar, the bar.
   {
     const char *line = music_now_playing();
+    bool playlist = line[0] || music_in_room();
     float sy = BAR_Y - 48;
     if (line[0]) sk_text(line, 6, sy + 5, 9, 0xc9d3d8, 0, BOT_W - (bar_room() ? 160 : 92));
-    if (line[0] && sk_button(BOT_W - 82, sy, 78, TR("Playlist"), true)) ui_open(P_MUSIC);
-    if (bar_room() && sk_button(BOT_W - (line[0] ? 160 : 82), sy, 74, bar_holding() ? TR("Drink") : TR("Bar menu"), true)) ui_open(P_BAR);
+    if (playlist && sk_button(BOT_W - 82, sy, 78, TR("Playlist"), true)) ui_open(P_MUSIC);
+    if (bar_room() && sk_button(BOT_W - (playlist ? 160 : 82), sy, 74, bar_holding() ? TR("Drink") : TR("Bar menu"), true)) ui_open(P_BAR);
   }
   // Quick actions, like the room bar buttons on the web.
   Ent *me = world_ent(W.me);
@@ -1538,10 +1540,12 @@ bool ui_input(u32 down, u32 held, u64 now) {
   }
   if ((down & (KEY_L | KEY_R)) && U.panel != P_LOOK && U.panel != P_SHOP) scene_toggle_overview();
   char lido[64];
-  if (!window && (bar_context(lido, sizeof lido, now) || music_context(lido, sizeof lido, now))) {
-    // After Hours Bar's counter and bartender, and the room's Jukebox or Trax machine.
+  bool at_bar = !window && bar_context(lido, sizeof lido, now);
+  if (at_bar || (!window && music_context(lido, sizeof lido, now))) {
+    // After Hours Bar's counter and bartender, and the room's Jukebox or Trax machine. The label
+    // is translated, so which context matched decides the window, not its text.
     scene_prompt(lido);
-    if (down & KEY_A) ui_open(strcmp(lido, "Open the playlist") ? P_BAR : P_MUSIC);
+    if (down & KEY_A) ui_open(at_bar ? P_BAR : P_MUSIC);
     if (down & KEY_X) send_gesture(GESTURE_WAVE);
     if (down & KEY_Y) send_gesture(GESTURE_DANCE);
     if (down & KEY_B) send_gesture(GESTURE_SIT);
@@ -1707,13 +1711,17 @@ void ui_draw(u64 now) {
   header();
   toolbar();
   if (now < U.toast_until) {
-    char t[160];
-    snprintf(t, sizeof t, "%s", U.toast);
-    text_fit(t, 10.5f, BOT_W - 24);
-    float w = text_width(t, 10.5f) + 16;
-    fill_round((BOT_W - w) / 2 - 1, HEAD_H + 3, w + 2, 19, 5, sk_rgb(0x000000));
-    fill_round((BOT_W - w) / 2, HEAD_H + 4, w, 17, 4, sk_rgb(0xf2e6a5));
-    text_draw(t, BOT_W / 2, HEAD_H + 6, 10.5f, sk_rgb(0x1b1b1b), 1);
+    if (text_width(U.toast, 10.5f) <= BOT_W - 24) {
+      float w = text_width(U.toast, 10.5f) + 16;
+      fill_round((BOT_W - w) / 2 - 1, HEAD_H + 3, w + 2, 19, 5, sk_rgb(0x000000));
+      fill_round((BOT_W - w) / 2, HEAD_H + 4, w, 17, 4, sk_rgb(0xf2e6a5));
+      text_draw(U.toast, BOT_W / 2, HEAD_H + 6, 10.5f, sk_rgb(0x1b1b1b), 1);
+    } else {
+      // Longer notices wrap to two lines instead of losing their end ("…room rights ca").
+      fill_round(7, HEAD_H + 3, BOT_W - 14, 33, 5, sk_rgb(0x000000));
+      fill_round(8, HEAD_H + 4, BOT_W - 16, 31, 4, sk_rgb(0xf2e6a5));
+      sk_paragraph(U.toast, 14, HEAD_H + 6, BOT_W - 28, 10.5f, 0x1b1b1b, 2);
+    }
   }
   if (had_modal) { T = saved_touch; K = saved_keys; }
   else if (U.alert || U.confirm || update_modal_up) { memset(&T, 0, sizeof T); memset(&K, 0, sizeof K); }
