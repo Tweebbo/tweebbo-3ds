@@ -1,5 +1,7 @@
 # Tweebbo 3DS: notes for contributors
 
+Published 2026-10-27: Nintendo 3DS 1.3.3, with the Football catalogue and owner controls for walkable furniture lights in the furniture window and nearby action prompt. Public hotel: `prod-20261027-football`. See `../Tweebbo-football-release-20261027/deployment.json`. Hardware acceptance remains pending.
+
 Nintendo 3DS 1.3.1 (2026-10-26): pet textures are packed per species family by `tools/pack.py` (1024×256 RGBA8 each instead of 1024×1024 with every species), and `pet_texture` in `source/gfx.c` releases the furniture cache and retries like the atlas pages. The server allows five pets per room; keep every pet texture small enough that five coats load together on Old 3DS.
 
 Published on 2026-10-25 (local date): browser build 18 on `prod-20261025-games`, Nintendo 3DS 1.3.0, Switch 1.4.0 and Vita 1.4.0. The owner explicitly authorized the public release and player update notice. The web baseline was the live `prod-20261023-effects`, with existing effects, friends feedback, builders and payments preserved. Nintendo DS remains deferred. Physical-device acceptance is still separate from host/emulator verification. See `../Tweebbo-Vercel/docs/games-expansion/PUBLICATION.md` and `../Tweebbo-Hetzner/README.md` for publication evidence and rollback. Historical unpublished-candidate notes below describe earlier stages.
