@@ -1308,7 +1308,7 @@ typedef struct { Panel panel; const char *label, *icon; } Tool;
 static const Tool TOOLS[] = {
   {P_ME, "Me", NULL}, {P_NAV, "Rooms", "building_icon@24"}, {P_SHOP, "Shop", "brochure_icon@24"},
   {P_HAND, "Hand", "hand_icon@26"}, {P_FRIENDS, "Friends", "mes_lite_icon@24"}, {P_CHAT, "Chat", NULL},
-  {P_SETTINGS, "Help", "help_icon@24"},
+  {P_MORE, "More", "help_icon@24"},
 };
 
 static void toolbar(void) {
@@ -1697,6 +1697,22 @@ void ui_draw(u64 now) {
     case P_FRIENDS: friends_draw(now); break;
     case P_CHAT: panel_chat(now); break;
     case P_SETTINGS: panel_settings(now); break;
+    case P_MORE:
+      if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,TR("More"))){ui_close();break;}
+      sk_content(IN_X,IN_Y,IN_W,IN_H);
+      if(sk_button(IN_X+5,IN_Y+8,IN_W-10,TR("GoPenguin is available!"),true))ui_open(P_GOPENGUIN);
+      if(sk_button(IN_X+5,IN_Y+42,IN_W-10,TR("Help & connection"),true))ui_open(P_SETTINGS);
+      if(sk_button(IN_X+5,IN_Y+76,IN_W-10,TR("Games"),true))ui_open(P_GAMES);
+      if(sk_button(IN_X+5,IN_Y+110,IN_W-10,TR("Pets"),true))ui_open(P_PETS);
+      break;
+    case P_GOPENGUIN:
+      if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,"GoPenguin")){ui_open(P_MORE);break;}
+      sk_content(IN_X,IN_Y,IN_W,IN_H);
+      sk_paragraph(TR("GoPenguin is available! Explore the island on your computer or phone."),IN_X+6,IN_Y+10,IN_W-12,11,SK_TEXT,4);
+      sk_text("gopenguin.lol",IN_X+IN_W/2,IN_Y+65,16,SK_TEXT,1,IN_W-12);
+      sk_paragraph(TR("Tweebbo stays right here. Your hotel character and belongings are kept."),IN_X+6,IN_Y+95,IN_W-12,10,SK_TEXT,3);
+      if(sk_button(IN_X+6,IN_Y+133,IN_W-12,TR("Back"),true))ui_open(P_MORE);
+      break;
     case P_LOOK: panel_look(now); break;
     case P_ITEM: item_draw(now); break;
     case P_ENT: panel_ent(now); break;
