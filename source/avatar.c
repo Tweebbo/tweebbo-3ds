@@ -194,7 +194,8 @@ static const PeopleSprite *pose_sprite(char prefix, const char *action, int part
   snprintf(name, sizeof name, "%c_%s_%s_%s_%d_%d", prefix, action, PART[part], model, d, f);
   const PeopleSprite *s = find_sprite(name);
   if (!s) { snprintf(name, sizeof name, "%c_%s_%s_%s_%d_0", prefix, action, PART[part], model, d); s = find_sprite(name); }
-  if (!s) { snprintf(name, sizeof name, "%c_%s_%s_%s_%d_0", prefix, lay ? "lay" : "std", PART[part], model, d); s = find_sprite(name); }
+  bool raised_sleeve=(part==LC||part==RC)&&(!strcmp(action,"crr")||!strcmp(action,"drk")||!strcmp(action,"wav"));
+  if (!s && !raised_sleeve) { snprintf(name, sizeof name, "%c_%s_%s_%s_%d_0", prefix, lay ? "lay" : "std", PART[part], model, d); s = find_sprite(name); }
   return s;
 }
 
@@ -330,7 +331,7 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
     }
     if ((expr & EXPR_TALK) && (part == HD || part == FC || part == HR)) { action = lay ? "lsp" : "spk"; f = frame & 1; }
     if (!lay && (expr & EXPR_BLINK) && part == EY) { action = "eyb"; f = 0; }
-    if (drink && !lay && (part == RI || part == RH || part == RS)) { action = sip ? "drk" : "crr"; f = 0; }
+    if (drink && !lay && (part == RI || part == RH || part == RS || part == RC)) { action = sip ? "drk" : "crr"; f = 0; }
     if (bathing && !head && part != LH && part != BD && part != RH) {
       // Swimwear: the original "Mini shorts" (lg 2027) as trunks, plus the plain torso (ch 001)
       // in the same colour for a women's one-piece.

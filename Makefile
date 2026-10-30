@@ -56,7 +56,7 @@ CFLAGS   += -DDEFAULT_SERVER='"$(TWEEBBO_SERVER)"'
 endif
 ASFLAGS  := -g $(ARCH)
 LDFLAGS   = -specs=3dsx.specs -g $(ARCH) -Wl,-Map,$(notdir $*.map)
-LIBS     := -lcitro2d -lcitro3d -ljansson -lmbedtls -lmbedx509 -lmbedcrypto -lctru -lm
+LIBS     := -lcitro2d -lcitro3d -ljansson -lmbedtls -lmbedx509 -lmbedcrypto -lctru -lm -lz
 LIBDIRS  := $(PORTLIBS) $(CTRULIB)
 
 ifneq ($(BUILD),$(notdir $(CURDIR)))

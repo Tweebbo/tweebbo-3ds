@@ -91,13 +91,19 @@ json.dump({
     'sha256': sha('tweebbo.cia'),
     '3dsx': f'{url}/releases/download/{tag}/tweebbo.3dsx',
     '3dsx_sha256': sha('tweebbo.3dsx'),
+    '3dsx_size': os.path.getsize(os.path.join(rel, 'tweebbo.3dsx')),
     'notes': notes,
 }, open(os.path.join(rel, 'latest.json'), 'w'), indent=1)
 PY
+    PATCH_ASSETS=()
+    if [ -n "${INCREMENTAL_BASE:-}" ]; then
+      python3 tools/prepare-incremental.py --manifest "$REL/latest.json" --base "$INCREMENTAL_BASE" --app tweebbo --repository "$REPO" --title-id 0004000007EBB000
+      for patch in "$REL"/*.tupd; do if [ -f "$patch" ]; then PATCH_ASSETS+=("$patch"); fi; done
+    fi
     node tools/export/qr.mjs "$URL/releases/latest/download/tweebbo.cia" $REL/qr.png
     cp $REL/qr.png docs/download-qr.png
     GH=${GH:-$(command -v gh || echo ~/.local/bin/gh)}
-    $GH release create "$TAG" $REL/tweebbo.cia $REL/tweebbo.3dsx $REL/latest.json $REL/qr.png \
+    $GH release create "$TAG" $REL/tweebbo.cia $REL/tweebbo.3dsx $REL/latest.json $REL/qr.png "${PATCH_ASSETS[@]}" \
       --repo $REPO --title "Tweebbo for Nintendo 3DS $VERSION" --notes-file "${NOTES_FILE:-docs/RELEASE.md}" --latest
     echo "Published $TAG at $URL/releases/tag/$TAG"
     exit 0

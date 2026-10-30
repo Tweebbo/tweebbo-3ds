@@ -2,7 +2,23 @@ SRC := ../source
 CFLAGS := -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wno-format-truncation -I$(SRC)
 OBJS := $(SRC)/proto.c $(SRC)/path.c $(SRC)/sim.c $(SRC)/world.c $(SRC)/catalog.c $(SRC)/gen/assets.c
 
-all: host_test door_test anim_test protocol_test
+all: host_test door_test anim_test protocol_test power lookup-cache
+
+power: power_test http_idle_test
+
+power_test: power.c $(SRC)/frame_pacing.h $(SRC)/world_activity.h $(SRC)/world.c
+	cc $(CFLAGS) -ffunction-sections -fdata-sections -o $@ power.c $(SRC)/world.c -Wl,--gc-sections -lm
+	./power_test
+
+http_idle_test: http-idle.c $(SRC)/net.c $(SRC)/job_signal.h
+	cc $(CFLAGS) -pthread -ffunction-sections -fdata-sections -o $@ http-idle.c -Wl,--gc-sections -lm
+	./http_idle_test
+.PHONY: power
+
+lookup-cache: lookup-cache.c $(SRC)/world.c $(SRC)/lookup_cache.h
+	cc $(CFLAGS) -O2 -ffunction-sections -fdata-sections -o lookup-cache-test lookup-cache.c $(SRC)/world.c -Wl,--gc-sections -lm
+	./lookup-cache-test
+.PHONY: lookup-cache
 
 download_test: download_test.c $(SRC)/download.c $(SRC)/ws.c $(SRC)/conn.c
 	cc $(CFLAGS) -DNO_TLS -pthread -o $@ $^

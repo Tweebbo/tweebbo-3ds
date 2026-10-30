@@ -32,3 +32,10 @@ bool update_restart(void);
 int version_cmp(const char *a, const char *b);
 /** Path of the running .3dsx (empty for the installed CIA). */
 void update_set_launch_path(const char *argv0);
+
+/** User-visible update phase and chosen network transfer size. */
+const char *update_status(void);
+bool update_small(void);
+bool update_full_fallback(void);
+long update_download_bytes(void);
+long update_full_bytes(void);

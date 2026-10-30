@@ -63,6 +63,7 @@ void store_save(const char *key, const char *value);
 // Shortcuts for client messages.
 void send_walk(int x, int y);
 void send_chat(const char *text);
+void typing_input(const char *text);
 void send_gesture(int kind);
 void send_use(u32 item);
 /** USE with an operation: 1 closes a die (Kepler DICE_OFF; servers since 2026-10-18). */

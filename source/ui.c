@@ -215,12 +215,14 @@ void ui_name_changed(u32 eid) {
 
 // ---------------------------------------------------------------- actions
 
-static void chat_done(const char *text, void *ctx) { (void)ctx; build_stack_command(text); send_chat(text); }
+static bool chat_typing;
+static void chat_done(const char *text, void *ctx) { (void)ctx; typing_input(NULL);chat_typing=false;build_stack_command(text); send_chat(text); }
 static void unlock_done(const char *text, void *ctx) { (void)ctx; net_unlock(text); }
 
 static void talk(void) {
   // Touch keyboard: the room keeps moving on the top screen while you type.
   osk_open(TR("Say something… (START: send)"), NULL, 100, chat_done, NULL);
+  chat_typing=true;
 }
 
 static void rename_done(const char *text, void *ctx) { (void)ctx; if (strcmp(text, W.name)) send_name(text); }
@@ -1353,6 +1355,12 @@ static void toolbar(void) {
 
 static bool quit_requested, update_dismissed;
 
+bool ui_animation_active(u64 now) {
+  UpdateState s = update_state();
+  return U.panel != P_ROOM || U.alert || U.confirm || osk_active() ||
+    U.toast_until > now || s == UPD_AVAILABLE || s == UPD_DOWNLOADING || s == UPD_INSTALLED;
+}
+
 /** Update prompt, download progress and restart. Returns true when it covers the screen. */
 static bool update_modal(void) {
   UpdateState st = update_state();
@@ -1369,7 +1377,10 @@ static bool update_modal(void) {
     bool close = sk_window(x, y, w, h, TR("Update not installed"));
     sk_content(x + 5, y + TITLE_H + 2, w - 10, h - TITLE_H - 7);
     sk_paragraph(update_error(), x + 12, y + TITLE_H + 7, w - 24, 10, SK_TEXT, 5);
-    if (close || sk_button(x + w / 2 - 40, y + h - 27, 80, TR("OK"), true) || K.a || K.b) failure_seen = true;
+    if(update_full_fallback()) {
+      if(close||sk_button(x+12,y+h-27,110,TR("Later"),true)||K.b)failure_seen=true;
+      else if(sk_button(x+144,y+h-27,124,TR("Full download"),true)||K.a){failure_seen=true;update_start();}
+    }else if (close || sk_button(x + w / 2 - 40, y + h - 27, 80, TR("OK"), true) || K.a || K.b) failure_seen = true;
     return true;
   }
   if (!(st == UPD_AVAILABLE && !update_dismissed) && st != UPD_DOWNLOADING && st != UPD_INSTALLED) return false;
@@ -1384,14 +1395,16 @@ static bool update_modal(void) {
     char line[96];
     snprintf(line, sizeof line, TR("Version %s is ready."), update_version());
     sk_text(line, ix, iy, 11, SK_TEXT, 0, iw);
-    snprintf(line, sizeof line, TR("You have %s."), update_current());
+    if(update_small()&&update_full_bytes()>0)snprintf(line,sizeof line,TR("Download: %.1f MB (full: %.1f MB)"),update_download_bytes()/1000000.0,update_full_bytes()/1000000.0);
+    else if(update_download_bytes()>0)snprintf(line,sizeof line,TR("Download: %.1f MB"),update_download_bytes()/1000000.0);
+    else snprintf(line, sizeof line, TR("You have %s."), update_current());
     sk_text(line, ix, iy + 15, 10, SK_DIM, 0, iw);
     sk_paragraph(update_notes()[0] ? update_notes() : TR("Your character and rooms stay the same."), ix, iy + 31, iw, 10, SK_DIM, 3);
     float bw = (iw - 8) / 2;
     if (close || sk_button(ix, y + h - 27, bw, TR("Later"), true) || K.b) update_dismissed = true;
-    else if (sk_button(ix + bw + 8, y + h - 27, bw, TR("Update now"), true) || K.a) update_start();
+    else if (sk_button(ix + bw + 8, y + h - 27, bw, TR(update_full_fallback()?"Full download":update_small()?"Small update":"Update now"), true) || K.a) update_start();
   } else if (st == UPD_DOWNLOADING) {
-    sk_text(TR("Downloading and installing…"), ix, iy, 11, SK_TEXT, 0, iw);
+    sk_text(TR(update_status()[0]?update_status():"Downloading and installing…"), ix, iy, 11, SK_TEXT, 0, iw);
     float p = update_progress();
     fill_round(ix, iy + 26, iw, 14, 4, sk_rgb(0xcfcfcf));
     fill_round(ix, iy + 26, iw * (p > 1 ? 1 : p), 14, 4, sk_rgb(SK_GO));
@@ -1484,7 +1497,7 @@ static u32 down_keys, held_keys;
 bool ui_input(u32 down, u32 held, u64 now) {
   if(down)net_activity();
   // START quits, except while the touch keyboard is open: there it sends the text.
-  if (((down & KEY_START) && !osk_active()) || quit_requested) return false;
+  if (((down & KEY_START) && !osk_active() && update_state()!=UPD_DOWNLOADING) || quit_requested) return false;
   scene_prompt(NULL);
   // Stylus: touch, drag, and a "click" when lifted without dragging.
   touchPosition tp;
@@ -1515,10 +1528,12 @@ bool ui_input(u32 down, u32 held, u64 now) {
   }
   if (osk_active()) {
     osk_input(down, held, now);
+    typing_input(chat_typing?osk_text():NULL);
     // The Circle Pad still walks while typing.
     if (W.in_room && U.panel != P_FASTFOOD && U.panel != P_SNOW && U.panel != P_CASINO && U.panel != P_GAME) stick_walk(held, false, now);
     return true;
   }
+  typing_input(NULL);chat_typing=false;
   if (net_state() == NET_LOCKED || net_state() == NET_FULL || net_state() == NET_DENIED) return true;
   if (net_state() == NET_REPLACED) {
     if (down & KEY_A) net_resume();

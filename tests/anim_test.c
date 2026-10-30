@@ -106,6 +106,25 @@ int main(void) {
     assert(tracked_drawn);glasses_y[frame]=tracked_y;
   }
   assert(glasses_y[1]==glasses_y[0]-1);tracked=NULL;
+  int sleeves=0;
+  for(int top=0;top<wardrobe_tops_count;top++) {
+    const char *layer=wardrobe_tops[top].layers?strstr(wardrobe_tops[top].layers,"rc:"):NULL;
+    if(!layer)continue;
+    char model[16];int len=0;layer+=3;
+    while(layer[len]&&layer[len]!=':'&&len<15){model[len]=layer[len];len++;}model[len]=0;
+    later.shirt_style=top;test_look=look_encode(&later);
+    for(int sip=0;sip<2;sip++)for(int dir=0;dir<8;dir++) {
+      char name[64];snprintf(name,sizeof name,"x_%s_rc_%s_%d_0",sip?"drk":"crr",model,(int[]){0,1,2,3,2,1,0,7}[dir]);
+      tracked=NULL;
+      for(int i=0;i<people_sprite_count;i++)if(!strcmp(people_sprites[i].name,name)){tracked=&people_sprites[i];break;}
+      if(!tracked)continue;
+      for(int pose=POSE_STD;pose<=POSE_SIT;pose++) {
+        tracked_drawn=false;avatar_draw(test_look,dir,pose,0,0,dir,8,sip,0,0,1,255);
+        assert(tracked_drawn);sleeves++;
+      }
+    }
+  }
+  assert(sleeves>0);printf("Raised coat sleeves: %d carrying/sipping poses passed.\n",sleeves);tracked=NULL;
   for (int skin=1; skin<=7; skin++) {
     test_look = (u64)skin << 48;
     for (int pose=POSE_STD; pose<=POSE_DANCE; pose++) for (int dir=0; dir<8; dir++) {

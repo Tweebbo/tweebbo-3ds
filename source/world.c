@@ -1,4 +1,5 @@
 #include "world.h"
+#include "lookup_cache.h"
 #include "catalog.h"
 #include "proto.h"
 #include <math.h>
@@ -7,13 +8,16 @@
 #include <string.h>
 
 World W;
+static LookupCache entity_lookup;
 
 bool world_tile(int x, int y) {
   return x >= 0 && y >= 0 && x < W.w && y < W.h && W.rows[y * W.w + x] != 'x';
 }
 
 Ent *world_ent(u32 id) {
-  for (int i = 0; i < MAX_ENTS; i++) if (W.ents[i].used && W.ents[i].id == id) return &W.ents[i];
+  int cached=lookup_cache_get(&entity_lookup,id);
+  if(cached>=0&&cached<MAX_ENTS&&W.ents[cached].used&&W.ents[cached].id==id)return &W.ents[cached];
+  for (int i = 0; i < MAX_ENTS; i++) if (W.ents[i].used && W.ents[i].id == id) {lookup_cache_put(&entity_lookup,id,(unsigned)i);return &W.ents[i];}
   return NULL;
 }
 
@@ -201,6 +205,12 @@ void world_handle(const u8 *data, int len) {
     case S_ENTITY_REMOVE: {
       Ent *e = world_ent((u32)r_var(&r));
       if (e) e->used = false;
+      break;
+    }
+    case S_TYPING: {
+      Ent *e=world_ent((u32)r_var(&r));
+      u8 active=r_u8(&r);
+      if(e&&!r.err)e->typing_until=active?now+8000:0;
       break;
     }
     case S_ACTION:

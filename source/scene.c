@@ -11,6 +11,7 @@
 #include "bar.h"
 #include "proto.h"
 #include "world.h"
+#include "world_activity.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -63,6 +64,12 @@ static u32 rgba(u32 rgb, u8 a) { return C2D_Color32(rgb >> 16 & 255, rgb >> 8 & 
 void scene_select(u32 eid) { V.selected = eid; }
 u32 scene_selected(void) { return V.selected; }
 bool scene_overview(void) { return V.overview; }
+
+bool scene_animation_active(u64 now) {
+  if (world_animation_active(now) || pool_room() || !V.snapped || G.on) return true;
+  for (int i = 0; i < BUBBLE_MAX; i++) if (V.chat[i].used) return true;
+  return false;
+}
 
 bool scene_water_tile(int x, int y) {
   if (!V.scene || V.scene->water < 0 || x < 0 || y < 0 || x >= W.w || y >= W.h) return false;
@@ -707,14 +714,24 @@ void scene_draw(u64 now) {
       text_draw(e->name, x, y + 1, 11, C2D_Color32(255, 255, 255, 255), 1);
     }
     float raise = 0;
+    if(now<e->typing_until) {
+      PoseInfo p=pose_of(e,now,ent_moving(e,now));
+      float k=V.zoom<1?1:V.zoom;
+      float bx=scr_x(sx+p.dx),by=scr_y(sy+HALF_H+p.dy-p.anchor_y+8-p.lift);
+      fill_rect(bx-13*k,by-16*k,26*k,14*k,rgba(0x202020,255));
+      fill_rect(bx-12*k,by-15*k,24*k,12*k,rgba(0xffffff,255));
+      for(int dot=-1;dot<=1;dot++)fill_rect(bx+(dot*6-1)*k,by-10*k,2*k,2*k,rgba(0x202020,255));
+      fill_rect(bx-3*k,by-3*k,k,3*k,rgba(0x202020,255));
+      raise=28*k;
+    }
     if (appearance(e) & AV_FOUNDER) {
       PoseInfo p = pose_of(e, now, ent_moving(e, now));
-      float bx = scr_x(sx + p.dx), by = scr_y(sy + HALF_H + p.dy - p.anchor_y + 11 - p.lift);
+      float bx = scr_x(sx + p.dx), by = scr_y(sy + HALF_H + p.dy - p.anchor_y + 11 - p.lift)-raise;
       float width = text_width(TR("OWNER"), 10) + 10;
       fill_rect(bx - width / 2, by - 15, width, 15, rgba(0xdfb54d, 255));
       fill_rect(bx - width / 2 + 1, by - 14, width - 2, 13, rgba(0x26373a, 255));
       text_draw(TR("OWNER"), bx, by - 15, 10, rgba(0xffe3a0, 255), 1);
-      raise = 16;
+      raise += 16;
     }
     int device = e->device ? e->device : (e->flags & FLAG_3DS ? DEVICE_3DS : 0);
     if (device) {

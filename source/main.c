@@ -23,6 +23,7 @@
 #include "pool.h"
 #include "bar.h"
 #include "music.h"
+#include "frame_pacing.h"
 
 #define PROFILE DATA_DIR "/profile.txt"
 
@@ -193,6 +194,7 @@ int main(int argc, char **argv) {
   showcase_start(now_ms());
 #endif
 
+  FramePacing pacing = {0};
   while (aptMainLoop()) {
     hidScanInput();
     u64 now = now_ms();
@@ -226,6 +228,12 @@ int main(int argc, char **argv) {
     fastfood_update(now);
     battle_update(now);
     tw_language_update();
+    bool active = hidKeysHeld() || hidKeysDown() || hidKeysUp() ||
+      ui_animation_active(now) || scene_animation_active(now) || fastfood_active() || battle_active();
+    if (!frame_pacing_draw(&pacing, now, active)) {
+      C3D_FrameSync();
+      continue;
+    }
     gfx_frame();
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
     snow_frame(now);

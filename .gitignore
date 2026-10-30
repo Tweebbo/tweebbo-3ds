@@ -21,6 +21,9 @@ tests/input-latency
 tests/snow_host
 __pycache__/
 obj-showcase/
+tests/http_idle_test
+tests/power_test
+tests/lookup-cache-test
 
 .env*
 *.key

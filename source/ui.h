@@ -21,6 +21,7 @@ void ui_name_changed(u32 eid);
 /** Handles buttons, pad and touch. Returns false when the player wants to quit. */
 bool ui_input(u32 down, u32 held, u64 now);
 void ui_draw(u64 now);
+bool ui_animation_active(u64 now);
 /** Off-screen work before the bottom screen is drawn (the minimap cache); call outside any scene. */
 void ui_prerender(void);
 /** Top-screen layer of the interface (the update offer). */

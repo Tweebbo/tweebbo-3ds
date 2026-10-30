@@ -4,6 +4,8 @@
 
 The native client uses C, libctru, citro2d and mbedTLS. Read [AGENTS.md](../AGENTS.md) before contributing. Host and emulator checks do not replace physical-console validation.
 
+The unpublished [native power work](POWER.md) covers idle rendering and HTTP worker waits on 3DS, Switch and Vita, with a hardware battery comparison procedure.
+
 ## Build
 
 Requirements: Podman, Node 22, Python 3 with Pillow, Google Chrome for graphics export and a checkout of the Tweebbo web edition, selected with `TWEEBBO_WEB`.
@@ -68,6 +70,11 @@ The cross-play demo cycles the five brand models, gestures and movement in a sha
 | `gen/` | Generated assets and tables |
 
 ## Release publishing
+
+The updater supports optional incremental downloads and validated lookup
+caches. See [Incremental updates and Old 3DS work](INCREMENTAL-UPDATES.md) for
+compatibility, publication and tests; player notes are in
+[RELEASE.md](RELEASE.md).
 
 After the release checks and authorization, build the public artifacts without a LAN server override. `NOTES="..." ./build.sh release` uploads the CIA, 3DSX, `latest.json` and download QR code to GitHub. It reads the release body from `docs/RELEASE.md` (`NOTES_FILE` overrides it) and refuses a CIA containing a local-server address.
 

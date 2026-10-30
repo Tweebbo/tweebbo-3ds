@@ -20,7 +20,7 @@ typedef struct {
   u16 z;
   /** Origin of the current step, interpolated over MOVE_MS. */
   float fx, fy, fz;
-  u64 t0, talk_until, drink_until;
+  u64 t0, talk_until, drink_until, typing_until;
   s8 move_dir;
   u8 drink;
   /** Expression and dance style from the server's ACTION (4 kiss, 5 laugh, 6 sleep, 7 thumb up,

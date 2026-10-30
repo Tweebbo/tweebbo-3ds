@@ -8,6 +8,7 @@
 void scene_room_changed(u64 now);
 void scene_chat(u32 eid, const char *text, u64 now);
 void scene_draw(u64 now);
+bool scene_animation_active(u64 now);
 /** Toggles between 1:1 following the avatar and the overview. */
 void scene_toggle_overview(void);
 bool scene_overview(void);

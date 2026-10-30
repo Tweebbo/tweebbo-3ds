@@ -1,4 +1,5 @@
 #include "gfx.h"
+#include "lookup_cache.h"
 #include "language.h"
 #include <math.h>
 #include <stdio.h>
@@ -41,6 +42,7 @@ static unsigned snow_loaded;
 /** Adjusted in gfx_init to the free linear memory (Old 3DS has much less). */
 static u32 furni_budget = 8u * 1024 * 1024;
 static struct { u16 def; u8 page; bool loaded, failed; C3D_Tex tex; u32 used, retry; } furni[FURNI_SLOTS];
+static LookupCache furniture_lookup;
 static u32 frame_no, furni_bytes;
 // Anti-thrash: a texture drawn in the last FURNI_KEEP_FRAMES frames is never evicted to make
 // room for another one (the newcomer waits and retries instead), and at most
@@ -116,6 +118,11 @@ static void furni_evict(int i) {
 }
 
 static C3D_Tex *furni_tex(u16 def, u8 page) {
+  u32 key=((u32)def<<8)|page;int cached=lookup_cache_get(&furniture_lookup,key);
+  if(cached>=0&&cached<FURNI_SLOTS&&furni[cached].def==def&&furni[cached].page==page){
+    if(furni[cached].loaded){furni[cached].used=frame_no;return &furni[cached].tex;}
+    if(furni[cached].failed&&frame_no<furni[cached].retry)return NULL;
+  }
   u32 bytes = 0;
   int lo = 0, hi = furni_texture_count - 1;
   while (lo <= hi) {
@@ -146,6 +153,7 @@ static C3D_Tex *furni_tex(u16 def, u8 page) {
   }
   furni[slot].def = def;
   furni[slot].page = page;
+  lookup_cache_put(&furniture_lookup,key,(unsigned)slot);
   furni[slot].used = frame_no;
   furni[slot].failed = false;
   if (furni_bytes + bytes > furni_budget || linearSpaceFree() < bytes + 1024u * 1024) {

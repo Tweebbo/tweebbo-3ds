@@ -90,6 +90,7 @@ void osk_open_secret(const char *title, int max_chars, OskDone done, void *ctx) 
 }
 
 bool osk_active(void) { return O.active; }
+const char *osk_text(void) { return O.active?O.text:NULL; }
 void osk_cancel(void) { if (O.active) finish(false); }
 
 bool osk_input(u32 down, u32 held, u64 now) {

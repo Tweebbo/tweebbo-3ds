@@ -7,6 +7,7 @@ void osk_open(const char *title, const char *initial, int max_chars, OskDone don
 /** Same keyboard for passwords: the field shows asterisks. */
 void osk_open_secret(const char *title, int max_chars, OskDone done, void *ctx);
 bool osk_active(void);
+const char *osk_text(void);
 void osk_cancel(void);
 /** Buttons while the keyboard is open (returns true when it consumed them). */
 bool osk_input(u32 down, u32 held, u64 now);

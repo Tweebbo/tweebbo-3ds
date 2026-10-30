@@ -233,8 +233,19 @@ bool casino_top(u64 now) {
   if(C.kind==BLACKJACK) {
     char label[80];snprintf(label,sizeof label,TR("Dealer: %d"),number(C.state,"dealerTotal"));text_draw(label,16,28,11,sk_rgb(0xffffff),0);
     cards(json_object_get(C.state,"dealer"),2,110,30,24);
-    snprintf(label,sizeof label,TR("You: %d"),number(C.state,"total"));text_draw(label,16,132,11,sk_rgb(0xffffff),0);
-    cards(json_object_get(C.state,"player"),2,110,132,24);
+    json_t *hands=json_object_get(C.state,"hands");
+    if(json_array_size(hands)>1) {
+      for(int i=0;i<2;i++) {
+        json_t *side=json_array_get(hands,i);
+        bool active=!string(C.state,"result")[0]&&number(C.state,"activeHand")==i;
+        snprintf(label,sizeof label,TR("Hand %d: %d"),i+1,number(side,"total"));
+        text_draw(label,16+i*200,116,11,sk_rgb(active?0xf2d27a:0xffffff),0);
+        cards(json_object_get(side,"player"),2,16+i*200,134,12);
+      }
+    } else {
+      snprintf(label,sizeof label,TR("You: %d"),number(C.state,"total"));text_draw(label,16,132,11,sk_rgb(0xffffff),0);
+      cards(json_object_get(C.state,"player"),2,110,132,24);
+    }
     text_draw(TR("Blackjack pays 3:2. Dealer stands on 17."),200,218,11,sk_rgb(0xf2d27a),1);
   } else if(C.kind==POKER) {
     text_draw(TR("Dealer"),12,36,11,sk_rgb(0xffffff),0);cards(json_object_get(C.state,"dealer"),2,85,27,53);
@@ -359,10 +370,14 @@ void casino_draw(u64 now) {
       else if(sk_button(113,143,85,C.kind==BLACKJACK?TR("Stand (X)"):TR("Fold (X)"),ready)||(K.x&&ready))action(C.kind==BLACKJACK?6:13,0,0,0,now);
       else {bool can=ready&&json_array_size(json_object_get(C.state,"player"))==2&&W.credits>=(u32)number(C.state,"bet");
         if(C.kind==BLACKJACK&&(sk_button(206,143,94,TR("Double (Y)"),can)||(K.y&&can)))action(7,0,0,0,now);}
+      if(C.kind==BLACKJACK) {
+        bool can=ready&&json_is_true(json_object_get(C.state,"canSplit"))&&W.credits>=(u32)number(C.state,"bet");
+        if(sk_button(20,174,190,TR("Split (Down)"),can)||(K.dn&&can))action(20,0,0,0,now);
+      }
     }else{
       snprintf(line,sizeof line,C.state?TR("Result: %s. Paid: %d credits."):TR("Choose your bet, then deal."),string(C.state,"result"),number(C.state,"win"));
       bool can=ready&&W.credits>=(u32)C.bet;
-      if(sk_button_big(20,169,190,TR("Deal (A)"),can)||(K.a&&can))action(C.kind==BLACKJACK?4:11,C.bet,0,0,now);
+      if(sk_button_big(20,169,190,C.kind==BLACKJACK&&C.state?TR("Deal again (A)"):TR("Deal (A)"),can)||(K.a&&can))action(C.kind==BLACKJACK?4:11,C.bet,0,0,now);
     }
   } else if(C.kind==VIDEO) {
     for(int i=0;i<5;i++){char b[16];snprintf(b,sizeof b,(C.held>>i)&1?TR("Held %d"):TR("Hold %d"),i+1);if(sk_button(12+i*60,86,56,b,playing&&ready))C.held^=1<<i;}

@@ -30,6 +30,11 @@ int main(void) {
     world_handle(w.buf, w.len);
   }
   assert(world_ent(120) && world_ent(120)->look == ((1ull << 41) | 0x12345));
+  w_begin(&w,S_TYPING);w_var(&w,120);w_u8(&w,1);world_handle(w.buf,w.len);
+  assert(world_ent(120)->typing_until==9000);
+  world_handle(w.buf,w.len-1);assert(world_ent(120)->typing_until==9000);
+  w_begin(&w,S_TYPING);w_var(&w,120);w_u8(&w,0);world_handle(w.buf,w.len);
+  assert(world_ent(120)->typing_until==0);
   w_begin(&w, S_FINISH); w_str(&w, "101"); w_str(&w, "201"); world_handle(w.buf, w.len);
   assert(!strcmp(W.wall, "101") && !strcmp(W.floor, "201"));
   w_begin(&w, S_OWNER_IDENTITY); w_str(&w, "{\"visible\":[{\"guest\":1001,\"presence\":true}],\"self\":null}"); world_handle(w.buf, w.len);
