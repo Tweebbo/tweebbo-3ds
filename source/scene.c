@@ -33,7 +33,7 @@ typedef struct {
   bool used;
   char name[24], text[104];
   u32 color;
-  float wx, head_wy, y;
+  float wx, mouth_wy, y;
   int row;
   u64 t0;
 } Bubble;
@@ -499,7 +499,7 @@ static void draw_bubbles(u64 now) {
     // Dot rising from the head to the new bubble.
     float t = (now - b->t0) / 220.0f;
     if (t < 1) {
-      float hy = scr_y(b->head_wy);
+      float hy = scr_y(b->mouth_wy);
       C2D_DrawCircleSolid(cx, hy + (b->y - hy) * t, 0.5f, 3.5f, rgba(b->color, 255));
     }
     char name[32], text[112];
@@ -546,8 +546,9 @@ static void bubble_add(u32 eid, const char *text, u64 now) {
   snprintf(b->name, sizeof b->name, "%s", e->name);
   snprintf(b->text, sizeof b->text, "%s", text);
   b->color = c;
-  b->wx = wx;
-  b->head_wy = wy + HALF_H - 70 - ent_height(e, now);
+  PoseInfo p=pose_of(e,now,ent_moving(e,now));
+  b->wx = wx+p.dx;
+  b->mouth_wy = wy + HALF_H + p.dy - p.anchor_y + 42 - p.lift;
   b->y = NAN;
   b->t0 = now;
   V.last_shift = now;
@@ -703,31 +704,36 @@ void scene_draw(u64 now) {
   // Wobble Squabble on the pole, the countdown, the diver and the splashes.
   pool_draw_room(now);
 
-  // Name of the selected avatar and an arrow over your own on arrival.
-  for (int i = 0; i < MAX_ENTS; i++) {
+  // Paint typing after every badge so a nearby player's marker cannot hide the dots.
+  for(int pass=0;pass<2;pass++) for (int i = 0; i < MAX_ENTS; i++) {
     const Ent *e = &W.ents[i];
     if (!e->used) continue;
     float px, py, sx, sy;
     ent_pos(e, now, &px, &py);
     iso(px, py, &sx, &sy);
-    if (e->id == V.selected) {
+    if (pass==0 && e->id == V.selected) {
       float w = text_width(e->name, 11) + 10, x = scr_x(sx), y = scr_y(sy + HALF_H) + 6;
       fill_round(x - w / 2, y, w, 15, 4, C2D_Color32(0, 0, 0, 190));
       text_draw(e->name, x, y + 1, 11, C2D_Color32(255, 255, 255, 255), 1);
     }
     float raise = 0;
-    if(now<e->typing_until) {
+    if(pass==1 && now<e->typing_until) {
       PoseInfo p=pose_of(e,now,ent_moving(e,now));
       float k=V.zoom<1?1:V.zoom;
-      float bx=scr_x(sx+p.dx),by=scr_y(sy+HALF_H+p.dy-p.anchor_y+8-p.lift);
+      float mouth_x=scr_x(sx+p.dx),mouth_y=scr_y(sy+HALF_H+p.dy-p.anchor_y+42-p.lift);
+      int facing=body_dir(e,ent_moving(e,now));if(p.pose==POSE_LAY)facing=facing==0?4:2;
+      int side=facing>=4&&facing<=6?-1:1;
+      float offset=12*V.zoom+18*k;
+      if(mouth_x+side*offset-15*k<0 || mouth_x+side*offset+15*k>TOP_W)side=-side;
+      float bx=roundf(mouth_x+side*offset),by=roundf(mouth_y-3*k),tail=-side;
       u32 ink=rgba(0x202020,255),paper=rgba(0xffffff,255);
       fill_round(bx-15*k,by-20*k,30*k,18*k,4*k,ink);
-      C2D_DrawTriangle(bx+5*k,by-5*k,ink,bx+15*k,by-8*k,ink,bx+17*k,by+3*k,ink,.5f);
+      C2D_DrawTriangle(bx+tail*5*k,by-5*k,ink,bx+tail*15*k,by-8*k,ink,bx+tail*17*k,by+3*k,ink,.5f);
       fill_round(bx-14*k,by-19*k,28*k,16*k,3*k,paper);
-      C2D_DrawTriangle(bx+7*k,by-5*k,paper,bx+14*k,by-6*k,paper,bx+15*k,by+k,paper,.5f);
+      C2D_DrawTriangle(bx+tail*7*k,by-5*k,paper,bx+tail*14*k,by-6*k,paper,bx+tail*15*k,by+k,paper,.5f);
       for(int dot=-1;dot<=1;dot++)C2D_DrawCircleSolid(bx+dot*7*k,by-11*k,.5f,1.5f*k,ink);
-      raise=28*k;
     }
+    if(pass==1)continue;
     if (appearance(e) & AV_FOUNDER) {
       PoseInfo p = pose_of(e, now, ent_moving(e, now));
       float bx = scr_x(sx + p.dx), by = scr_y(sy + HALF_H + p.dy - p.anchor_y + 11 - p.lift)-raise;
