@@ -719,19 +719,20 @@ void scene_draw(u64 now) {
     float raise = 0;
     if(pass==1 && now<e->typing_until) {
       PoseInfo p=pose_of(e,now,ent_moving(e,now));
-      float k=V.zoom<1?1:V.zoom;
+      // Keep the dots in screen pixels instead of enlarging them with room zoom.
+      float k=1;
       float mouth_x=scr_x(sx+p.dx),mouth_y=scr_y(sy+HALF_H+p.dy-p.anchor_y+42-p.lift);
       int facing=body_dir(e,ent_moving(e,now));if(p.pose==POSE_LAY)facing=facing==0?4:2;
       int side=facing>=4&&facing<=6?-1:1;
-      float offset=12*V.zoom+18*k;
-      if(mouth_x+side*offset-15*k<0 || mouth_x+side*offset+15*k>TOP_W)side=-side;
-      float bx=roundf(mouth_x+side*offset),by=roundf(mouth_y-3*k),tail=-side;
+      float offset=10*V.zoom+11*k;
+      if(mouth_x+side*offset-11*k<0 || mouth_x+side*offset+11*k>TOP_W)side=-side;
+      float bx=roundf(mouth_x+side*offset),by=roundf(mouth_y-k),tail=-side;
       u32 ink=rgba(0x202020,255),paper=rgba(0xffffff,255);
-      fill_round(bx-15*k,by-20*k,30*k,18*k,4*k,ink);
-      C2D_DrawTriangle(bx+tail*5*k,by-5*k,ink,bx+tail*15*k,by-8*k,ink,bx+tail*17*k,by+3*k,ink,.5f);
-      fill_round(bx-14*k,by-19*k,28*k,16*k,3*k,paper);
-      C2D_DrawTriangle(bx+tail*7*k,by-5*k,paper,bx+tail*14*k,by-6*k,paper,bx+tail*15*k,by+k,paper,.5f);
-      for(int dot=-1;dot<=1;dot++)C2D_DrawCircleSolid(bx+dot*7*k,by-11*k,.5f,1.5f*k,ink);
+      fill_round(bx-9*k,by-12*k,18*k,10*k,3*k,ink);
+      C2D_DrawTriangle(bx+tail*3*k,by-3*k,ink,bx+tail*9*k,by-6*k,ink,bx+tail*11*k,by+2*k,ink,.5f);
+      fill_round(bx-8*k,by-11*k,16*k,8*k,2*k,paper);
+      C2D_DrawTriangle(bx+tail*3*k,by-3*k,paper,bx+tail*8*k,by-4*k,paper,bx+tail*9*k,by,paper,.5f);
+      for(int dot=-1;dot<=1;dot++)C2D_DrawCircleSolid(bx+dot*4*k,by-7*k,.5f,k,ink);
     }
     if(pass==1)continue;
     if (appearance(e) & AV_FOUNDER) {
