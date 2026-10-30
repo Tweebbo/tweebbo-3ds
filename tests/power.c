@@ -49,5 +49,7 @@ int main(void) {
   assert(!world_animation_active(6100));
   e->action_until=0; assert(world_animation_active(6100));
   e->used=false; assert(!world_animation_active(6100));
+  W.items[0]=(Item){.used=true,.id=1,.x=3,.fx=2,.slide_at=6000};
+  assert(world_animation_active(6100));assert(!world_animation_active(6500));
   puts("PASS: 360 quiet ticks produce 180 frames; active ticks all draw; immediate input, suspend, slow frames and room activity covered.");
 }

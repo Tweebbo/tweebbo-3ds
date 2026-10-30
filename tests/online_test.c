@@ -137,6 +137,7 @@ static void crossplay_games(Endpoint *ep) {
 }
 
 int main(int argc, char **argv) {
+  setvbuf(stdout,NULL,_IOLBF,0);
   const char *build = getenv("TWEEBBO_WEB_BUILD");
   char *marker_end = NULL;
   long marker = build ? strtol(build, &marker_end, 10) : 0;
@@ -149,7 +150,9 @@ int main(int argc, char **argv) {
   if (!mkdtemp(store_dir)) return 1;
   srand((unsigned)now_ms());
   net_start(now_ms());
-  assert(pump_until(in_room, 20000) && "could not enter the lobby");
+  bool entered=pump_until(in_room,20000);
+  if(!entered)fprintf(stderr,"Native connection status: %s (state %d)\n",net_status(),net_state());
+  assert(entered && "could not enter the lobby");
   Ent *me = world_ent(W.me);
   printf("online: room %s \"%s\" (%s), me=%s eid=%u guest=%u credits=%u inventory=%d\n", W.slug, W.title, W.model,
          W.name, W.me, W.guest_id, W.credits, W.inv_n);
@@ -191,6 +194,14 @@ int main(int argc, char **argv) {
   assert(W.guest_id == guest);
 
   crossplay_games(&ep);
+
+  // The SQLite development hotel has no cloud session takeover service.
+  const char *local_smoke=getenv("TWEEBBO_LOCAL_SMOKE");
+  if(local_smoke && !strcmp(local_smoke,"1")) {
+    net_stop();
+    puts("OK: local transport, identity, chat, room changes, browser games and trade; cloud takeover excluded.");
+    return 0;
+  }
 
   // Another client with the same character takes over (a browser tab after "Save /
   // restore character"). The console must pause instead of evicting it back forever.

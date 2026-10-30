@@ -34,6 +34,8 @@ typedef struct {
   u32 id, owner;
   u16 def, z;
   u8 x, y, rot, state;
+  float fx, fy, fz;
+  u64 slide_at;
 } Item;
 
 typedef struct { u32 id; u16 def; } InvItem;
@@ -93,6 +95,7 @@ Item *world_item_at(int x, int y);
 void ent_pos(const Ent *e, u64 now, float *x, float *y);
 float ent_height(const Ent *e, u64 now);
 bool ent_moving(const Ent *e, u64 now);
+void item_pos(const Item *it, u64 now, float *x, float *y, float *z);
 
 // Events implemented by the application (scene and interface).
 void on_room(void);

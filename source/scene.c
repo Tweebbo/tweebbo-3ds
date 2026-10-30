@@ -293,13 +293,14 @@ static int by_depth(const void *a, const void *b) {
   return x->seq - y->seq;
 }
 
-static void draw_item_part(const Item *it, const FurniPart *p) {
-  float sx, sy;
-  iso(it->x, it->y, &sx, &sy);
+static void draw_item_part(const Item *it, const FurniPart *p, u64 now) {
+  float sx, sy, x, y, z;
+  item_pos(it, now, &x, &y, &z);
+  iso(x, y, &sx, &sy);
   bool add = p->flags & PART_ADD;
   u8 alpha = it->id == 0 && G.on ? (u8)(p->alpha * 7 / 10) : p->alpha;
   if (add) gfx_additive(true);
-  gfx_furni(it->def, p, scr_x(sx + p->ox), scr_y(sy + p->oy - it->z), V.zoom, C2D_Color32(255, 255, 255, alpha));
+  gfx_furni(it->def, p, scr_x(sx + p->ox), scr_y(sy + p->oy - z), V.zoom, C2D_Color32(255, 255, 255, alpha));
   if (add) gfx_additive(false);
 }
 
@@ -626,14 +627,15 @@ void scene_draw(u64 now) {
     if (!v) continue;
     for (int k = 0; k < v->count && n < COUNT(list); k++) {
       const FurniPart *p = &v->parts[k];
-      float sx, sy;
-      iso(it->x, it->y, &sx, &sy);
-      float left = scr_x(sx + p->ox), top = scr_y(sy + p->oy - it->z);
+      float sx, sy, ix, iy, iz;
+      item_pos(it, now, &ix, &iy, &iz);
+      iso(ix, iy, &sx, &sy);
+      float left = scr_x(sx + p->ox), top = scr_y(sy + p->oy - iz);
       if (left >= TOP_W || top >= TOP_H || left + p->w * V.zoom <= 0 || top + p->h * V.zoom <= 0) continue;
       bool shadow = p->flags & PART_SHADOW;
       // Shadows are only cast from the floor or whole stacks.
       if (shadow && it->z % 32) continue;
-      list[n] = (Drawable){shadow ? -10000 : it->x + it->y + p->depth + it->z / 1024.0f, n, it, p, NULL, NULL, NULL};
+      list[n] = (Drawable){shadow ? -10000 : ix + iy + p->depth + iz / 1024.0f, n, it, p, NULL, NULL, NULL};
       n++;
     }
   }
@@ -696,7 +698,7 @@ void scene_draw(u64 now) {
       iso(px, py, &sx, &sy);
       pet_draw(list[i].pet, now, scr_x(roundf(sx)), scr_y(roundf(sy)), V.zoom);
     } else if (list[i].layer) gfx_scene_sprite(list[i].layer, scr_x(list[i].layer->x), scr_y(list[i].layer->y), V.zoom, list[i].layer->alpha);
-    else draw_item_part(list[i].item, list[i].part);
+    else draw_item_part(list[i].item, list[i].part, now);
   }
   // Wobble Squabble on the pole, the countdown, the diver and the splashes.
   pool_draw_room(now);
@@ -718,10 +720,12 @@ void scene_draw(u64 now) {
       PoseInfo p=pose_of(e,now,ent_moving(e,now));
       float k=V.zoom<1?1:V.zoom;
       float bx=scr_x(sx+p.dx),by=scr_y(sy+HALF_H+p.dy-p.anchor_y+8-p.lift);
-      fill_rect(bx-13*k,by-16*k,26*k,14*k,rgba(0x202020,255));
-      fill_rect(bx-12*k,by-15*k,24*k,12*k,rgba(0xffffff,255));
-      for(int dot=-1;dot<=1;dot++)fill_rect(bx+(dot*6-1)*k,by-10*k,2*k,2*k,rgba(0x202020,255));
-      fill_rect(bx-3*k,by-3*k,k,3*k,rgba(0x202020,255));
+      u32 ink=rgba(0x202020,255),paper=rgba(0xffffff,255);
+      fill_round(bx-15*k,by-20*k,30*k,18*k,4*k,ink);
+      C2D_DrawTriangle(bx+5*k,by-5*k,ink,bx+15*k,by-8*k,ink,bx+17*k,by+3*k,ink,.5f);
+      fill_round(bx-14*k,by-19*k,28*k,16*k,3*k,paper);
+      C2D_DrawTriangle(bx+7*k,by-5*k,paper,bx+14*k,by-6*k,paper,bx+15*k,by+k,paper,.5f);
+      for(int dot=-1;dot<=1;dot++)C2D_DrawCircleSolid(bx+dot*7*k,by-11*k,.5f,1.5f*k,ink);
       raise=28*k;
     }
     if (appearance(e) & AV_FOUNDER) {

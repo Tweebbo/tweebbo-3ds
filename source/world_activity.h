@@ -4,6 +4,10 @@
 
 static inline bool world_animation_active(u64 now) {
   if (!W.in_room) return true;
+  for (int i = 0; i < MAX_ITEMS; i++) {
+    const Item *it = &W.items[i];
+    if (it->used && it->slide_at && now < it->slide_at + MOVE_MS) return true;
+  }
   for (int i = 0; i < MAX_ENTS; i++) {
     const Ent *e = &W.ents[i];
     if (!e->used) continue;

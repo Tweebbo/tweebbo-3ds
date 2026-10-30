@@ -110,7 +110,7 @@ bool ent_moving(const Ent *e, u64 now) {
 }
 
 static void read_item(Reader *r, Item *it) {
-  it->used = true;
+  *it = (Item){.used = true};
   it->id = (u32)r_var(r);
   it->def = r_u16(r);
   it->x = r_u8(r); it->y = r_u8(r); it->rot = r_u8(r); it->state = r_u8(r);
@@ -140,8 +140,21 @@ static Ent *new_ent(void) {
 static Item *put_item(const Item *src) {
   Item *it = world_item(src->id);
   for (int i = 0; !it && i < MAX_ITEMS; i++) if (!W.items[i].used) it = &W.items[i];
-  if (it) *it = *src;
+  if (it) {
+    Item next = *src;
+    if (it->used && !next.slide_at && it->x == next.x && it->y == next.y && it->z == next.z) {
+      next.fx = it->fx; next.fy = it->fy; next.fz = it->fz; next.slide_at = it->slide_at;
+    }
+    *it = next;
+  }
   return it;
+}
+
+void item_pos(const Item *it, u64 now, float *x, float *y, float *z) {
+  float t = it->slide_at ? progress(it->slide_at, now) : 1;
+  *x = it->fx + (it->x - it->fx) * t;
+  *y = it->fy + (it->y - it->fy) * t;
+  *z = it->fz + (it->z - it->fz) * t;
 }
 
 void world_handle(const u8 *data, int len) {
@@ -352,7 +365,13 @@ void world_handle(const u8 *data, int len) {
     case S_ITEM_ADD:
     case S_ITEM_UPDATE: { Item it; read_item(&r, &it); if (!r.err) { put_item(&it); on_item(it.id); } break; }
     case S_SLIDE:
-      for (int n = (int)r_var(&r); n > 0 && !r.err; n--) { Item it; read_item(&r, &it); put_item(&it); }
+      for (int n = (int)r_var(&r); n > 0 && !r.err; n--) {
+        Item it; read_item(&r, &it);
+        if (r.err) break;
+        const Item *old = world_item(it.id);
+        if (old) { item_pos(old, now, &it.fx, &it.fy, &it.fz); it.slide_at = now; }
+        put_item(&it);
+      }
       break;
     case S_ITEM_REMOVE: { Item *it = world_item((u32)r_var(&r)); if (it) it->used = false; break; }
     case S_NOTICE: r_str(&r, text, sizeof text); if (!r.err) on_notice(text); break;
