@@ -18,3 +18,9 @@ complete package on SD.
 Host regression, real updater-worker tests and ARM builds pass. Physical-console
 installation/performance acceptance remains pending; no hardware FPS or battery
 improvement is claimed. Full changelog: https://tweebbo.lol/changelog
+
+## Install with a QR code
+
+Open FBI → Remote Install → Scan QR Code. This code always downloads the latest CIA.
+
+![Latest CIA download QR code](https://github.com/Tweebbo/tweebbo-3ds/releases/latest/download/qr.png)

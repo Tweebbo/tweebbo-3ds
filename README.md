@@ -13,14 +13,11 @@ You need a Nintendo 3DS or 2DS with custom firmware (Luma3DS).
 - Install `tweebbo.cia` with FBI.
 - Or copy `tweebbo.3dsx` to `sdmc:/3ds/tweebbo.3dsx` and launch it from the Homebrew Launcher.
 
-<details>
-<summary>Install with a QR code</summary>
+### Install with a QR code
 
 Open FBI → Remote Install → Scan QR Code. This code always downloads the latest CIA.
 
 ![Latest CIA download QR code](docs/download-qr.png)
-
-</details>
 
 Tweebbo offers updates inside the game. You can also check from Help → Check for updates.
 
