@@ -261,18 +261,23 @@ static int body_dir(const Ent *e, bool moving) {
   return angle_dir(e->x - e->fx, e->y - e->fy);
 }
 
+static float head_x[MAX_ENTS], head_y[MAX_ENTS];
+static bool head_ready;
 /** Turns the head toward the nearest avatar when it is one turn step away. */
 static int head_dir(const Ent *e, u64 now, bool moving) {
   if (moving) return body_dir(e, true);
   if (e->flags & (FLAG_WAVE | FLAG_DANCE)) return e->dir;
+  if (!head_ready) {
+    for (int i = 0; i < MAX_ENTS; i++) if (W.ents[i].used) ent_pos(&W.ents[i], now, &head_x[i], &head_y[i]);
+    head_ready = true;
+  }
   float ex, ey, best = 9, tx = 0, ty = 0;
   bool found = false;
-  ent_pos(e, now, &ex, &ey);
+  ex = head_x[e - W.ents]; ey = head_y[e - W.ents];
   for (int i = 0; i < MAX_ENTS; i++) {
     const Ent *o = &W.ents[i];
     if (!o->used || o->id == e->id) continue;
-    float x, y;
-    ent_pos(o, now, &x, &y);
+    float x = head_x[i], y = head_y[i];
     float d = (x - ex) * (x - ex) + (y - ey) * (y - ey);
     if (d > .1f && d < best) { best = d; tx = x; ty = y; found = true; }
   }
@@ -586,6 +591,7 @@ void scene_chat(u32 eid, const char *text, u64 now) {
 }
 
 void scene_draw(u64 now) {
+  head_ready = false;
   gfx_filter(V.overview);
   if (!W.in_room) {
     NetState state = net_state();

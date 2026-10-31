@@ -121,9 +121,21 @@ typedef struct { const PeopleSprite *s; s16 px, py; u32 color; } AvatarOp;
 typedef struct { u64 look; s16 dir, pose, frame, expr, head, drink, sip, head_only; u32 used; u8 n; AvatarOp ops[64]; } AvatarEntry;
 #define AV_CACHE 256
 static AvatarEntry av_cache[AV_CACHE];
+static u16 av_hint[1024];
 static u32 av_clock;
 static AvatarOp *rec_ops;
 static int rec_n;
+
+static bool avatar_match(const AvatarEntry *c, u64 look, int dir, Pose pose, int frame, int expr, int head, int drink, bool sip) {
+  return c->used && c->look == look && c->dir == dir && c->pose == (s16)pose && c->frame == frame && c->expr == expr &&
+    c->head == head && c->drink == drink && c->sip == sip && c->head_only == head_only;
+}
+static unsigned avatar_bucket(u64 look, int dir, Pose pose, int frame, int expr, int head, int drink, bool sip) {
+  u32 h = (u32)look ^ (u32)(look >> 32);
+  const int fields[] = {dir, pose, frame, expr, head, drink, sip, head_only};
+  for (unsigned i = 0; i < sizeof fields / sizeof *fields; i++) h = (h ^ (u32)fields[i]) * 16777619u;
+  return (h ^ (h >> 16)) & 1023;
+}
 
 static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, int drink, bool sip);
 
@@ -164,10 +176,13 @@ void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir
   }
   look = resolved_look(look);
   AvatarEntry *e = NULL, *victim = &av_cache[0];
-  for (int i = 0; i < AV_CACHE; i++) {
+  unsigned bucket = avatar_bucket(look, dir, pose, frame, expr, head_dir, drink, sip);
+  unsigned hint = av_hint[bucket];
+  // Eviction can reuse a hinted slot; validate its complete state before drawing.
+  if (hint && hint <= AV_CACHE && avatar_match(&av_cache[hint - 1], look, dir, pose, frame, expr, head_dir, drink, sip)) e = &av_cache[hint - 1];
+  for (int i = 0; !e && i < AV_CACHE; i++) {
     AvatarEntry *c = &av_cache[i];
-    if (c->used && c->look == look && c->dir == dir && c->pose == (s16)pose && c->frame == frame && c->expr == expr &&
-        c->head == head_dir && c->drink == drink && c->sip == sip && c->head_only == head_only) { e = c; break; }
+    if (avatar_match(c, look, dir, pose, frame, expr, head_dir, drink, sip)) { e = c; break; }
     if (c->used < victim->used) victim = c;
   }
   if (!e) {
@@ -178,6 +193,7 @@ void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir
     avatar_compose(look, dir, pose, frame, expr, head_dir, drink, sip);
     e->n = (u8)rec_n;
   }
+  av_hint[bucket] = (u16)(e - av_cache + 1);
   e->used = ++av_clock;
   bool lay = pose == POSE_LAY;
   int direction = lay ? (dir == 0 ? 4 : 2) : dir & 7;
