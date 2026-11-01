@@ -1,4 +1,4 @@
-# Tweebbo for Nintendo 3DS 1.3.10
+# Tweebbo for Nintendo 3DS 1.3.11
 
 Optional music and room update. Keep playing and update whenever convenient.
 
