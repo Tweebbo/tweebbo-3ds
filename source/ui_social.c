@@ -12,6 +12,7 @@
 #include "ui_int.h"
 #include "world.h"
 #include "osk.h"
+#include "music.h"
 
 #define MAX_CONTACTS 64
 #define MAX_MESSAGES 100
@@ -28,7 +29,7 @@ static struct {
   int nm, message_page, text_offset;
   int job, msg_job, act_job, search_job;
   u64 next_poll;
-  bool loaded, push;
+  bool loaded, push, sent;
   ListState list, chat;
   char query[48], status[96], mission[204];
 } S;
@@ -40,6 +41,12 @@ bool friends_is_blocked(u32 guest) {
 
 int friends_badge(void) {
   int n = S.ni;
+  for (int i = 0; i < S.nf; i++) n += S.friends[i].unread;
+  return n;
+}
+
+static int unread_messages(void) {
+  int n = 0;
   for (int i = 0; i < S.nf; i++) n += S.friends[i].unread;
   return n;
 }
@@ -67,6 +74,8 @@ static void load_messages(void);
 /** Periodic polling like the web: fast while the console is open, slow in the background. */
 void friends_poll(u64 now) {
   if (now == 0) { S.next_poll = 0; S.push = true; return; }
+  int before = unread_messages();
+  bool first = !S.loaded;
   if (!net_online() || !net_token()[0]) return;
   HttpResult r;
   if (S.job && net_http_result(S.job, &r)) {
@@ -83,6 +92,8 @@ void friends_poll(u64 now) {
       json_decref(j);
     }
     free(r.body);
+    int after = unread_messages();
+    if (!first && after > before) music_ui_sound("message_new");
     if (S.peer && ui_panel() == P_FRIENDS) load_messages();
   }
   if (S.msg_job && net_http_result(S.msg_job, &r)) {
@@ -119,6 +130,8 @@ void friends_poll(u64 now) {
   }
   if (S.act_job && net_http_result(S.act_job, &r)) {
     S.act_job = 0;
+    if (r.status == 200 && S.sent) music_ui_sound("message_sent");
+    S.sent = false;
     if (r.status != 200) {
       json_error_t err;
       json_t *j = r.body ? json_loads(r.body, 0, &err) : NULL;
@@ -189,6 +202,7 @@ static void search_done(const char *q, void *ctx) {
 
 static void message_done(const char *text, void *ctx) {
   (void)ctx;
+  S.sent = true;
   friends_act("message", S.peer, text);
   S.next_poll = now_ms() + 400;
 }

@@ -301,6 +301,14 @@ static int by_depth(const void *a, const void *b) {
 static void draw_item_part(const Item *it, const FurniPart *p, u64 now) {
   float sx, sy, x, y, z;
   item_pos(it, now, &x, &y, &z);
+  const FurniDef *d = def_get(it->def);
+  if (d && d->kind == KIND_WALL) {
+    int lo, hi;
+    if (furni_wall_range(it->def, it->rot, &lo, &hi)) {
+      if (z < lo) z = lo;
+      if (z > hi) z = hi;
+    }
+  }
   iso(x, y, &sx, &sy);
   bool add = p->flags & PART_ADD;
   u8 alpha = it->id == 0 && G.on ? (u8)(p->alpha * 7 / 10) : p->alpha;
@@ -636,6 +644,14 @@ void scene_draw(u64 now) {
       const FurniPart *p = &v->parts[k];
       float sx, sy, ix, iy, iz;
       item_pos(it, now, &ix, &iy, &iz);
+      const FurniDef *wall_def = def_get(it->def);
+      if (wall_def && wall_def->kind == KIND_WALL) {
+        int lo, hi;
+        if (furni_wall_range(it->def, it->rot, &lo, &hi)) {
+          if (iz < lo) iz = lo;
+          if (iz > hi) iz = hi;
+        }
+      }
       iso(ix, iy, &sx, &sy);
       float left = scr_x(sx + p->ox), top = scr_y(sy + p->oy - iz);
       if (left >= TOP_W || top >= TOP_H || left + p->w * V.zoom <= 0 || top + p->h * V.zoom <= 0) continue;

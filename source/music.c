@@ -3,6 +3,7 @@
 // shared position; this file follows it like client/src/music.ts and trax.ts: four channels of
 // original samples on two-second slots (SoundMachine Component Class).
 #include "music.h"
+#include "gen/classic_music.h"
 #include "ui_int.h"
 #include "assets.h"
 #include "gfx.h"
@@ -19,7 +20,8 @@
 #define MAX_TRACKS 50
 #define MAX_CLIPS 150
 #define MAX_SONGS 50
-#define MAX_SAMPLE 1024
+#define MAX_SAMPLE 2048
+#define CLASSIC_BASE 1000
 #define RATE 16000
 #define SLOT_MS 2000
 #define FIRST_CHANNEL 8
@@ -27,7 +29,7 @@
 #define MUSIC_RESERVE (4u * 1024 * 1024)
 
 typedef struct { u16 sample, start; } Clip;
-typedef struct { char provider[12], title[80]; int duration, slots; u8 clip_n[4]; Clip clips[4][MAX_CLIPS]; } Track;
+typedef struct { char provider[12], id[24], title[80]; int duration, slots; u8 clip_n[4]; Clip clips[4][MAX_CLIPS]; } Track;
 typedef struct { u32 id; char title[80]; } SavedSong;
 typedef struct { s8 *data; u32 n; volatile u8 state; } Sample;  /* 0 none, 1 queued, 2 ready, 3 failed */
 enum { S_NONE, S_QUEUED, S_READY, S_FAILED };
@@ -45,11 +47,14 @@ static struct {
   int clip_on[4];
   u64 heard_key;
   bool dsp;
-  ndspWaveBuf buf[4];
+  ndspWaveBuf buf[4], classic_buf, ui_buf;
+  bool classic_on;
   char line[120];
 } M = {.listening = true};
 
+static bool dsp_ready(void);
 static Sample samples[MAX_SAMPLE];
+static struct { const char *name; s8 *data; u32 n; bool tried; } ui_sounds[3] = {{.name = "message_new"}, {.name = "message_sent"}, {.name = "cash"}};
 static Thread worker;
 static LightEvent wake;
 static volatile bool quit;
@@ -89,8 +94,10 @@ static bool base_url(char *out, int cap) {
 }
 
 static void load_sample(int id) {
-  char path[64], url[192], err[96] = "";
-  snprintf(path, sizeof path, CACHE_DIR "/%d.pcm", id);
+  char path[96], url[224], err[96] = "";
+  bool classic = id >= CLASSIC_BASE;
+  if (classic) snprintf(path, sizeof path, CACHE_DIR "/classic_%d.pcm", id - CLASSIC_BASE);
+  else snprintf(path, sizeof path, CACHE_DIR "/%d.pcm", id);
   Grow g = {0};
   FILE *f = fopen(path, "rb");
   if (f) {
@@ -102,7 +109,8 @@ static void load_sample(int id) {
     long total = 0;
     if (base_url(url, sizeof url - 32)) {
       strcat(url, "/static/trax/3ds/");
-      snprintf(url + strlen(url), sizeof url - strlen(url), "%d.pcm", id);
+      if (classic) snprintf(url + strlen(url), sizeof url - strlen(url), "classic_%d.pcm", id - CLASSIC_BASE);
+      else snprintf(url + strlen(url), sizeof url - strlen(url), "%d.pcm", id);
       int status = http_download(url, to_grow, &g, &total, err, sizeof err);
       if (status != 200 || (total > 0 && total != g.len)) g.len = 0;
       if (g.len) {
@@ -155,6 +163,7 @@ static int num(json_t *o, const char *k) { return (int)json_integer_value(json_o
 static void read_track(json_t *v, Track *t) {
   memset(t, 0, sizeof *t);
   utf8_copy(t->provider, sizeof t->provider, json_string_value(json_object_get(v, "provider")));
+  utf8_copy(t->id, sizeof t->id, json_string_value(json_object_get(v, "id")));
   utf8_copy(t->title, sizeof t->title, json_string_value(json_object_get(v, "title")));
   t->duration = num(v, "duration");
   json_t *song = json_object_get(v, "song");
@@ -205,6 +214,8 @@ void music_receive(const char *text, u64 now) {
 
 static void silence(void) {
   for (int c = 0; c < 4; c++) { if (M.dsp) ndspChnWaveBufClear(FIRST_CHANNEL + c); M.clip_on[c] = -1; }
+  if (M.dsp) ndspChnWaveBufClear(14);
+  M.classic_on = false;
 }
 
 /** Frees the samples the given track does not use (all of them for NULL). Call after
@@ -221,6 +232,35 @@ static void release_samples(const Track *keep) {
     samples[id].n = 0;
     __sync_synchronize();
     samples[id].state = S_NONE;
+  }
+}
+
+void music_ui_sound(const char *name) {
+  if (!dsp_ready()) return;
+  for (int i = 0; i < 3; i++) {
+    if (strcmp(ui_sounds[i].name, name)) continue;
+    if (!ui_sounds[i].tried) {
+      ui_sounds[i].tried = true;
+      char path[64];
+      snprintf(path, sizeof path, "romfs:/ui/%s.pcm", name);
+      FILE *f = fopen(path, "rb");
+      if (f) {
+        fseek(f, 0, SEEK_END); long bytes = ftell(f); rewind(f);
+        if (bytes > 0 && bytes <= 128 * 1024) {
+          s8 *data = linearAlloc((size_t)bytes);
+          if (data && fread(data, 1, (size_t)bytes, f) == (size_t)bytes) { DSP_FlushDataCache(data, (u32)bytes); ui_sounds[i].data = data; ui_sounds[i].n = (u32)bytes; }
+          else if (data) linearFree(data);
+        }
+        fclose(f);
+      }
+    }
+    if (!ui_sounds[i].data || !ui_sounds[i].n) return;
+    ndspChnWaveBufClear(13);
+    memset(&M.ui_buf, 0, sizeof M.ui_buf);
+    M.ui_buf.data_vaddr = ui_sounds[i].data;
+    M.ui_buf.nsamples = ui_sounds[i].n;
+    ndspChnWaveBufAdd(13, &M.ui_buf);
+    return;
   }
 }
 
@@ -242,7 +282,8 @@ const char *music_now_playing(void) {
   const Track *t = playing_track();
   if (!t) return "";
   bool trax = !strcmp(t->provider, "trax");
-  snprintf(M.line, sizeof M.line, trax ? TR("Now playing: %s") : TR("Now playing: %s (on PC)"), t->title);
+  bool classic = !strcmp(t->provider, "classic");
+  snprintf(M.line, sizeof M.line, classic ? TR("Now playing: %s (classic)") : trax ? TR("Now playing: %s") : TR("Now playing: %s (on PC)"), t->title);
   return M.line;
 }
 
@@ -261,17 +302,43 @@ static bool dsp_ready(void) {
     ndspChnSetMix(ch, mix);
     M.clip_on[c] = -1;
   }
+  for (int ch = 13; ch <= 14; ch++) {
+    ndspChnReset(ch);
+    ndspChnSetInterp(ch, NDSP_INTERP_LINEAR);
+    ndspChnSetRate(ch, RATE);
+    ndspChnSetFormat(ch, NDSP_FORMAT_MONO_PCM8);
+    float ui_mix[12] = {.55f, .55f};
+    ndspChnSetMix(ch, ui_mix);
+  }
   M.dsp = true;
   return true;
 }
 
 void music_poll(u64 now) {
   const Track *t = playing_track();
-  if (!t || strcmp(t->provider, "trax") || !M.listening) { if (M.heard_key) { silence(); release_samples(NULL); M.heard_key = 0; } return; }
+  bool classic = t && !strcmp(t->provider, "classic");
+  if (!t || (!classic && strcmp(t->provider, "trax")) || !M.listening) { if (M.heard_key) { silence(); release_samples(NULL); M.heard_key = 0; } return; }
   u64 key = M.revision * 64 + (u64)M.index;
-  if (key != M.heard_key) { silence(); release_samples(t); M.heard_key = key; }
+  if (key != M.heard_key) { silence(); release_samples(classic ? NULL : t); M.heard_key = key; }
   s64 elapsed = M.position + ((s64)now + M.offset - M.started);
   if (elapsed < 0) elapsed = 0;
+  if (classic) {
+    int id = CLASSIC_BASE + atoi(t->id);
+    want(id);
+    if (!dsp_ready()) return;
+    Sample *s = id < MAX_SAMPLE ? &samples[id] : NULL;
+    if (!M.classic_on && s && s->state == S_READY && s->n) {
+      u32 skip = (u32)(elapsed * RATE / 1000);
+      if (skip < s->n) {
+        memset(&M.classic_buf, 0, sizeof M.classic_buf);
+        M.classic_buf.data_vaddr = s->data + skip;
+        M.classic_buf.nsamples = s->n - skip;
+        ndspChnWaveBufAdd(14, &M.classic_buf);
+        M.classic_on = true;
+      }
+    }
+    return;
+  }
   for (int c = 0; c < 4; c++) {
     // Fetch the samples a little ahead of time; the first song may start late while downloading.
     for (int i = 0; i < t->clip_n[c]; i++) want(t->clips[c][i].sample);
@@ -306,6 +373,8 @@ void music_poll(u64 now) {
 
 void music_exit(void) {
   silence();
+  if (M.dsp) ndspChnWaveBufClear(13);
+  for (int i = 0; i < 3; i++) { if (ui_sounds[i].data) linearFree(ui_sounds[i].data); ui_sounds[i].data = NULL; }
   if (M.dsp) { ndspExit(); M.dsp = false; }
   if (worker) { quit = true; LightEvent_Signal(&wake); threadJoin(worker, U64_MAX); threadFree(worker); worker = NULL; }
 }
@@ -353,6 +422,7 @@ void music_draw(u64 now) {
     bool trax = !strcmp(t->provider, "trax");
     sk_text(t->title, x, y, 11, SK_TEXT, 0, IN_W - 12);
     sk_text(trax ? (M.listening ? TR("Trax · playing here") : TR("Trax · muted on this console"))
+                 : !strcmp(t->provider, "classic") ? (M.listening ? TR("Kepler Classic · playing here") : TR("Kepler Classic · muted on this console"))
                  : !strcmp(t->provider, "youtube") ? TR("YouTube · plays on PC and phones") : TR("Spotify · plays on PC and phones"),
             x, y + 14, 9, SK_DIM, 0, IN_W - 12);
     if (t->duration > 0) {
@@ -368,8 +438,9 @@ void music_draw(u64 now) {
   if (t && (sk_button(x + 96, by, 92, TR("Pause (X)"), true) || K.x)) command("pause", NULL);
   if (t && sk_button(x + 192, by, 96, TR("Next track"), true)) command("next", NULL);
   if (!t && M.track_n && (sk_button(x + 96, by, 92, TR("Play (X)"), true) || K.x)) { char e[16]; snprintf(e, sizeof e, "\"index\":%d", M.index < M.track_n ? M.index : 0); command("play", e); }
-  // The queue, then the room's saved Trax songs that can be added to it.
-  int rows = M.track_n + (M.song_n ? M.song_n + 1 : 0);
+  // The queue, the room's saved Trax songs, then the original cartridge loops.
+  int song_base = M.track_n + (M.song_n ? M.song_n + 1 : 0);
+  int rows = song_base + CLASSIC_TRACK_COUNT + 1;
   const float row = 22;
   if (K.dn && M.list.focus < rows - 1) M.list.focus++;
   if (K.up && M.list.focus > 0) M.list.focus--;
@@ -385,12 +456,18 @@ void music_draw(u64 now) {
       sk_text(title, IN_X + 8, ry + 5, 9.5f, SK_TEXT, 0, IN_W - 100);
       sk_text(q->provider, IN_X + IN_W - 92, ry + 6, 8.5f, SK_DIM, 0, 40);
       if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, TR("Play"), true) || (focus && K.a)) { char e[16]; snprintf(e, sizeof e, "\"index\":%d", i); command("play", e); }
-    } else if (i == M.track_n) {
+    } else if (i == M.track_n && M.song_n) {
       sk_text(TR("Room songs (Trax)"), IN_X + 8, ry + 5, 9.5f, SK_DIM, 0, IN_W - 20);
-    } else {
+    } else if (i < song_base) {
       const SavedSong *s = &M.songs[i - M.track_n - 1];
       sk_text(s->title, IN_X + 8, ry + 5, 9.5f, SK_TEXT, 0, IN_W - 60);
       if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, TR("Add"), true) || (focus && K.a)) { char e[24]; snprintf(e, sizeof e, "\"song\":%u", (unsigned)s->id); command("add_song", e); }
+    } else if (i == song_base) {
+      sk_text(TR("Kepler Classic music"), IN_X + 8, ry + 5, 9.5f, SK_DIM, 0, IN_W - 20);
+    } else {
+      const ClassicTrack *c = &classic_tracks[i - song_base - 1];
+      sk_text(c->name, IN_X + 8, ry + 5, 9.5f, SK_TEXT, 0, IN_W - 60);
+      if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, TR("Add"), true) || (focus && K.a)) { char e[24]; snprintf(e, sizeof e, "\"set\":%u", (unsigned)c->id); command("add_classic", e); }
     }
   }
   sk_list_end();

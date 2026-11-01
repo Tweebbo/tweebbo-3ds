@@ -268,7 +268,7 @@ void world_handle(const u8 *data, int len) {
       if (!r.err) on_chat(eid, text);
       break;
     }
-    case S_CREDITS: W.credits = (u32)r_var(&r); W.inv_rev++; break;
+    case S_CREDITS: { u32 before = W.credits; W.credits = (u32)r_var(&r); if (W.credits > before) W.credits_up = true; W.inv_rev++; break; }
     case S_INVENTORY:
       W.inv_n = 0;
       for (int n = (int)r_var(&r); n > 0 && !r.err; n--) {

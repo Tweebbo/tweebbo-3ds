@@ -14,3 +14,6 @@ const FurniVariant *variant_get(u16 def, u8 rot, u8 state);
 const FurniVariant *variant_frame(u16 def, u8 rot, u8 state, u16 frame);
 /** Animation frame (furniFrame in furni.ts). */
 u16 furni_frame(u16 def, u8 state, u64 time);
+/** Classic wall-item vertical range (wallItemRange in furni.ts): the z values that keep the
+ *  whole sprite on the 118 px wall face. Oversized murals collapse to one floor-anchored value. */
+bool furni_wall_range(u16 def, u8 rot, int *min, int *max);

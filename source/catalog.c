@@ -63,6 +63,24 @@ const FurniVariant *variant_frame(u16 def, u8 rot, u8 state, u16 frame) {
   return v;
 }
 
+bool furni_wall_range(u16 def, u8 rot, int *min, int *max) {
+  const FurniVariant *v = variant_get(def, rot, 0);
+  if (!v) return false;
+  int top = 2147483647, bottom = -2147483648;
+  for (int i = 0; i < v->count; i++) {
+    const FurniPart *p = &v->parts[i];
+    if ((p->flags & PART_SHADOW) || p->w * p->h <= 1) continue;
+    if ((int)p->oy < top) top = p->oy;
+    if ((int)p->oy + p->h > bottom) bottom = p->oy + p->h;
+  }
+  if (top == 2147483647) return false;
+  top -= 8; bottom -= 8;
+  int lo = bottom > 8 ? bottom : 8, hi = 118 + top < 110 ? 118 + top : 110;
+  if (lo <= hi) { *min = lo; *max = hi; }
+  else { int only = bottom < 8 ? 8 : bottom > 110 ? 110 : bottom; *min = *max = only; }
+  return true;
+}
+
 u16 furni_frame(u16 def, u8 state, u64 time) {
   const FurniDef *d = def_get(def);
   if (!d) return 0;

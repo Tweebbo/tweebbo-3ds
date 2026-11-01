@@ -69,11 +69,25 @@ void build_stack_command(const char *text) {
 
 static int stack_mode(void) { return strcmp(STACK.slug, W.slug) ? 0 : STACK.mode; }
 
+/** Keep a wall item in the part of the wall face that shows the whole sprite (Kepler local y). */
+static void wall_clamp(void) {
+  int lo, hi;
+  if (G.wall && furni_wall_range(G.def, (u8)G.rot, &lo, &hi)) {
+    if (G.z < lo) G.z = lo;
+    if (G.z > hi) G.z = hi;
+  }
+}
+
 static bool can_place(Ghost *g) {
   const FurniDef *def = def_get(g->def);
   if (!world_can_decorate() || !def) return false;
-  if (def->kind == KIND_WALL)
-    return world_tile(g->x, g->y) && (g->rot % 2 == 0 ? !world_tile(g->x - 1, g->y) : !world_tile(g->x, g->y - 1)) && g->z >= 8 && g->z <= 110;
+  if (def->kind == KIND_WALL) {
+    int lo, hi;
+    bool ranged = furni_wall_range(g->def, (u8)g->rot, &lo, &hi);
+    bool door = g->rot % 2 == 0 && g->x == W.door_x + 1 && g->y == W.door_y;
+    return world_tile(g->x, g->y) && (g->rot % 2 == 0 ? !world_tile(g->x - 1, g->y) : !world_tile(g->x, g->y - 1))
+      && !door && g->z >= 8 && g->z <= 110 && (!ranged || (g->z >= lo && g->z <= hi));
+  }
   const Item *original = g->ignore ? world_item(g->ignore) : NULL;
   if (original) {
     int ow, oh;
@@ -173,6 +187,7 @@ void build_start(u16 def, u32 inv_id, u32 moving) {
     B.wall_slot = best;
     wall_apply();
     if (!it) G.z = 60;
+    wall_clamp();
   }
   G.ok = can_place(&G);
   ui_close();
@@ -206,7 +221,7 @@ void build_tap_tile(int x, int y) {
   if (G.wall) {
     static WallSlot slots[256];
     int n = wall_slots(slots, 256);
-    for (int i = 0; i < n; i++) if (slots[i].x == x && slots[i].y == y) { B.wall_slot = i; wall_apply(); break; }
+    for (int i = 0; i < n; i++) if (slots[i].x == x && slots[i].y == y) { B.wall_slot = i; wall_apply(); wall_clamp(); break; }
   } else { G.x = x; G.y = y; }
   G.ok = can_place(&G);
 }
@@ -239,6 +254,7 @@ bool build_input(u32 down, u32 held, u64 now) {
       G.z += (down & KEY_R) ? 6 : -6;
       if (G.z < 8) G.z = 8;
       if (G.z > 110) G.z = 110;
+      wall_clamp();
     } else G.rot = def_rotation(G.def, (u8)((G.rot + 1) & 3));
     G.ok = can_place(&G);
   }
@@ -249,7 +265,7 @@ bool build_input(u32 down, u32 held, u64 now) {
     if (G.wall) {
       // Wall slots are walked in a line: right/down move forward.
       B.wall_slot += (dir >= 1 && dir <= 4) ? 1 : -1;
-      wall_apply();
+      wall_apply(); wall_clamp();
     } else {
       int nx = G.x + STEP[dir][0], ny = G.y + STEP[dir][1];
       if (nx >= 0 && ny >= 0 && nx < W.w && ny < W.h) { G.x = nx; G.y = ny; }
@@ -280,7 +296,7 @@ void build_draw_panel(u64 now) {
                IN_X + 8, y, IN_W - 16, 10.5f, SK_TEXT, 4);
   float by = IN_Y + IN_H - 24, bw = (IN_W - 24) / 3;
   if (sk_button(IN_X + 6, by, bw, G.wall ? TR("Raise (R)") : TR("Rotate (L/R)"), !B.pending)) {
-    if (G.wall) G.z = G.z + 6 > 110 ? 110 : G.z + 6;
+    if (G.wall) { G.z = G.z + 6 > 110 ? 110 : G.z + 6; wall_clamp(); }
     else G.rot = def_rotation(G.def, (u8)((G.rot + 1) & 3));
     G.ok = can_place(&G);
   }

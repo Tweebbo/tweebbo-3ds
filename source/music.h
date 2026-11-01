@@ -17,4 +17,6 @@ void music_draw(u64 now);
 bool music_in_room(void);
 /** One line for the room panel while music plays ("" when silent). */
 const char *music_now_playing(void);
+/** Classic interface sound from romfs:/ui: message_new, message_sent or cash. */
+void music_ui_sound(const char *name);
 void music_exit(void);

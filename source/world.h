@@ -49,6 +49,7 @@ typedef struct { u32 from; u8 kind; } GameInvite;
 
 typedef struct {
   u32 me, guest_id, credits, owner;
+  bool credits_up;
   InvItem inv[MAX_INV];
   int inv_n;
   /** Incremented on every inventory change (to refresh the interface). */

@@ -1689,6 +1689,7 @@ void ui_draw(u64 now) {
   if (had_modal) { memset(&T, 0, sizeof T); memset(&K, 0, sizeof K); }
   pool_poll(now);
   music_poll(now);
+  if (W.credits_up) { W.credits_up = false; music_ui_sound("cash"); }
   if (build_active()) build_draw_panel(now);
   else if (pool_panel_active()) pool_draw_panel(now);
   else switch (U.panel) {

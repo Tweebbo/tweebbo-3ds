@@ -47,8 +47,8 @@ static struct {
   int n;
   struct { char key[24], name[48]; } models[MAX_MODELS];
   int model_n, model;
-  bool loaded, creating;
-  char error[96], new_title[164], new_password[65], lock_slug[48];
+  bool loaded, creating, refresh_again;
+  char error[96], new_title[164], new_password[65], lock_slug[48], query[96];
   u64 refreshed;
   ListState list;
 } NV;
@@ -70,9 +70,20 @@ static const struct { const char *slug, *title; } OFFLINE_ROOMS[] = {
   {"lobby-ja", "Japanese Lobby"},
 };
 
+static bool room_matches(const char *text, const char *query) {
+  if (!query || !query[0]) return true;
+  for (; *text; text++) {
+    const unsigned char *a = (const unsigned char *)text, *b = (const unsigned char *)query;
+    while (*a && *b && (*a == *b || (*a >= 'A' && *a <= 'Z' ? *a + 32 : *a) == (*b >= 'A' && *b <= 'Z' ? *b + 32 : *b))) { a++; b++; }
+    if (!*b) return true;
+  }
+  return false;
+}
+
 static void offline_rows(void) {
   NV.n = 0; NV.error[0] = 0;
   for (int i = 0; i < (int)COUNT(OFFLINE_ROOMS) && NV.n < MAX_ROOMS; i++) {
+    if (!room_matches(OFFLINE_ROOMS[i].title, NV.query) && !room_matches(OFFLINE_ROOMS[i].slug, NV.query)) continue;
     RoomRow *row = &NV.rooms[NV.n++];
     snprintf(row->slug, sizeof row->slug, "%s", OFFLINE_ROOMS[i].slug);
     utf8_copy(row->title, sizeof row->title, OFFLINE_ROOMS[i].title);
@@ -84,6 +95,7 @@ static void offline_rows(void) {
   for (const GameRoomPort *p = game_room_ports; p->model && NV.n < MAX_ROOMS; p++) {
     for (int i = 0; i < room_model_count; i++) {
       if (strcmp(room_models[i].key, p->model)) continue;
+      if (!room_matches(room_models[i].name, NV.query)) break;
       RoomRow *row = &NV.rooms[NV.n++];
       memset(row, 0, sizeof *row);
       snprintf(row->slug, sizeof row->slug, "%s", p->slug);
@@ -97,18 +109,40 @@ static void offline_rows(void) {
   NV.loaded = true;
 }
 
+/** Percent-encode UTF-8 bytes for the query string; the server decodes them. */
+static void url_escape(const char *text, char *out, size_t cap) {
+  static const char hex[] = "0123456789ABCDEF";
+  size_t n = 0;
+  for (; *text && n + 4 < cap; text++) {
+    unsigned char c = (unsigned char)*text;
+    bool plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.';
+    if (plain) out[n++] = (char)c;
+    else { out[n++] = '%'; out[n++] = hex[c >> 4]; out[n++] = hex[c & 15]; }
+  }
+  out[n] = 0;
+}
+
 static void nav_refresh(void) {
-  if (NV.job || net_state() == NET_OFFLINE) return;
-  char path[48];
-  snprintf(path, sizeof path, "/api/rooms?scope=%s", SCOPES[NV.tab]);
+  if (net_state() == NET_OFFLINE) return;
+  if (NV.job) { NV.refresh_again = true; return; }
+  char path[512], q[480];
+  url_escape(NV.query, q, sizeof q);
+  snprintf(path, sizeof path, "/api/rooms?scope=%s&q=%s", SCOPES[NV.tab], q);
   NV.job = net_http("GET", path, NULL, true);
   NV.refreshed = now_ms();
+}
+
+static void nav_query_done(const char *text, void *ctx) {
+  (void)ctx;
+  utf8_copy(NV.query, sizeof NV.query, text);
+  NV.n = 0; NV.list.scroll = 0; NV.list.focus = -1; NV.loaded = false;
+  if (net_state() == NET_OFFLINE) offline_rows(); else nav_refresh();
 }
 
 void nav_opened(void) {
   NV.creating = false;
   NV.list.focus = -1;
-  if (net_state() == NET_OFFLINE) { offline_rows(); return; }
+  if (net_state() == NET_OFFLINE) { NV.query[0] = 0; offline_rows(); return; }
   nav_refresh();
 }
 
@@ -159,6 +193,7 @@ static void nav_poll(void) {
     }
     if (j) json_decref(j);
     free(r.body);
+    if (NV.refresh_again) { NV.refresh_again = false; nav_refresh(); }
   }
   if (NV.rename_job && net_http_result(NV.rename_job, &r)) {
     NV.rename_job=0;
@@ -327,11 +362,15 @@ void nav_draw(u64 now) {
   if (!offline && NV.creating) { nav_create_view(); return; }
   if (!offline) {
     static const char *TABS[] = {"All Rooms", "Public Rooms", "My Rooms"};
-    float tw = (IN_W - 8) / 3;
+    const float find_w = 48, tabs_w = IN_W - 10 - find_w, tw = (tabs_w - 4) / 3;
     for (int i = 0; i < 3; i++)
       if (sk_tab(IN_X + 2 + i * (tw + 2), IN_Y + 2, tw, 16, TR(TABS[i]), NV.tab == i) && NV.tab != i) {
         NV.tab = i; NV.n = 0; NV.loaded = false; NV.list.scroll = 0; nav_refresh();
       }
+    if (sk_go(IN_X + IN_W - 2 - find_w, IN_Y + 1, find_w, 16, NV.query[0] ? TR("Clear") : TR("Find"), true)) {
+      if (NV.query[0]) { NV.query[0] = 0; NV.n = 0; NV.list.scroll = 0; nav_refresh(); }
+      else osk_open(TR("Find a room"), NV.query, 95, nav_query_done, NULL);
+    }
     if (K.left || K.right) { NV.tab = (NV.tab + (K.right ? 1 : 2)) % 3; NV.n = 0; NV.loaded = false; nav_refresh(); }
     // An open navigator refreshes every 15 s, like the web.
     if (now - NV.refreshed > 15000) nav_refresh();
@@ -381,7 +420,7 @@ void nav_draw(u64 now) {
     }
   }
   sk_list_end();
-  if (!NV.n) sk_text(NV.error[0] ? NV.error : NV.job ? TR("Loading rooms…") : offline ? TR("No rooms packed for offline play.") : NV.tab == 2 ? TR("You have not created any rooms yet.") : TR("No rooms."),
+  if (!NV.n) sk_text(NV.error[0] ? NV.error : NV.job ? TR("Loading rooms…") : offline ? TR("No rooms packed for offline play.") : NV.query[0] ? TR("No rooms match your search.") : NV.tab == 2 ? TR("You have not created any rooms yet.") : TR("No rooms."),
                      BOT_W / 2, ly + 30, 10.5f, NV.error[0] ? SK_DANGER : SK_DIM, 1, IN_W - 20);
   float by = IN_Y + IN_H - 22;
   if (offline) {
@@ -389,7 +428,7 @@ void nav_draw(u64 now) {
   } else {
     if(NV.tab==2&&NV.list.focus>=0&&NV.list.focus<NV.n&&NV.rooms[NV.list.focus].mine){
       if(sk_button(IN_X+4,by,108,TR("Delete room"),!NV.delete_job&&!NV.rename_job&&!NV.lock_job))nav_delete(&NV.rooms[NV.list.focus]);
-    }else sk_text(NV.tab == 2 ? TR("Select a room to edit.") : TR("Featured rooms first."), IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
+    }else sk_text(NV.query[0] ? NV.query : NV.tab == 2 ? TR("Select a room to edit.") : TR("Featured rooms first."), IN_X + 4, by + 3, 9.5f, SK_DIM, 0, 120);
     if (sk_button(IN_X + IN_W - 182, by, 76, NV.job ? TR("Loading…") : TR("Refresh"), !NV.job)) nav_refresh();
     if (sk_button(IN_X + IN_W - 102, by, 100, TR("Create a room"), true) || K.x) { NV.creating = true; NV.new_title[0] = 0; memset(NV.new_password, 0, sizeof NV.new_password); }
   }
