@@ -79,6 +79,8 @@ extern World W;
 
 void world_handle(const u8 *data, int len);
 bool world_tile(int x, int y);
+/** Height of the floor in pixels: the base of the wall behind raised tiles. */
+int world_floor_height(int x, int y);
 Ent *world_ent(u32 id);
 /** Same as State.canDecorate: only the creator of a private room. */
 bool world_can_decorate(void);

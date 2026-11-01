@@ -304,10 +304,11 @@ static void draw_item_part(const Item *it, const FurniPart *p, u64 now) {
   const FurniDef *d = def_get(it->def);
   if (d && d->kind == KIND_WALL) {
     int lo, hi;
-    if (furni_wall_range(it->def, it->rot, &lo, &hi)) {
+    if (furni_wall_range(it->def, &lo, &hi)) {
       if (z < lo) z = lo;
       if (z > hi) z = hi;
     }
+    z += world_floor_height(it->x, it->y);
   }
   iso(x, y, &sx, &sy);
   bool add = p->flags & PART_ADD;
@@ -647,10 +648,11 @@ void scene_draw(u64 now) {
       const FurniDef *wall_def = def_get(it->def);
       if (wall_def && wall_def->kind == KIND_WALL) {
         int lo, hi;
-        if (furni_wall_range(it->def, it->rot, &lo, &hi)) {
+        if (furni_wall_range(it->def, &lo, &hi)) {
           if (iz < lo) iz = lo;
           if (iz > hi) iz = hi;
         }
+        iz += world_floor_height(it->x, it->y);
       }
       iso(ix, iy, &sx, &sy);
       float left = scr_x(sx + p->ox), top = scr_y(sy + p->oy - iz);

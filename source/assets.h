@@ -10,7 +10,7 @@ typedef struct { u8 page; u16 x, y, w, h; s16 ox, oy; float depth; u8 alpha; u8 
 enum { PART_SHADOW = 1, PART_ADD = 2 };
 typedef struct { u16 def; u8 rot, state; u16 frame, count; const FurniPart *parts; } FurniVariant;
 /** `tex`: has its own texture in romfs:/furni/d<id>.t3x; `icon_*`: catalogue icon inside it. */
-typedef struct { u16 id; u8 kind, w, h; u16 seat; u8 states, flags, rotations, drink; const char *name; u8 tex; u16 icon_x, icon_y, icon_w, icon_h; const char *drinks, *desc; u8 icon_page, casino; u32 chips; } FurniDef;
+typedef struct { u16 id; u8 kind, w, h; u16 seat; u8 states, flags, rotations, drink; const char *name; u8 tex; u16 icon_x, icon_y, icon_w, icon_h; const char *drinks, *desc; u8 icon_page, casino; u32 chips; u8 wall_min, wall_max; } FurniDef;
 typedef struct { u16 def; u8 page; u32 bytes; } FurniTexture;
 extern const FurniTexture furni_textures[];
 extern const int furni_texture_count;

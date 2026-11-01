@@ -159,8 +159,9 @@ int main(void) {
   assert(ents == 1 && W.online == ents+5);
   // Wall art uses the visible wall face: a 106 px poster is limited to z 53..65.
   int wall_lo, wall_hi;
-  assert(furni_wall_range(64936, 0, &wall_lo, &wall_hi) && wall_lo == 53 && wall_hi == 65);
-  assert(furni_wall_range(64936, 1, &wall_lo, &wall_hi) && wall_lo == 53 && wall_hi == 65);
+  assert(furni_wall_range(64936, &wall_lo, &wall_hi) && wall_lo == 38 && wall_hi == 79);
+  // Sound-proofed Wall is taller than the wall: it stands on the floor line.
+  assert(furni_wall_range(40201, &wall_lo, &wall_hi) && wall_lo == 63 && wall_hi == 63);
   for(int game=0;game<2;game++){
     const char *slug=game?"snowstorm":"battleball",*model=game?"snowwar_lobby_1":"bb_lobby_1";
     sim_start(slug,clock_ms);w_begin(&w,C_HELLO);w_u16(&w,PROTOCOL_VERSION);w_str(&w,"");w_str(&w,"");send_msg(&w);

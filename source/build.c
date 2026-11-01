@@ -72,7 +72,7 @@ static int stack_mode(void) { return strcmp(STACK.slug, W.slug) ? 0 : STACK.mode
 /** Keep a wall item in the part of the wall face that shows the whole sprite (Kepler local y). */
 static void wall_clamp(void) {
   int lo, hi;
-  if (G.wall && furni_wall_range(G.def, (u8)G.rot, &lo, &hi)) {
+  if (G.wall && furni_wall_range(G.def, &lo, &hi)) {
     if (G.z < lo) G.z = lo;
     if (G.z > hi) G.z = hi;
   }
@@ -83,7 +83,7 @@ static bool can_place(Ghost *g) {
   if (!world_can_decorate() || !def) return false;
   if (def->kind == KIND_WALL) {
     int lo, hi;
-    bool ranged = furni_wall_range(g->def, (u8)g->rot, &lo, &hi);
+    bool ranged = furni_wall_range(g->def, &lo, &hi);
     bool door = g->rot % 2 == 0 && g->x == W.door_x + 1 && g->y == W.door_y;
     return world_tile(g->x, g->y) && (g->rot % 2 == 0 ? !world_tile(g->x - 1, g->y) : !world_tile(g->x, g->y - 1))
       && !door && g->z >= 8 && g->z <= 110 && (!ranged || (g->z >= lo && g->z <= hi));

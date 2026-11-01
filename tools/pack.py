@@ -701,7 +701,7 @@ def main():
         casino = next((i + 1 for i, name in enumerate(games) if 'casino_' + name in d['flags']), 0)
         # Chip tokens of the Tweebbo Exchange (CHIP_<value>_token): redeemed for chips, not credits.
         chips = int(d['sprite'].split('_')[1]) if 'redeemable_chips' in d['flags'] else 0
-        w(f"  {{{d['id']}, {d['kind']}, {d['width']}, {d['height']}, {d['seatHeight']}, {d['states']}, {bits}, {rots}, {drink}, {c_str(d['name'])}, {tex}, {ix}, {iy}, {iw}, {ih}, {c_str(drinks)}, {c_str(d.get('description') or '')}, {ip}, {casino}, {chips}}},")
+        w(f"  {{{d['id']}, {d['kind']}, {d['width']}, {d['height']}, {d['seatHeight']}, {d['states']}, {bits}, {rots}, {drink}, {c_str(d['name'])}, {tex}, {ix}, {iy}, {iw}, {ih}, {c_str(drinks)}, {c_str(d.get('description') or '')}, {ip}, {casino}, {chips}, {d.get('wallMin', 0)}, {d.get('wallMax', 0)}}},")
     w('};')
     w(f'const int furni_def_count = {len(defs)};')
     w('')
