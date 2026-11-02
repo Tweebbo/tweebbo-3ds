@@ -8,6 +8,10 @@ $(error "DEVKITARM is not set. Use ./build.sh")
 endif
 
 TOPDIR ?= $(CURDIR)
+LIBCTRU_BUILD_ID := $(shell python3 "$(TOPDIR)/tools/check-libctru.py")
+ifeq ($(strip $(LIBCTRU_BUILD_ID)),)
+$(error libctru 2.7.1 or newer is required. See docs/DEVELOPING.md)
+endif
 include $(DEVKITARM)/3ds_rules
 
 BUILD_PROFILE ?= release
@@ -78,7 +82,7 @@ export _3DSXFLAGS += --smdh=$(OUTPUT).smdh --romfs=$(CURDIR)/$(ROMFS)
 .PHONY: all clean
 
 all: $(BUILD)
-	@printf '%s\n' '$(BUILD_PROFILE)|$(TWEEBBO_SERVER)|$(shell cat VERSION)' > $(BUILD)/config.next
+	@printf '%s\n' '$(BUILD_PROFILE)|$(TWEEBBO_SERVER)|$(shell cat VERSION)|$(LIBCTRU_BUILD_ID)' > $(BUILD)/config.next
 	@cmp -s $(BUILD)/config.next $(BUILD)/config.stamp || { mv $(BUILD)/config.next $(BUILD)/config.stamp; rm -f $(BUILD)/*.o; }
 	@mkdir -p $(OUTPUT_DIR)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile

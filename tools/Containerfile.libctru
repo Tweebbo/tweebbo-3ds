@@ -1,0 +1,5 @@
+FROM docker.io/devkitpro/devkitarm:latest
+
+RUN /opt/devkitpro/pacman/bin/pacman -Sy --noconfirm libctru
+COPY check-libctru.py /tmp/check-libctru.py
+RUN python3 /tmp/check-libctru.py && rm /tmp/check-libctru.py

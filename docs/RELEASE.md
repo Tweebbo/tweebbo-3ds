@@ -1,14 +1,9 @@
-# Tweebbo for Nintendo 3DS 1.3.12
+# Tweebbo 1.3.13
 
-Optional wall furniture fix. Keep playing and update whenever convenient.
+This Nintendo 3DS update includes the memory allocator correction from libctru 2.7.1.
 
-- Full-height wall items such as Rock Wall, Cabin Wall and Sound-proofed Wall stand on the floor instead of floating above it.
-- Wall items follow raised floors, so they line up with the wall in rooms with steps.
-- Posters and other wall items have a wider height range on the wall.
-- Items already in your rooms move to the right height by themselves. Nothing else changes in rooms, games, saves or your account.
+The update is optional. Smaller CIA and 3DSX downloads are available from 1.3.12, with complete packages as fallback. Saved characters and rooms are retained.
 
-Install with the in-game updater or FBI, or replace the 3DSX in the Homebrew Launcher. Keep your saved data and reopen Tweebbo after installation. The complete package is available.
+See the [player changelog](https://tweebbo.lol/changelog).
 
-Full changelog: https://tweebbo.lol/changelog
-
-![Latest CIA download QR code](https://github.com/Tweebbo/tweebbo-3ds/releases/latest/download/qr.png)
+Build, package, host tests and exact incremental reconstruction checks passed. Physical-console installation remains unverified.

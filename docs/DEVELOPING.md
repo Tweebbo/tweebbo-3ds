@@ -4,6 +4,19 @@
 
 The native client uses C, libctru, citro2d and mbedTLS. Read [AGENTS.md](../AGENTS.md) before contributing. Host and emulator checks do not replace physical-console validation.
 
+libctru 2.7.1 or newer is required. Its allocator clamps the application heap to
+the 96 MiB virtual address region when the environment grants extended memory.
+Older libraries can fail before `main()`. Updating the Homebrew Menu alone does
+not replace the library statically linked into Tweebbo.
+
+`build.sh` uses `localhost/native-3ds-libctru-fixed:latest` and builds that image
+from `tools/Containerfile.libctru` when absent. The recipe installs libctru with
+devkitPro's signed package manager. `DEVKITARM_IMAGE` can select a different SDK.
+Direct `make` builds also reject libctru older than 2.7.1. The configuration stamp
+includes the package version and archive fingerprint so cached objects cannot
+silently retain the previous library. The corrected candidate uses the existing
+64 MB Legacy CIA settings; it does not enable expanded RAM for players.
+
 The unpublished [native power work](POWER.md) covers idle rendering and HTTP worker waits on 3DS, Switch and Vita, with a hardware battery comparison procedure.
 
 ## Build

@@ -8,7 +8,7 @@
 #   ./build.sh clean
 set -euo pipefail
 cd "$(dirname "$0")"
-IMAGE=docker.io/devkitpro/devkitarm:latest
+IMAGE=${DEVKITARM_IMAGE:-localhost/native-3ds-libctru-fixed:latest}
 BUILD_PROFILE=release
 TARGET=out/tweebbo
 RSF=cia/tweebbo.rsf
@@ -63,7 +63,12 @@ if [ "${1:-}" = showcase ]; then
 fi
 
 [ "$BUILD_PROFILE" = debug ] || rm -f romfs/debug-build.txt
-run() { podman run --rm -e BUILD_PROFILE="$BUILD_PROFILE" -e TWEEBBO_SERVER="${TWEEBBO_SERVER:-}" -v "$PWD":/work:z -w /work "$IMAGE" bash -c "$*"; }
+run() {
+  if ! podman image exists "$IMAGE"; then
+    podman build -t "$IMAGE" -f tools/Containerfile.libctru tools
+  fi
+  podman run --rm -e BUILD_PROFILE="$BUILD_PROFILE" -e TWEEBBO_SERVER="${TWEEBBO_SERVER:-}" -v "$PWD":/work:z -w /work "$IMAGE" bash -c "$*"
+}
 # makerom needs glibc 2.38 or newer.
 run_cia() { podman run --rm -v "$PWD":/work:z -w /work docker.io/library/ubuntu:24.04 bash -c "$*"; }
 
