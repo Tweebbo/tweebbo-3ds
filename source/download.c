@@ -27,6 +27,7 @@ typedef struct {
   Endpoint ep;
   char url[2048], path[2048], request[3072], head[16385];
   char validator[192], validator_name[24];
+  const ConnCancel *cancel;
   Piece pieces[CONNECTIONS];
 } Download;
 typedef struct {
@@ -65,7 +66,8 @@ static bool request(Download *d, Piece *p, long first, long last, long size,
                     Reply *reply, char *err, int cap) {
   memset(reply, 0, sizeof *reply);
   p->first = first; p->last = last; p->used = 0; p->active = true;
-  if (!p->conn) p->conn = conn_open_download(&d->ep, 20000, err, cap);
+  if(conn_cancelled(d->cancel))return false;
+  if (!p->conn) p->conn = conn_open_cancel(&d->ep, 20000, err, cap,true,d->cancel);
   if (!p->conn) return false;
   char condition[224] = "";
   if (d->validator[0]) snprintf(condition, sizeof condition, "If-Range: %s\r\n", d->validator);
@@ -121,13 +123,15 @@ static void release(Download *d) {
   free(d);
 }
 
-int http_download_optimized_from(const char *url, long from, int connections, HttpSink sink,
-                                 void *ctx, long *total, char *err, int err_cap) {
-  if (connections <= 1) return http_download_from(url, from, sink, ctx, total, err, err_cap);
+int http_download_optimized_from_cancel(const char *url, long from, int connections, HttpSink sink,
+                                 void *ctx, long *total, char *err, int err_cap,const ConnCancel *cancel) {
+  if(conn_cancelled(cancel)){snprintf(err,(size_t)err_cap,"Download stopped.");return 0;}
+  if (connections <= 1) return http_download_from_cancel(url, from, sink, ctx, total, err, err_cap,cancel);
   if (from < 0) { snprintf(err, (size_t)err_cap, "Invalid download offset."); return 0; }
   if (connections > CONNECTIONS) connections = CONNECTIONS;
   Download *d = calloc(1, sizeof *d);
-  if (!d) return http_download_from(url, from, sink, ctx, total, err, err_cap);
+  if (!d) return http_download_from_cancel(url, from, sink, ctx, total, err, err_cap,cancel);
+  d->cancel=cancel;
   long committed = from;
   bool cancelled = false;
   if (strlen(url) >= sizeof d->url) goto fallback;
@@ -174,6 +178,7 @@ int http_download_optimized_from(const char *url, long from, int connections, Ht
   int current = 0;
   u64 progress = now_ms();
   while (committed < size) {
+    if(conn_cancelled(cancel))goto fallback;
     bool advanced = false;
     for (int i = 0; i < connections; i++) {
       Piece *p = &d->pieces[i];
@@ -206,7 +211,9 @@ int http_download_optimized_from(const char *url, long from, int connections, Ht
 
 fallback:
   release(d);
-  if (cancelled) { snprintf(err, (size_t)err_cap, "Download stopped."); return 0; }
+  if (cancelled||conn_cancelled(cancel)) { snprintf(err, (size_t)err_cap, "Download stopped."); return 0; }
   // Only committed, ordered bytes reached the sink; prefetched ranges can be discarded.
-  return http_download_from(url, committed, sink, ctx, total, err, err_cap);
+  return http_download_from_cancel(url, committed, sink, ctx, total, err, err_cap,cancel);
 }
+
+int http_download_optimized_from(const char *url,long from,int connections,HttpSink sink,void *ctx,long *total,char *err,int err_cap){return http_download_optimized_from_cancel(url,from,connections,sink,ctx,total,err,err_cap,NULL);}

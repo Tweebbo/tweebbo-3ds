@@ -1,6 +1,9 @@
 // Queries about the catalogue and the furniture exported from the web client.
 #pragma once
 #include "assets.h"
+_Static_assert(sizeof(CatOffer)==(sizeof(void*)==8?40:24),"Club restrictions must retain the catalogue memory budget");
+enum { FEATURE_STACK_MAGIC=14, FEATURE_WALK_MAGIC=15 };
+static inline u8 def_height_helper(const FurniDef *d){return !d?0:d->feature==FEATURE_STACK_MAGIC?1:d->feature==FEATURE_WALK_MAGIC?2:0;}
 
 const FurniDef *def_get(u16 id);
 /** Walkable furniture the room owner switches (dance floors, disco balls; server room.rs use_item). */

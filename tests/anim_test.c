@@ -2,6 +2,7 @@
 // talking (mouth), blinking, waving, dancing, walking, holding and sipping, sitting, swimming.
 #include "../source/avatar.h"
 #include "../source/assets.h"
+#include "../source/avatar_effects.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -26,6 +27,8 @@ static void rec(int page, int sx, int sy, int sw, int sh, float x, float y) {
 void gfx_sprite(int page, int sx, int sy, int sw, int sh, float x, float y, float s, bool f, u32 c) { (void)s; (void)f; (void)c; rec(page, sx, sy, sw, sh, x, y); }
 void gfx_sprite_xy(int page, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool f, u32 c) { (void)kx; (void)ky; (void)f; (void)c; rec(page, sx, sy, sw, sh, x, y); }
 void gfx_sprite_solid(int page, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool f, u32 c) { (void)kx; (void)ky; (void)f; (void)c; rec(page, sx, sy, sw, sh, x, y); }
+void gfx_additive(bool on){(void)on;}
+bool gfx_avatar_effect(u64 key,u16 effect,const AvatarFxDraw *parts,unsigned count,bool mirrored,float x,float y,float scale,u8 alpha){return false;}
 void dbg_log(const char *fmt, ...) { (void)fmt; }
 
 static const char *draw(Pose pose, int frame, int expr, int drink, bool sip) {
@@ -125,6 +128,12 @@ int main(void) {
     }
   }
   assert(sleeves>0);printf("Raised coat sleeves: %d carrying/sipping poses passed.\n",sleeves);tracked=NULL;
+  test_look=0;char normal[4096],dressed[4096];snprintf(normal,sizeof normal,"%s",draw(POSE_STD,0,0,0,false));
+  trace[0]=0;ops=0;avatar_draw_mannequin(0,2,0,0,1);snprintf(dressed,sizeof dressed,"%s",trace);
+  differs("mannequin has no face or hair",normal,dressed);
+  trace[0]=0;ops=0;avatar_draw_mannequin(2|(6ull<<2)|(5ull<<5)|(2ull<<32),2,0,0,1);
+  assert(!strcmp(dressed,trace));
+  assert(!strcmp(normal,draw(POSE_STD,0,0,0,false)));
   for (int skin=1; skin<=7; skin++) {
     test_look = (u64)skin << 48;
     for (int pose=POSE_STD; pose<=POSE_DANCE; pose++) for (int dir=0; dir<8; dir++) {
@@ -153,6 +162,23 @@ int main(void) {
       }
     }
   }
-  printf("OK\n");
+  const PeopleSprite *shoe=NULL;
+  for(int i=0;i<people_sprite_count;i++)if(!strcmp(people_sprites[i].name,"h_std_sh_001_2_0")){shoe=&people_sprites[i];break;}
+  assert(shoe);tracked=shoe;tracked_drawn=false;trace[0]=0;ops=0;
+  avatar_draw(0,2,POSE_STD,0,0,2,0,false,0,0,1,255);assert(tracked_drawn);
+  char ordinary[4096];snprintf(ordinary,sizeof ordinary,"%s",trace);
+  tracked_drawn=false;trace[0]=0;ops=0;
+  avatar_draw_effected(0,2,POSE_STD,0,0,2,0,false,0,0,1,255,38,3);assert(!tracked_drawn);
+  tracked_drawn=false;trace[0]=0;ops=0;
+  avatar_draw(0,2,POSE_STD,0,0,2,0,false,0,0,1,255);assert(tracked_drawn&&!strcmp(ordinary,trace));
+  tracked=NULL;
+  for(unsigned i=0;i<avatar_fx_animation_count;i++)for(int direction=0;direction<8;direction++){
+    const AvatarFxAnimation *animation=&avatar_fx_animations[i];
+    for(unsigned tick=0;tick<animation->moving_period;tick++){
+      const AvatarFxFrame *frame=avatar_effect_frame(animation->id,direction,tick,true);assert(frame&&frame->body<avatar_fx_body_count);
+      trace[0]=0;ops=0;avatar_effect_layers(animation->id,direction,tick,true,0,0,1,true);avatar_effect_layers(animation->id,direction,tick,true,0,0,1,false);
+    }
+  }
+  printf("OK: baseline avatar poses/cache and every native effect direction/frame plan.\n");
   return 0;
 }

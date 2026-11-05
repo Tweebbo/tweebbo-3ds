@@ -14,6 +14,7 @@
 #include "world.h"
 
 Ghost G;
+_Static_assert(sizeof(Ghost)==28,"Precise placement must retain the ghost memory budget");
 
 static struct {
   u32 inv_id, moving;
@@ -34,21 +35,6 @@ static bool actor_at(int x, int y, bool pets_only) {
     if (ent_moving(e, now) && (int)(e->fx + .5f) == x && (int)(e->fy + .5f) == y) return true;
   }
   return false;
-}
-
-/** Furniture covering the tile (wall items excluded). */
-static int items_at(int x, int y, Item **out, int cap) {
-  int n = 0;
-  for (int i = 0; i < MAX_ITEMS && n < cap; i++) {
-    Item *it = &W.items[i];
-    if (!it->used) continue;
-    const FurniDef *d = def_get(it->def);
-    if (d && d->kind == KIND_WALL) continue;
-    int w, h;
-    def_size(it->def, it->rot, &w, &h);
-    if (x >= it->x && y >= it->y && x < it->x + w && y < it->y + h) out[n++] = it;
-  }
-  return n;
 }
 
 // Builder :stackmode (server room.rs): 0 normal, 1 stack on any item, 2 flat. It lasts while
@@ -82,50 +68,35 @@ static bool can_place(Ghost *g) {
   const FurniDef *def = def_get(g->def);
   if (!world_can_decorate() || !def) return false;
   if (def->kind == KIND_WALL) {
+    g->z_fine=0;
     int lo, hi;
     bool ranged = furni_wall_range(g->def, &lo, &hi);
     bool door = g->rot % 2 == 0 && g->x == W.door_x + 1 && g->y == W.door_y;
     return world_tile(g->x, g->y) && (g->rot % 2 == 0 ? !world_tile(g->x - 1, g->y) : !world_tile(g->x, g->y - 1))
       && !door && g->z >= 8 && g->z <= 110 && (!ranged || (g->z >= lo && g->z <= hi));
   }
+  bool magic=def_height_helper(def)!=0;
   const Item *original = g->ignore ? world_item(g->ignore) : NULL;
   if (original) {
+    if(!stack_mode()&&world_supports_items(original))return false;
     int ow, oh;
     def_size(original->def, original->rot, &ow, &oh);
     for (int dy = 0; dy < oh; dy++)
       for (int dx = 0; dx < ow; dx++) {
         int x = original->x + dx, y = original->y + dy;
-        if ((def->kind != KIND_FLOOR || def->seat > 0) && actor_at(x, y, false)) return false;
-        if (def->seat > 0 && !stack_mode()) {
-          Item *list[16];
-          int n = items_at(x, y, list, 16);
-          for (int k = 0; k < n; k++) if (list[k]->id != original->id && list[k]->z >= original->z + def->seat) return false;
-        }
+        if (!magic&&(def->kind != KIND_FLOOR || def->seat > 0) && actor_at(x, y, false)) return false;
       }
   }
-  int w, h, height = -1;
+  WorldPlacement placement;if(!world_placement(g->def,g->x,g->y,g->rot,g->ignore,stack_mode(),&placement))return false;
+  int w, h;
   def_size(g->def, (u8)g->rot, &w, &h);
   for (int dy = 0; dy < h; dy++)
     for (int dx = 0; dx < w; dx++) {
       int x = g->x + dx, y = g->y + dy;
-      if (!world_tile(x, y) || (x == W.door_x && y == W.door_y)) return false;
-      if (actor_at(x, y, def->kind == KIND_FLOOR && def->seat == 0)) return false;
-      int surface = 0, mode = stack_mode();
-      Item *list[16];
-      int n = mode == 2 ? 0 : items_at(x, y, list, 16);
-      for (int k = 0; k < n; k++) {
-        if (list[k]->id == g->ignore) continue;
-        const FurniDef *support = def_get(list[k]->def);
-        if (!support) return false;
-        if (!mode && support->kind != KIND_FLOOR && !(support->flags & DEF_STACK)) return false;
-        int top = list[k]->z + support->seat;
-        if (top > surface) surface = top;
-      }
-      if (!mode && height >= 0 && height != surface) return false;
-      if (surface > height) height = surface;
+      if (!magic&&!(placement.helper_cells&(1ull<<(dy*w+dx)))&&actor_at(x, y, def->kind == KIND_FLOOR && def->seat == 0)) return false;
     }
-  g->z = height < 0 ? 0 : height;
-  return g->z < 256;
+  u32 height=placement.height100;
+  g->z=(int)(height/100);g->z_fine=(u8)(height%100);return true;
 }
 
 // ---------------------------------------------------------------- walls
@@ -174,7 +145,7 @@ void build_start(u16 def, u32 inv_id, u32 moving) {
   G.wall = d && d->kind == KIND_WALL;
   const Item *it = moving ? world_item(moving) : NULL;
   Ent *me = world_ent(W.me);
-  if (it) { G.x = it->x; G.y = it->y; G.rot = it->rot; G.z = it->z; }
+  if (it) { G.x = it->x; G.y = it->y; G.rot = it->rot; G.z = it->z; G.z_fine=it->z_fine; }
   else if (me) { G.x = me->x; G.y = me->y; G.rot = def_rotation(def, 0); }
   if (G.wall) {
     // Start at the wall slot closest to the item or the player.
@@ -288,7 +259,8 @@ void build_draw_panel(u64 now) {
   const char *state = B.pending ? "Placing…" : G.ok ? "Free spot: press A to place." : G.wall ? "Choose a free spot on the wall." : "This spot is taken.";
   sk_text(state, IN_X + 66, IN_Y + 26, 10.5f, B.pending ? SK_DIM : G.ok ? SK_GO : SK_DANGER, 0, IN_W - 72);
   char pos[48];
-  snprintf(pos, sizeof pos, "Tile %d, %d  ·  height %d", G.x, G.y, G.z);
+  if(G.z_fine)snprintf(pos,sizeof pos,"Tile %d, %d  ·  height %d.%02u",G.x,G.y,G.z,G.z_fine);
+  else snprintf(pos, sizeof pos, "Tile %d, %d  ·  height %d", G.x, G.y, G.z);
   sk_text(pos, IN_X + 66, IN_Y + 42, 10, SK_DIM, 0, IN_W - 72);
   float y = IN_Y + 66;
   sk_paragraph(G.wall ? TR("Circle Pad / D-Pad: slide along the wall\nL / R: lower / raise\nA: place   B: cancel   Tap the map to jump")

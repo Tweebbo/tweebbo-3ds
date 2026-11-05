@@ -1,4 +1,6 @@
+#include "gfx_color.h"
 #include "gfx.h"
+#include "gfx_highlight_tev.h"
 #include "lookup_cache.h"
 #include "language.h"
 #include <math.h>
@@ -11,7 +13,7 @@
 #include "gen/fastfood_assets.h"
 #include "gen/battle_assets.h"
 
-#define MAX_PAGES 24
+#define MAX_PAGES 64
 #define MAX_ROOMS 8
 
 static C3D_Tex pages[MAX_PAGES];
@@ -29,6 +31,10 @@ static bool cjk_loaded;
 static bool linear;
 static void scene_free(void);
 static bool furni_release_all(void);
+static uint32_t modulation=UINT32_MAX;
+void gfx_modulate(u32 color){modulation=color;}
+static int highlight_kind,highlight_strength;static u32 highlight_rgb;
+void gfx_highlight(int kind,u32 rgb,int strength){highlight_kind=kind>=2&&kind<=4&&strength>0?kind:0;highlight_rgb=rgb;highlight_strength=strength;}
 static void draw_tex(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float scale, bool flip, u32 color);
 static void draw_tex_xy(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool flip, u32 color);
 static C3D_Tex snow_pages[12];
@@ -44,6 +50,46 @@ static u32 furni_budget = 8u * 1024 * 1024;
 static struct { u16 def; u8 page; bool loaded, failed; C3D_Tex tex; u32 used, retry; } furni[FURNI_SLOTS];
 static LookupCache furniture_lookup;
 static u32 frame_no, furni_bytes;
+static unsigned morton(unsigned x,unsigned y);
+#define AVATAR_FX_CACHE 128
+#define AVATAR_FX_BYTES (4u*1024*1024)
+static struct {u64 key;u16 effect;bool loaded;C3D_Tex tex;u32 used;int x,y,w,h;} avatar_fx[AVATAR_FX_CACHE];
+static u32 avatar_fx_bytes;
+static void avatar_fx_evict(int index){
+  if(!avatar_fx[index].loaded)return;
+  C2D_Flush();avatar_fx_bytes-=avatar_fx[index].tex.size;C3D_TexDelete(&avatar_fx[index].tex);avatar_fx[index].loaded=false;
+}
+bool gfx_avatar_effect(u64 key,u16 effect,const AvatarFxDraw *parts,unsigned count,bool mirrored,float x,float y,float scale,u8 alpha){
+  int slot=-1;
+  for(int i=0;i<AVATAR_FX_CACHE;i++){
+    if(avatar_fx[i].loaded&&avatar_fx[i].key==key&&avatar_fx[i].effect==effect){slot=i;goto draw;}
+    if(!avatar_fx[i].loaded){if(slot<0||avatar_fx[slot].loaded)slot=i;}
+    else if(avatar_fx[i].used+1<frame_no&&(slot<0||(avatar_fx[slot].loaded&&avatar_fx[i].used<avatar_fx[slot].used)))slot=i;
+  }
+  if(slot<0)return false;
+  AvatarFxBitmap bitmap;if(!avatar_effect_compose(parts,count,mirrored,effect,&bitmap))return false;
+  unsigned width=8,height=8;while(width<(unsigned)bitmap.width)width*=2;while(height<(unsigned)bitmap.height)height*=2;
+  avatar_fx_evict(slot);
+  while(avatar_fx_bytes+width*height*4>AVATAR_FX_BYTES){
+    int victim=-1;for(int i=0;i<AVATAR_FX_CACHE;i++)if(avatar_fx[i].loaded&&avatar_fx[i].used+1<frame_no&&(victim<0||avatar_fx[i].used<avatar_fx[victim].used))victim=i;
+    if(victim<0){free(bitmap.pixels);return false;}avatar_fx_evict(victim);
+  }
+  if(!C3D_TexInit(&avatar_fx[slot].tex,width,height,GPU_RGBA8)){free(bitmap.pixels);return false;}
+  C3D_Tex *texture=&avatar_fx[slot].tex;memset(texture->data,0,texture->size);
+  for(unsigned py=0;py<(unsigned)bitmap.height;py++)for(unsigned px=0;px<(unsigned)bitmap.width;px++){
+    unsigned texel=(((py/8)*(width/8)+px/8)*64)+morton(px&7,py&7);
+    u8 *destination=(u8 *)texture->data+texel*4,*source=bitmap.pixels+((size_t)py*bitmap.width+px)*4;
+    for(unsigned channel=0;channel<4;channel++)destination[3-channel]=source[channel];
+  }
+  free(bitmap.pixels);GSPGPU_FlushDataCache(texture->data,texture->size);
+  C3D_TexSetFilter(texture,GPU_NEAREST,GPU_NEAREST);C3D_TexSetWrap(texture,GPU_CLAMP_TO_EDGE,GPU_CLAMP_TO_EDGE);
+  avatar_fx[slot].key=key;avatar_fx[slot].effect=effect;avatar_fx[slot].loaded=true;
+  avatar_fx[slot].x=bitmap.x;avatar_fx[slot].y=bitmap.y;avatar_fx[slot].w=bitmap.width;avatar_fx[slot].h=bitmap.height;avatar_fx_bytes+=texture->size;
+draw:
+  avatar_fx[slot].used=frame_no;
+  draw_tex(&avatar_fx[slot].tex,0,0,avatar_fx[slot].w,avatar_fx[slot].h,x+avatar_fx[slot].x*scale,y+avatar_fx[slot].y*scale,scale,false,0x00ffffffu|((u32)alpha<<24));
+  return true;
+}
 // Anti-thrash: a texture drawn in the last FURNI_KEEP_FRAMES frames is never evicted to make
 // room for another one (the newcomer waits and retries instead), and at most
 // FURNI_LOADS_PER_FRAME textures are read from romfs per frame. Without this, a room whose
@@ -261,6 +307,8 @@ void gfx_frame(void) {
 }
 
 void gfx_exit(void) {
+  for(int i=0;i<AVATAR_FX_CACHE;i++)avatar_fx_evict(i);
+  avatar_effect_pixels_close();
   gfx_snow_free();
   gfx_fastfood_free();
   gfx_battle_free();
@@ -351,6 +399,7 @@ void gfx_battle_blend(int mode){
 }
 
 static void draw_tex_xy(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float kx, float ky, bool flip, u32 color) {
+  color=gfx_color_multiply(color,modulation);
   Tex3DS_SubTexture sub = {
     .width = (u16)sw, .height = (u16)sh,
     .left = sx / (float)tex->width, .right = (sx + sw) / (float)tex->width,
@@ -359,7 +408,13 @@ static void draw_tex_xy(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, f
   C2D_Image img = {tex, &sub};
   C2D_ImageTint tint;
   C2D_PlainImageTint(&tint, color, 1.0f);
-  C2D_DrawImageAt(img, x, y, 0.5f, &tint, flip ? -kx : kx, ky);
+  if(highlight_kind){
+    C2D_Flush();C2D_PlainImageTint(&tint,(color&0xff000000)|0xffffff,1.0f);
+    C2D_DrawImageAt(img,x,y,0.5f,&tint,flip?-kx:kx,ky);
+    C3D_TexEnv saved[6];for(int stage=0;stage<6;stage++)saved[stage]=*C3D_GetTexEnv(stage);
+    highlight_tev(highlight_kind,highlight_rgb,highlight_strength,color);C2D_Flush();
+    for(int stage=0;stage<6;stage++)C3D_SetTexEnv(stage,&saved[stage]);
+  }else C2D_DrawImageAt(img, x, y, 0.5f, &tint, flip ? -kx : kx, ky);
 }
 
 static void draw_tex(C3D_Tex *tex, int sx, int sy, int sw, int sh, float x, float y, float scale, bool flip, u32 color) {
@@ -695,8 +750,9 @@ static unsigned utf8_next(const char **text) {
   return c;
 }
 
-static const FontGlyph *glyph(unsigned code, int size) {
-  if (code > 0xffff) return NULL;
+/** Binary search of the bitmap font; ASCII results are memoized per size because text is
+ *  measured and drawn glyph by glyph every frame (labels, fitting, paragraph wrapping). */
+static const FontGlyph *glyph_search(unsigned code, int size) {
   int lo = 0, hi = font_glyph_count - 1;
   unsigned key = (unsigned)size << 16 | code;
   while (lo <= hi) {
@@ -705,6 +761,25 @@ static const FontGlyph *glyph(unsigned code, int size) {
     unsigned k = (unsigned)g->size << 16 | g->code;
     if (key == k) return g;
     if (k < key) lo = mid + 1; else hi = mid - 1;
+  }
+  return NULL;
+}
+
+#define GLYPH_SIZES 17
+static const FontGlyph *ascii_glyphs[GLYPH_SIZES][128];
+static bool ascii_ready[GLYPH_SIZES];
+
+static const FontGlyph *glyph(unsigned code, int size) {
+  if (code > 0xffff) return NULL;
+  if (code < 128 && size >= 0 && size < GLYPH_SIZES) {
+    if (!ascii_ready[size]) {
+      for (unsigned c = 0; c < 128; c++) ascii_glyphs[size][c] = glyph_search(c, size);
+      ascii_ready[size] = true;
+    }
+    if (ascii_glyphs[size][code]) return ascii_glyphs[size][code];
+  } else {
+    const FontGlyph *g = glyph_search(code, size);
+    if (g) return g;
   }
   return cjk_loaded?tw_cjk_glyph(code):NULL;
 }
@@ -756,7 +831,31 @@ float text_width(const char *s, float size) {
   return text_get(s, &w1) ? w1 * legible(size) / FONT_PX : 0;
 }
 
+/** Bitmap-only text_fit in one pass: the longest whole-character prefix whose width plus the
+ *  ellipsis fits. Same result as the measuring loop below, without measuring every prefix
+ *  again (quadratic per label per frame). False when a glyph needs the system font. */
+static bool bitmap_fit(char *s, float size, float max) {
+  int px = bitmap_size(size), original = (int)strlen(s);
+  const FontGlyph *dots = glyph(0x2026, px);
+  if (!dots) return false;
+  float total = bitmap_width(s, px);
+  if (total < 0) return false;
+  if (total <= max) return true;
+  if (original < 3 || dots->advance > max) { s[0] = 0; return true; }
+  const char *p = s;
+  int best = 0;
+  float width = 0;
+  while (*p) {
+    int at = (int)(p - s);
+    if (at + 3 <= original && width + dots->advance <= max) best = at;
+    width += glyph(utf8_next(&p), px)->advance;
+  }
+  memcpy(s + best, "\xE2\x80\xA6", 4);
+  return true;
+}
+
 void text_fit(char *s, float size, float max) {
+  if (bitmap_fit(s, size, max)) return;
   if (text_width(s, size) <= max) return;
   int original = (int)strlen(s), n = original;
   if (original < 3 || text_width("…", size) > max) { s[0] = 0; return; }

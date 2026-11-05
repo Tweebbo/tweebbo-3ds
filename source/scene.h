@@ -26,6 +26,7 @@ void device_badge_size(int device, int *w, int *h);
 /** Ghost furniture in build mode (like renderer.ghost on the web). */
 typedef struct {
   bool on, wall, ok;
+  u8 z_fine;
   u16 def;
   int x, y, rot, z;
   u32 ignore; /* item being moved (not drawn in its old place) */
@@ -39,3 +40,5 @@ u64 scene_look(u32 eid);
 /** World point (iso pixels) on the top screen, and the current zoom (activity drawings). */
 void scene_to_screen(float wx, float wy, float *x, float *y);
 float scene_zoom(void);
+
+void scene_chat_styled(u32 eid,const char *text,u64 now,s8 width,u8 flags);

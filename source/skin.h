@@ -63,6 +63,8 @@ void sk_content(float x, float y, float w, float h);
 bool sk_button(float x, float y, float w, const char *label, bool enabled);
 /** Large button (button.a) for main actions. */
 bool sk_button_big(float x, float y, float w, const char *label, bool enabled);
+/** 14x14 classic checkbox with a tick when `on`. */
+void sk_check(float x, float y, bool on, bool enabled);
 /** Green/grey "Go" button of the navigator. */
 bool sk_go(float x, float y, float w, float h, const char *label, bool active);
 /** Classic text field that opens the system keyboard when touched. */

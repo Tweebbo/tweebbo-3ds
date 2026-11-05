@@ -74,6 +74,7 @@ bool furni_wall_range(u16 def, int *min, int *max) {
 u16 furni_frame(u16 def, u8 state, u64 time) {
   const FurniDef *d = def_get(def);
   if (!d) return 0;
+  if(d->kind==KIND_DICE && d->use_random)return state==d->use_random?(time/100)%d->use_random:0;
   // Same as furniFrame() in furni.ts.
   if (state > 0 && (d->flags & DEF_HOLO)) return (u8)((time / 100) % 32);
   if (state == 2 && (d->flags & DEF_TELEPORTER)) return (u8)((time / 100) % 2);
@@ -84,7 +85,10 @@ u16 furni_frame(u16 def, u8 state, u64 time) {
   while (lo <= hi) {
     int mid = (lo + hi) / 2;
     const FurniAnimation *a = &furni_animations[mid];
-    if (a->def == def && a->state == state) return a->frames[(time / a->tick) % a->period];
+    if (a->def == def && a->state == state) {
+      u64 step=time/a->tick;
+      return a->frames[d && d->use_ticks?(step<a->period?step:(u64)(a->period-1)):step%a->period];
+    }
     if (a->def < def || (a->def == def && a->state < state)) lo = mid + 1; else hi = mid - 1;
   }
   return 0;

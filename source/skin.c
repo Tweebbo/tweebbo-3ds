@@ -119,6 +119,16 @@ bool sk_button_big(float x, float y, float w, const char *label, bool enabled) {
   return enabled && sk_hit(x, y, w, h);
 }
 
+void sk_check(float x, float y, bool on, bool enabled) {
+  const float s = 14;
+  fill_round(x, y, s, s, 3, sk_rgb(enabled ? SK_INK : 0x9a9a9a));
+  fill_round(x + 1, y + 1, s - 2, s - 2, 2, sk_rgb(on ? 0xe3f1dc : SK_WHITE));
+  if (!on) return;
+  u32 tick = sk_rgb(enabled ? SK_GO : 0x7b7b7b);
+  for (int i = 0; i < 3; i++) fill_rect(x + 3 + i, y + 6 + i, 2, 2, tick);
+  for (int i = 0; i < 6; i++) fill_rect(x + 5 + i, y + 9 - i, 2, 2, tick);
+}
+
 bool sk_go(float x, float y, float w, float h, const char *label, bool active) {
   bool down = pressed_on(x, y, w, h);
   fill_round(x, y, w, h, 3, sk_rgb(SK_INK));

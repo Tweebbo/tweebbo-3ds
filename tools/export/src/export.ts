@@ -7,6 +7,8 @@ import { furniLayers, furniFrame, importedSmall, animationPeriod, layerFrame, la
 import { Renderer } from '@web/renderer';
 import { State } from '@web/state';
 import { loadClassic } from '@web/classic';
+import {loadAvatarEffects,avatarEffectBody,avatarEffectLayers,avatarEffectShadow,avatarEffectSprite} from '@web/avatar-effects';
+import {avatarSprite,ANCHOR_X,ANCHOR_Y,SWIM_ANCHOR_X} from '@web/avatar';
 
 // Parts the avatar tints (same set as avatar.ts).
 const TINT = new Set(['bd', 'hd', 'fc', 'lh', 'rh', 'hr', 'ch', 'ls', 'rs', 'lg', 'sh']);
@@ -37,8 +39,61 @@ declare global {
     furniIds(): Promise<number[]>;
     exportFloors(models: { key: string; rows: string[]; door: [number, number] }[]): Promise<unknown[]>;
     exportSwimming(): Promise<unknown[]>;
+    exportEffects(): Promise<Record<string, unknown>>;
   }
 }
+
+window.exportEffects = async () => {
+  await loadModels();await loadAvatarEffects();
+  const source=await (await fetch('/static/models/avatar-effects.json')).json();
+  const images:{id:number;w:number;h:number;png:string}[]=[],frames:unknown[]=[],animations:unknown[]=[],previews:unknown[]=[];
+  const imageObjects=new WeakMap<HTMLCanvasElement,number>(),imageContent=new Map<string,number>(),frameContent=new Map<string,number>();
+  const picture=(image:HTMLCanvasElement)=>{
+    const known=imageObjects.get(image);if(known!==undefined)return known;
+    const data=png(image);let id=imageContent.get(data);
+    if(id===undefined){id=images.length;images.push({id,w:image.width,h:image.height,png:data});imageContent.set(data,id);}
+    imageObjects.set(image,id);return id;
+  };
+  const layer=(part:ReturnType<typeof avatarEffectShadow>)=>part?{image:picture(part.image),x:part.x,y:part.y,ink:part.ink,depth:part.depth,alpha:part.alpha??1}:null;
+  const frame=(id:number,dir:number,tick:number,moving:boolean)=>{
+    const body=avatarEffectBody(id,dir,tick);
+    const row={dx:body.dx,dy:body.dy,hide:body.body?.hide??[],parts:body.body?.parts??{},layers:avatarEffectLayers(id,dir,tick,moving).map(layer)};
+    const key=JSON.stringify(row);let index=frameContent.get(key);
+    if(index===undefined){index=frames.length;frames.push(row);frameContent.set(key,index);}return index;
+  };
+  const gcd=(a:number,b:number):number=>b?gcd(b,a%b):a;
+  for(const [key,animation] of Object.entries(source.animations).sort((a,b)=>Number(a[0].slice(3))-Number(b[0].slice(3)))){
+    const id=Number(key.slice(3));if(!Number.isInteger(id)||id<=0)continue;
+    const raw=animation as {name:string;rules?:{frames:unknown[];override?:unknown};fx?:unknown[];frames:unknown[];avatar?:unknown};
+    const period=Math.max(1,raw.rules?.frames.length??0,raw.fx?.length??0,raw.frames.length);
+    const movingPeriod=raw.rules?.override?period*4/gcd(period,4):period;
+    const directions=Array.from({length:8},(_,dir)=>({shadow:layer(avatarEffectShadow(id,dir)),
+      still:Array.from({length:period},(_,tick)=>frame(id,dir,tick,false)),moving:Array.from({length:movingPeriod},(_,tick)=>frame(id,dir,tick,true))}));
+    animations.push({id,name:raw.name,period,movingPeriod,appearance:raw.avatar??null,directions});
+    if([2,3,11,12,13,38,45,46,55].includes(id))for(const dir of [2,5]){
+      const tick=3,moving=id===38||id===55,body=avatarEffectBody(id,dir,tick);
+      const canvas=document.createElement('canvas');canvas.width=192;canvas.height=192;const ctx=canvas.getContext('2d')!;
+      ctx.fillStyle='#0c1115';ctx.fillRect(0,0,192,192);
+      const foot={x:96,y:160},parts=avatarEffectLayers(id,dir,tick,moving),shadow=avatarEffectShadow(id,dir);
+      const draw=(part:ReturnType<typeof avatarEffectShadow>)=>{if(!part)return;ctx.save();ctx.globalAlpha=part.alpha??1;ctx.globalCompositeOperation=part.ink===33?'lighter':'source-over';ctx.drawImage(part.image,foot.x-part.x,foot.y-part.y);ctx.restore();};
+      draw(shadow?{...shadow,alpha:.25}:undefined);parts.filter(p=>p.depth<0).forEach(draw);
+      const avatar=avatarSprite(0,dir,moving?'walk':'std',tick,0,dir,false,0,false,false,false,false,0,1,false,'',body.body);
+      ctx.drawImage(avatarEffectSprite(avatar,id),foot.x-ANCHOR_X+body.dx,foot.y-ANCHOR_Y+body.dy);
+      parts.filter(p=>p.depth>=0).forEach(draw);previews.push({id,dir,tick,moving,png:png(canvas)});
+    }
+    if([2,11,12,13].includes(id))for(const pose of ['float','swim'] as const)for(const dir of [2,5]){
+      const tick=3,moving=pose==='swim',canvas=document.createElement('canvas');canvas.width=192;canvas.height=192;
+      const ctx=canvas.getContext('2d')!;ctx.fillStyle='#0c1115';ctx.fillRect(0,0,192,192);
+      const parts=avatarEffectLayers(id,dir,tick,moving);
+      const draw=(part:ReturnType<typeof avatarEffectShadow>)=>{if(!part)return;ctx.save();ctx.globalAlpha=part.alpha??1;ctx.globalCompositeOperation=part.ink===33?'lighter':'source-over';ctx.drawImage(part.image,96-part.x,160-part.y);ctx.restore();};
+      parts.filter(p=>p.depth<0).forEach(draw);
+      const avatar=avatarSprite(0,dir,pose,tick,0,dir);
+      ctx.drawImage(avatarEffectSprite(avatar,id),96-SWIM_ANCHOR_X,160-ANCHOR_Y);
+      parts.filter(p=>p.depth>=0).forEach(draw);previews.push({id,dir,tick,moving,pose,png:png(canvas)});
+    }
+  }
+  return {version:1,tickMilliseconds:80,animations,frames,images,previews};
+};
 
 window.exportPeople = async (prefix) => {
   await loadModels();
@@ -110,7 +165,7 @@ const furnitureImage=(canvas:HTMLCanvasElement):number=>{
 };
 window.takeFurnitureImages=()=>pendingFurnitureImages.splice(0);
 window.furnitureTimelines = () => timelines;
-window.furniturePlan=async()=>{await loadModels();return Object.values(catalogue.definitions).filter(d=>d.asset).map(d=>({id:d.id,rotations:d.rotations?.length?d.rotations:[0,1,2,3],states:d.kind===4||d.id===7?8:d.flags.includes('teleporter')?3:Math.max(1,d.states)}));};
+window.furniturePlan=async()=>{await loadModels();return Object.values(catalogue.definitions).filter(d=>d.asset).map(d=>({id:d.id,rotations:d.rotations?.length?d.rotations:[0,1,2,3],states:d.sprite==='bottle'?9:d.kind===4||d.id===7?8:d.flags.includes('teleporter')?3:Math.max(1,d.states)}));};
 window.exportFurni = async (defs,onlyRotation,onlyState) => {
   await loadModels();
   const out = [];
@@ -122,7 +177,7 @@ window.exportFurni = async (defs,onlyRotation,onlyState) => {
       if(onlyRotation!==undefined&&rot!==onlyRotation)continue;
       // States the server uses even if the catalogue does not count them: dice (face 1–6, 7 = rolling)
       // and teleporters (1 open, 2 travelling).
-      const states = def.kind === 4 || id === 7 ? 8 : def.flags.includes('teleporter') ? 3 : Math.max(1, def.states);
+      const states = def.sprite==='bottle'?9:def.kind === 4 || id === 7 ? 8 : def.flags.includes('teleporter') ? 3 : Math.max(1, def.states);
       for (let state = 0; state < states; state++) {
        if(onlyState!==undefined&&state!==onlyState)continue;
        // Frames of animated furniture (furniFrame): holograms, teleporting, dice, lamp.

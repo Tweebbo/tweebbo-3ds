@@ -1,10 +1,20 @@
+#include "wired_clicks.h"
+#include "wired_visuals.h"
 #include "fastfood.h"
 #include "language.h"
+#ifdef __3DS__
+#include "power_settings.h"
+#endif
+#include "furniture.h"
+#include "wired_services.h"
+#include "wired_boards.h"
+#include "wired_chests.h"
 #include "battle.h"
 // Bottom screen with the classic look of the web edition: header with room,
 // players and credits; icon bar (Me, Navigator, Catalogue, Hand,
 // Friends, Chat, Help) and steel-blue windows for each panel.
 #include "ui.h"
+static void update_show_progress(void);
 #include "doorbell.h"
 #include <3ds.h>
 #include <citro2d.h>
@@ -80,11 +90,15 @@ static struct {
   u64 move_expires, move_polled;
   ListState settings_list;
   bool language_picker;
+  bool power_picker;
 } U = {.stick_dir = -1, .preview_dir = 2};
 
 // ---------------------------------------------------------------- helpers
 
 void ui_open(Panel p) {
+  if(p!=P_WIRED_SERVICES)wired_services_close();
+  if(p!=P_WIRED_BOARDS)wired_boards_close();
+  if(p!=P_WIRED_CHESTS)wired_chests_close();
   if (p != P_CASINO) casino_close(true);
   if (p != P_SNOW) snow_close(true);
   if (p != P_FASTFOOD) fastfood_close();
@@ -96,7 +110,8 @@ void ui_open(Panel p) {
   U.panel = p;
 }
 Panel ui_panel(void) { return U.panel; }
-void ui_close(void) { battle_close(); fastfood_close(); snow_close(true); casino_close(true); spaces_reset(true); U.panel = P_ROOM; }
+void ui_close(void) { wired_services_close(); wired_boards_close(); wired_chests_close(); battle_close(); fastfood_close(); snow_close(true); casino_close(true); spaces_reset(true); U.panel = P_ROOM; }
+void ui_wired_chest_event(void){if(wired_chest_panel.open){if(U.panel!=P_WIRED_CHESTS)ui_open(P_WIRED_CHESTS);}else if(U.panel==P_WIRED_CHESTS)ui_close();}
 
 void ui_select_item(u32 id) { U.item = id; ui_open(P_ITEM); }
 void ui_select_ent(u32 eid) {
@@ -124,6 +139,15 @@ void ui_confirm(const char *text, const char *yes, void (*fn)(void *), void *ctx
 // ---------------------------------------------------------------- world events
 
 void ui_room_changed(void) {
+  wired_clicks_reset();
+  if(U.panel==P_WIRED_SERVICES||U.panel==P_WIRED_CHESTS)osk_cancel();
+  wired_chests_reset();
+  if(U.panel==P_WIRED_CHESTS)U.panel=P_ROOM;
+  wired_services_reset();
+  wired_boards_reset();
+  if(U.panel==P_WIRED_BOARDS)U.panel=P_ROOM;
+  if(U.panel==P_WIRED_SERVICES)U.panel=P_ROOM;
+  furniture_reset();
   casino_close(false);
   snow_close(false);
   fastfood_close();
@@ -141,7 +165,7 @@ void ui_room_changed(void) {
   U.draft_dirty = false;
 }
 
-void ui_chat(u32 eid, const char *text) {
+void ui_chat_styled(u32 eid,const char *text,u8 flags) {
   Ent *e = world_ent(eid);
   const char *remaining=text;
   bool first=true;
@@ -151,7 +175,7 @@ void ui_chat(u32 eid, const char *text) {
     if (U.chat_reading) U.chat_list.scroll = fmaxf(0, U.chat_list.scroll - 15);
   }
   LogLine *l = &U.log[U.log_n++];
-  snprintf(l->name, sizeof l->name, "%s", first ? (e ? e->name : "?") : "");
+  snprintf(l->name, sizeof l->name, "%s", first&&!(flags&2) ? (e ? e->name : "?") : "");
   char prefix[32];snprintf(prefix,sizeof prefix,"%s:",l->name);
   float available=IN_W-22-(first?fminf(110,text_width(prefix,10.5f)):0);
   size_t used=0;l->text[0]=0;
@@ -267,16 +291,16 @@ static bool context_find(Context *c, u64 now) {
   for (int i = 0; i < MAX_ITEMS; i++) {
     const Item *it = &W.items[i];
     const FurniDef *d = it->used ? def_get(it->def) : NULL;
-    if (!d || d->kind == KIND_WALL) continue;
+    if (!d || d->kind == KIND_WALL||wired_clicks_furniture_through()||wired_visuals_click_through(false,it->id)) continue;
     const char *verb = NULL;
     if (d->casino) verb = "Play";
+    else if (def_height_helper(d)) verb = "Set height";
     else if (it->def == BAR_EIGHT_BALL) verb = "Ask the 8-Ball";
     else if (it->def == BAR_DICE) verb = "Pull the lever";
     else if (d->drinks && d->drinks[0]) verb = (me->drink && now < me->drink_until) ? NULL : "Get a drink";
-    else if (d->kind == KIND_DICE) verb = it->state >= 1 && it->state <= 6 ? "Roll the dice (Y closes it)" : "Roll the dice";
+    else if (d->kind == KIND_DICE) verb = d->use_random ? "Spin" : it->state >= 1 && it->state <= 6 ? "Roll the dice (Y closes it)" : "Roll the dice";
     else if (d->flags & DEF_TELEPORTER) verb = "Enter the teleporter";
-    else if ((d->flags & DEF_GATE) && W.room_owner) verb = it->state ? "Close the gate" : "Open the gate";
-    else if ((d->kind == KIND_TOGGLE || floor_switch(it->def)) && W.room_owner) verb = d->states > 2 ? "Change state" : it->state ? "Switch off" : "Switch on";
+    else if ((d->use_flags & USE_STATE) && (!(d->use_flags & USE_RIGHTS) || world_can_decorate())) verb = d->use_ticks ? "Use" : d->states > 2 ? "Change state" : it->state ? "Switch off" : "Switch on";
     else if (d->flags & DEF_LAY) verb = "Lie down";
     else if (d->kind == KIND_SIT) verb = (me->flags & FLAG_SIT) && me->x == it->x && me->y == it->y ? NULL : seat_taken(it) ? NULL : "Sit";
     if (!verb) continue;
@@ -299,17 +323,19 @@ static bool context_find(Context *c, u64 now) {
   // Someone right in front: view their profile.
   for (int i = 0; i < MAX_ENTS && !c->item; i++) {
     const Ent *e = &W.ents[i];
-    if (e->used && e->id != W.me && e->x == fx && e->y == fy) { c->ent = e; snprintf(c->label, sizeof c->label, TR("View %s"), e->name); }
+    if (e->used&&wired_clicks_user_mode()!=2&&!wired_visuals_click_through(true,e->id) && e->id != W.me && e->x == fx && e->y == fy) { c->ent = e; snprintf(c->label, sizeof c->label, TR("View %s"), e->name); }
   }
   return c->item || c->ent;
 }
 
 static void context_run(const Context *c, u64 now) {
-  if (c->ent) { ui_select_ent(c->ent->id); return; }
+  if (c->ent) {wired_clicks_user(c->ent->id);if(wired_clicks_user_mode()==1){send_walk(c->ent->x,c->ent->y);scene_mark_destination(c->ent->x,c->ent->y,now);}return; }
   const Item *it = c->item;
   const FurniDef *d = def_get(it->def);
+  wired_clicks_furniture(it->id);
   if (d->casino) send_use(it->id);
-  else if (d->drinks && d->drinks[0]) send_drink(it->id, atoi(d->drinks));
+  else if (d->drinks && d->drinks[0]) send_use(it->id);
+  else if ((d->use_flags & USE_STATE) && (!(d->use_flags & USE_RIGHTS) || world_can_decorate())) send_use(it->id);
   else if (d->kind == KIND_SIT || (d->flags & DEF_LAY)) { send_walk(it->x, it->y); scene_mark_destination(it->x, it->y, now); }
   else send_use(it->id);
 }
@@ -319,7 +345,7 @@ static void context_run(const Context *c, u64 now) {
 static const s8 SCREEN_STEP[8][2] = {{-1, -1}, {0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}};
 
 static bool passable(int x, int y, bool goal) {
-  if (!world_tile(x, y)) return false;
+  if (!world_walkable_tile(x, y)) return false;
   Item *it = world_item_at(x, y);
   const FurniDef *d = it ? def_get(it->def) : NULL;
   if (!d) return true;
@@ -380,6 +406,15 @@ static void minimap_fit(void) {
       if (x + y < s0) s0 = x + y;
       if (x + y > s1) s1 = x + y;
     }
+  for(int i=0;i<MAX_ITEMS;i++){
+    const Item *it=&W.items[i];if(!it->used||!def_height_helper(def_get(it->def)))continue;
+    int w,h;def_size(it->def,it->rot,&w,&h);
+    int x1=it->x+w-1,y1=it->y+h-1;
+    if(it->x-y1<d0)d0=it->x-y1;
+    if(x1-it->y>d1)d1=x1-it->y;
+    if(it->x+it->y<s0)s0=it->x+it->y;
+    if(x1+y1>s1)s1=x1+y1;
+  }
   if (d1 < d0) { d0 = d1 = s0 = s1 = 0; }
   float area_w = 308, area_h = MM_H - 4;
   float span_w = (d1 - d0 + 2) / 2.0f, span_h = (s1 - s0 + 2) / 4.0f;
@@ -415,6 +450,14 @@ static bool mm_corner_free(float x, float y, float w, float h) {
       mm_point(tx, ty, &sx, &sy);
       if (sx + half > x && sx - half < x + w && sy + 2 * quarter > y && sy < y + h) return false;
     }
+  for(int i=0;i<MAX_ITEMS;i++){
+    const Item *it=&W.items[i];if(!it->used||!def_height_helper(def_get(it->def)))continue;
+    int width,depth;def_size(it->def,it->rot,&width,&depth);
+    for(int ty=it->y;ty<it->y+depth;ty++)for(int tx=it->x;tx<it->x+width;tx++){
+      float sx,sy;mm_point(tx,ty,&sx,&sy);
+      if(sx+half>x&&sx-half<x+w&&sy+2*quarter>y&&sy<y+h)return false;
+    }
+  }
   return true;
 }
 
@@ -422,11 +465,12 @@ static void tap_tile(int x, int y, u64 now) {
   if (build_active()) { build_tap_tile(x, y); return; }
   for (int i = 0; i < MAX_ENTS; i++) {
     Ent *e = &W.ents[i];
-    if (e->used && e->x == x && e->y == y) { ui_select_ent(e->id); return; }
+    if (e->used && wired_clicks_user_mode()!=2&&!wired_visuals_click_through(true,e->id)&&e->x == x && e->y == y) {wired_clicks_user(e->id);scene_select(e->id);if(wired_clicks_user_mode()==1){send_walk(x,y);scene_mark_destination(x,y,now);}return; }
   }
   scene_select(0);
-  Item *it = world_item_at(x, y);
+  Item *it = world_pointer_item_at(x, y);
   const FurniDef *d = it ? def_get(it->def) : NULL;
+  if(it)wired_clicks_furniture(it->id);
   if (d && d->kind != KIND_FLOOR && (it->owner || d->drink || d->kind == KIND_TOGGLE || d->kind == KIND_DICE ||
                                      (d->flags & DEF_TELEPORTER))) {
     // Interactive items open their panel, like clicking them on the web.
@@ -541,7 +585,7 @@ static void panel_room(u64 now) {
   }
   for (int i = 0; i < MAX_ENTS; i++) {
     Ent *e = &W.ents[i];
-    if (!e->used) continue;
+    if (!e->used||!wired_visuals_alpha(true,e->id,now)) continue;
     float px, py, sx, sy;
     ent_pos(e, now, &px, &py);
     mm_point(px, py, &sx, &sy);
@@ -580,7 +624,10 @@ static void panel_room(u64 now) {
   if (!corner && T.released && !T.dragging && T.y >= MM_Y && T.y < MM_Y + MM_H) {
     float u = (T.x - U.mm_ox) / (U.mm_tile / 2), v = (T.y - U.mm_oy) / (U.mm_tile / 4);
     int x = (int)floorf((u + v) / 2), y = (int)floorf((v - u) / 2);
-    if (world_tile(x, y)) tap_tile(x, y, now);
+#ifdef TWEEBBO_DEBUG
+    dbg_log("Map fixture touch %d,%d -> %d,%d",(int)T.x,(int)T.y,x,y);
+#endif
+    if (world_walkable_tile(x, y)) tap_tile(x, y, now);
   }
 
   // The room's music and, in After Hours Bar, the bar.
@@ -1196,6 +1243,20 @@ static void choose_local(void *ctx) {
 
 static void panel_settings(u64 now) {
   (void)now;
+#ifdef __3DS__
+  if(U.power_picker){
+    if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,"Battery & performance")){U.power_picker=false;return;}
+    sk_content(IN_X,IN_Y,IN_W,IN_H);
+    if(sk_button(IN_X+4,IN_Y+8,IN_W-8,tw_power_saver()?"Battery saver: on (A)":"Battery saver: off (A)",true)||K.a){
+      if(!tw_power_set_saver(!tw_power_saver()))ui_toast("Applied for this session; SD setting could not be saved.",now);
+    }
+    sk_paragraph("Battery saver: 30 FPS and normal CPU clock. New 3DS keeps its L2 cache. Old 3DS uses 30 FPS in both modes.",IN_X+4,IN_Y+36,IN_W-8,11,SK_TEXT,4);
+    sk_paragraph("Normal mode: New 3DS uses up to 60 FPS during activity, with automatic idle saving.",IN_X+4,IN_Y+93,IN_W-8,10,SK_DIM,3);
+    if(!tw_power_clock_ok())sk_text("CPU clock request failed; the FPS cap is active.",IN_X+4,IN_Y+131,9,SK_DANGER,0,IN_W-8);
+    if(sk_button(IN_X+4,IN_Y+IN_H-22,IN_W-8,"Back (B)",true))U.power_picker=false;
+    return;
+  }
+#endif
   if(U.language_picker){
     if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,TR("Choose your language"))){U.language_picker=false;return;}
     sk_content(IN_X,IN_Y,IN_W,IN_H);
@@ -1257,13 +1318,17 @@ static void panel_settings(u64 now) {
   if (us == UPD_CHECKING) snprintf(upd, sizeof upd,"%s",TR("Checking for updates…"));
   else if (us == UPD_AVAILABLE) snprintf(upd, sizeof upd, TR("Version %s is available."), update_version());
   else if (us == UPD_DOWNLOADING) snprintf(upd, sizeof upd, TR("Downloading %d%%…"), (int)(update_progress() * 100));
+  else if (us == UPD_READY) snprintf(upd,sizeof upd,"%s",TR("Update ready"));
+  else if (us == UPD_INSTALLING) snprintf(upd,sizeof upd,"%s",TR("Installing update..."));
   else if (us == UPD_INSTALLED) snprintf(upd, sizeof upd,"%s",TR("Update installed: restart Tweebbo."));
   else if (us == UPD_FAILED) snprintf(upd, sizeof upd, "%s", update_error());
   else if (us == UPD_LATEST) snprintf(upd, sizeof upd, TR("You have the latest version (%s)."), update_current());
   else snprintf(upd, sizeof upd, TR("Version %s"), update_current());
   if (us == UPD_AVAILABLE || us == UPD_FAILED) {
-    if (sk_button(x, y, 120, TR("Install update"), us == UPD_AVAILABLE)) update_start();
-  } else if (sk_button(x, y, 120, TR("Check for updates"), us != UPD_CHECKING && us != UPD_DOWNLOADING && net_state() != NET_OFFLINE))
+    if (sk_button(x, y, 120, TR("Prepare / resume"), net_online())) update_start();
+  } else if(us==UPD_DOWNLOADING||us==UPD_READY){
+    if(sk_button(x,y,120,TR("Update progress"),true))update_show_progress();
+  } else if (sk_button(x, y, 120, TR("Check for updates"), us != UPD_CHECKING && !update_blocks_exit() && net_state() != NET_OFFLINE))
     update_check();
   sk_text(upd, x + 126, y + 3, 9.5f, us == UPD_FAILED ? SK_DANGER : SK_DIM, 0, w - 126);
   y += 24;
@@ -1272,7 +1337,12 @@ static void panel_settings(u64 now) {
                     "Overview/rotate: L/R · Quit: START"),
                     x, y, w, 9.5f, SK_TEXT, 3) + 3;
   // Plain text, like the web's social links but readable on the console (no links).
+#ifdef __3DS__
+  if(sk_button(x,y+2,(w-6)/2,TR("Language"),true))U.language_picker=true;
+  if(sk_button(x+(w+6)/2,y+2,(w-6)/2,"Battery (X)",true)||K.x)U.power_picker=true;
+#else
   if(sk_button(x,y+2,w,TR("Language"),true))U.language_picker=true;
+#endif
 
 }
 
@@ -1354,11 +1424,12 @@ static void toolbar(void) {
 }
 
 static bool quit_requested, update_dismissed;
+static void update_show_progress(void){update_dismissed=false;}
 
 bool ui_animation_active(u64 now) {
   UpdateState s = update_state();
   return U.panel != P_ROOM || U.alert || U.confirm || osk_active() ||
-    U.toast_until > now || s == UPD_AVAILABLE || s == UPD_DOWNLOADING || s == UPD_INSTALLED;
+    U.toast_until > now || s == UPD_AVAILABLE || s == UPD_DOWNLOADING || s == UPD_INSTALLING || s == UPD_INSTALLED;
 }
 
 /** Update prompt, download progress and restart. Returns true when it covers the screen. */
@@ -1383,12 +1454,12 @@ static bool update_modal(void) {
     }else if (close || sk_button(x + w / 2 - 40, y + h - 27, 80, TR("OK"), true) || K.a || K.b) failure_seen = true;
     return true;
   }
-  if (!(st == UPD_AVAILABLE && !update_dismissed) && st != UPD_DOWNLOADING && st != UPD_INSTALLED) return false;
+  if(!((st==UPD_AVAILABLE||st==UPD_DOWNLOADING||st==UPD_READY)&&!update_dismissed)&&st!=UPD_INSTALLING&&st!=UPD_INSTALLED)return false;
   fill_rect(0, 0, BOT_W, BOT_H, sk_rgba(0x000000, 140));
-  float w = 280, h = 136, x = (BOT_W - w) / 2, y = 46;
+  float w = 280, h = 168, x = (BOT_W - w) / 2, y = 32;
   char title[64];
   snprintf(title, sizeof title, TR("Tweebbo %s"), update_version());
-  bool close = sk_window(x, y, w, h, st == UPD_INSTALLED ? TR("Update installed") : TR("Update available"));
+  bool close = sk_window(x,y,w,h,st==UPD_INSTALLED?TR("Update installed"):st==UPD_READY?TR("Update ready"):st==UPD_INSTALLING?TR("Installing update..."):TR("Update available"));
   sk_content(x + 5, y + TITLE_H + 2, w - 10, h - TITLE_H - 7);
   float ix = x + 12, iy = y + TITLE_H + 7, iw = w - 24;
   if (st == UPD_AVAILABLE) {
@@ -1400,19 +1471,28 @@ static bool update_modal(void) {
     else snprintf(line, sizeof line, TR("You have %s."), update_current());
     sk_text(line, ix, iy + 15, 10, SK_DIM, 0, iw);
     sk_paragraph(update_notes()[0] ? update_notes() : TR("Your character and rooms stay the same."), ix, iy + 31, iw, 10, SK_DIM, 3);
+    if(update_has_small()&&sk_button(ix,y+h-52,iw,update_small()?TR("Use full download"):TR("Use smaller update"),true))update_use_full(update_small());
     float bw = (iw - 8) / 2;
     if (close || sk_button(ix, y + h - 27, bw, TR("Later"), true) || K.b) update_dismissed = true;
-    else if (sk_button(ix + bw + 8, y + h - 27, bw, TR(update_full_fallback()?"Full download":update_small()?"Small update":"Update now"), true) || K.a) update_start();
-  } else if (st == UPD_DOWNLOADING) {
-    sk_text(TR(update_status()[0]?update_status():"Downloading and installing…"), ix, iy, 11, SK_TEXT, 0, iw);
+    else if (sk_button(ix + bw + 8, y + h - 27, bw, TR("Prepare / resume"), true) || K.a) update_start();
+  } else if (st == UPD_DOWNLOADING||st==UPD_INSTALLING) {
+    sk_paragraph(update_paused()?TR("Update paused"):TR(update_status()[0]?update_status():"Preparing the update..."),ix,iy,iw,10,SK_TEXT,2);
     float p = update_progress();
-    fill_round(ix, iy + 26, iw, 14, 4, sk_rgb(0xcfcfcf));
-    fill_round(ix, iy + 26, iw * (p > 1 ? 1 : p), 14, 4, sk_rgb(SK_GO));
+    fill_round(ix, iy + 28, iw, 14, 4, sk_rgb(0xcfcfcf));
+    fill_round(ix, iy + 28, iw * (p > 1 ? 1 : p), 14, 4, sk_rgb(SK_GO));
     char pct[16];
     snprintf(pct, sizeof pct, "%d%%", (int)(p * 100));
-    sk_text(pct, x + w / 2, iy + 27, 10, SK_WHITE, 1, 0);
-    sk_paragraph(TR("Keep the console on. You can keep playing; it will ask to restart when it finishes."), ix, iy + 48, iw, 10, SK_DIM, 3);
-    return false;
+    sk_text(pct, x + w / 2, iy + 29, 10, SK_TEXT, 1, 0);
+    char details[96];snprintf(details,sizeof details,TR("%.1f / %.1f MB"),update_done_bytes()/1000000.0,update_total_bytes()/1000000.0);sk_text(details,ix,iy+47,10,SK_TEXT,0,iw);
+    if(st==UPD_DOWNLOADING){
+      if(update_speed()){snprintf(details,sizeof details,TR("%u KB/s · %u s left"),update_speed()/1024,update_eta());sk_text(details,ix,iy+61,9,SK_DIM,0,iw);}
+      if(close||sk_button(ix,y+h-27,124,TR("Keep playing"),true)||K.b)update_dismissed=true;
+      else if(sk_button(ix+132,y+h-27,124,update_paused()?TR("Resume"):TR("Pause"),true)||K.a)update_pause(!update_paused());
+    }else sk_paragraph(TR("Keep the console open until installation finishes."),ix,iy+64,iw,10,SK_DIM,3);
+  } else if(st==UPD_READY){
+    sk_paragraph(TR("The update is ready. Keep playing and install when convenient. Reopen Tweebbo after installation."),ix,iy,iw,10,SK_TEXT,5);
+    if(close||sk_button(ix,y+h-27,124,TR("Keep playing"),true)||K.b)update_dismissed=true;
+    else if(sk_button(ix+132,y+h-27,124,TR("Install now"),true)||K.a)update_install();
   } else {
     sk_paragraph(TR("The new version is installed. Restart Tweebbo to use it (if it closes instead, open it again from the HOME Menu). Your character and rooms stay the same."), ix, iy, iw, 10.5f,
                  SK_TEXT, 4);
@@ -1428,6 +1508,12 @@ static bool update_modal_up;
 void ui_draw_top(u64 now) {
   (void)now;
   UpdateState st = update_state();
+  if(st==UPD_DOWNLOADING||st==UPD_READY){
+    char status[96];
+    if(st==UPD_READY)snprintf(status,sizeof status,"%s",TR("Update ready · Help"));
+    else snprintf(status,sizeof status,TR("Update %d%% · Help"),(int)(update_progress()*100));
+    float width=text_width(status,9.5f)+14;fill_round(TOP_W-width-6,6,width,17,4,sk_rgba(0x000000,170));text_draw(status,TOP_W-width/2-6,8,9.5f,sk_rgb(SK_ACCENT),1);return;
+  }
   if (st != UPD_AVAILABLE) return;
   char line[96];
   if (!update_dismissed) {
@@ -1435,11 +1521,11 @@ void ui_draw_top(u64 now) {
     float w = 300, h = 104, x = (TOP_W - w) / 2, y = (TOP_H - h) / 2;
     sk_window(x, y, w, h, TR("Update available"));
     sk_content(x + 5, y + TITLE_H + 2, w - 10, h - TITLE_H - 7);
-    snprintf(line, sizeof line, TR("Tweebbo %s is ready to install."), update_version());
+    snprintf(line, sizeof line, TR("Version %s is available."), update_version());
     sk_text(line, x + w / 2, y + TITLE_H + 10, 12, SK_TEXT, 1, w - 20);
     snprintf(line, sizeof line, TR("You have %s. We recommend updating now."), update_current());
     sk_text(line, x + w / 2, y + TITLE_H + 30, 10, SK_DIM, 1, w - 20);
-    sk_text(TR("A: Update now     B: Later"), x + w / 2, y + TITLE_H + 54, 11, SK_TEXT, 1, w - 20);
+    sk_text(TR("A: Prepare update     B: Later"), x + w / 2, y + TITLE_H + 54, 11, SK_TEXT, 1, w - 20);
     return;
   }
   snprintf(line, sizeof line, TR("Update %s ready · Help"), update_version());
@@ -1497,7 +1583,7 @@ static u32 down_keys, held_keys;
 bool ui_input(u32 down, u32 held, u64 now) {
   if(down)net_activity();
   // START quits, except while the touch keyboard is open: there it sends the text.
-  if (((down & KEY_START) && !osk_active() && update_state()!=UPD_DOWNLOADING) || quit_requested) return false;
+  if (((down & KEY_START) && !osk_active() && !update_blocks_exit()) || quit_requested) return false;
   scene_prompt(NULL);
   // Stylus: touch, drag, and a "click" when lifted without dragging.
   touchPosition tp;
@@ -1579,9 +1665,15 @@ bool ui_input(u32 down, u32 held, u64 now) {
     if (down & KEY_X) send_gesture(GESTURE_WAVE);
     // E-Dice Class: next to a die showing a face, Y closes it instead of dancing.
     const FurniDef *cd = near && ctx.item ? def_get(ctx.item->def) : NULL;
-    if ((down & KEY_Y) && cd && cd->kind == KIND_DICE && ctx.item->state >= 1 && ctx.item->state <= 6) send_use_op(ctx.item->id, 1);
+    if ((down & KEY_Y) && cd && !cd->use_random && cd->kind == KIND_DICE && ctx.item->state >= 1 && ctx.item->state <= 6) send_use_op(ctx.item->id, 1);
     else if (down & KEY_Y) send_gesture(GESTURE_DANCE);
     if (down & KEY_B) send_gesture(GESTURE_SIT);
+  } else if(K.b&&U.panel==P_WIRED_CHESTS){
+    if(wired_chest_panel.view==WC_MAIN||wired_chest_panel.view==WC_RESULT)ui_close();else wired_chests_action(WC_BACK);K.b=false;
+  } else if(K.b&&U.panel==P_WIRED_SERVICES&&wired_service_panel.view!=WS_LIST){
+    wired_services_action(WS_BACK);K.b=false;
+  } else if (K.b && U.panel == P_SETTINGS && U.power_picker) {
+    U.power_picker=false;K.b=false;
   } else if (K.b && U.panel != P_LOOK && U.panel != P_IDENTITY && U.panel != P_ACTIONS && U.panel != P_GAME) {
     // B closes the window (the wardrobe and the character code return to Me from their own panel).
     if (U.panel == P_ENT) scene_select(0);
@@ -1609,6 +1701,7 @@ static void panel_feedback(void) {
 }
 
 void ui_draw(u64 now) {
+  if(furniture_panel.pending){furniture_panel.pending=false;ui_open(P_FURNITURE);}
   feedback_poll();doorbell_poll();
   static u32 last_bell;
   if(!doorbell.count)last_bell=0;
@@ -1688,6 +1781,11 @@ void ui_draw(u64 now) {
   bool had_modal = U.alert || U.confirm || update_modal_up;
   if (had_modal) { memset(&T, 0, sizeof T); memset(&K, 0, sizeof K); }
   pool_poll(now);
+  if(U.panel==P_ROOM&&*furniture_arena_text()){
+    sk_content(2,BAR_Y-47,BOT_W-4,29);
+    sk_text(furniture_arena_text(),4,BAR_Y-40,9,SK_TEXT,0,BOT_W-65);
+    if(furniture_can_throw()&&sk_button(BOT_W-62,BAR_Y-44,58,TR("Throw"),true))furniture_throw();
+  }
   music_poll(now);
   if (W.credits_up) { W.credits_up = false; music_ui_sound("cash"); }
   if (build_active()) build_draw_panel(now);
@@ -1716,10 +1814,30 @@ void ui_draw(u64 now) {
     case P_MORE:
       if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,TR("More"))){ui_close();break;}
       sk_content(IN_X,IN_Y,IN_W,IN_H);
-      if(sk_button(IN_X+5,IN_Y+8,IN_W-10,TR("GoPenguin is available!"),true))ui_open(P_GOPENGUIN);
-      if(sk_button(IN_X+5,IN_Y+42,IN_W-10,TR("Help & connection"),true))ui_open(P_SETTINGS);
-      if(sk_button(IN_X+5,IN_Y+76,IN_W-10,TR("Games"),true))ui_open(P_GAMES);
-      if(sk_button(IN_X+5,IN_Y+110,IN_W-10,TR("Pets"),true))ui_open(P_PETS);
+      if(sk_button(IN_X+5,IN_Y+6,IN_W-10,TR("GoPenguin is available!"),true))ui_open(P_GOPENGUIN);
+      if(sk_button(IN_X+5,IN_Y+30,IN_W-10,TR("Help & connection"),true))ui_open(P_SETTINGS);
+      if(sk_button(IN_X+5,IN_Y+54,IN_W-10,TR("Games"),true))ui_open(P_GAMES);
+      if(sk_button(IN_X+5,IN_Y+78,IN_W-10,TR("Pets"),true))ui_open(P_PETS);
+      if(sk_button(IN_X+5,IN_Y+102,IN_W-10,TR("Room services"),true))ui_open(P_SERVICE_MENU);
+      break;
+    case P_SERVICE_MENU:
+      if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,TR("Room services"))){ui_open(P_MORE);break;}
+      sk_content(IN_X,IN_Y,IN_W,IN_H);
+      if(sk_button(IN_X+5,IN_Y+10,IN_W-10,TR("Room bots"),net_online())){wired_services_open(WS_BOTS);ui_open(P_WIRED_SERVICES);}
+      if(sk_button(IN_X+5,IN_Y+36,IN_W-10,TR("Groups"),net_online())){wired_services_open(WS_GROUPS);ui_open(P_WIRED_SERVICES);}
+      if(sk_button(IN_X+5,IN_Y+62,IN_W-10,TR("Quests"),net_online())){wired_services_open(WS_QUESTS);ui_open(P_WIRED_SERVICES);}
+      if(sk_button(IN_X+5,IN_Y+88,IN_W-10,TR("Leaderboards"),net_online())){wired_boards_open();ui_open(P_WIRED_BOARDS);}
+      if(sk_button(IN_X+5,IN_Y+124,90,TR("Back"),true))ui_open(P_MORE);
+      if(world_can_decorate()&&wired_clicks_active()&&sk_button(IN_X+100,IN_Y+124,IN_W-105,TR(wired_clicks_ignored()?"Apply Wired clicks":"Ignore Wired clicks"),true))wired_clicks_toggle();
+      break;
+    case P_WIRED_SERVICES:
+      wired_services_draw3ds(now);
+      break;
+    case P_WIRED_BOARDS:
+      wired_boards_draw3ds(now);
+      break;
+    case P_WIRED_CHESTS:
+      wired_chests_draw3ds(now);
       break;
     case P_GOPENGUIN:
       if(sk_window(WIN_X,WIN_Y,WIN_W,WIN_H,"GoPenguin")){ui_open(P_MORE);break;}
@@ -1737,6 +1855,7 @@ void ui_draw(u64 now) {
     case P_PETS: pets_draw(now); break;
     case P_BAR: bar_draw(now); break;
     case P_MUSIC: music_draw(now); break;
+    case P_FURNITURE:furniture_draw(now);break;
     case P_ACTIONS: panel_actions(now); break;
     default: panel_room(now); break;
   }
@@ -1764,3 +1883,7 @@ void ui_draw(u64 now) {
 }
 
 u32 ui_item_id(void) { return U.item; }
+
+void ui_chat(u32 eid,const char *text){ui_chat_styled(eid,text,0);}
+
+bool ui_wired_visual_focus(bool user,u32 id){return user?(U.panel==P_ENT&&U.ent==id):(U.panel==P_ITEM&&U.item==id);}

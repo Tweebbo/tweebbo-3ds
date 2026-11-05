@@ -89,6 +89,7 @@ void send_trade(const char *json);
 void send_activity(const char *json);
 /** c2s MUSIC: a room playlist request ({"op": …, "item": …}, server room/music.rs). */
 void send_music(const char *json);
+void send_furniture(const char *json);
 /** Room moderation: op (MOD_*), entity id (or guest id for unban/remove-of), ban length 1-3. */
 void send_room_mod(int op, u32 target, int length);
 

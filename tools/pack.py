@@ -17,6 +17,7 @@ import json
 import re
 import sys
 import subprocess
+import importlib.util
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -104,8 +105,9 @@ FLAG_BITS = ['can_sit_on_top', 'can_lay_on_top', 'can_stack_on_top', 'teleporter
 class Packer:
     """Simple shelves on PAGE x PAGE pages, with deduplication."""
 
-    def __init__(self):
-        self.pages = [Image.new('RGBA', (PAGE, PAGE))]
+    def __init__(self, size=PAGE):
+        self.size = size
+        self.pages = [Image.new('RGBA', (size, size))]
         self.x = self.y = self.shelf = 0
         self.seen = {}
 
@@ -115,12 +117,12 @@ class Packer:
         if key in self.seen:
             return self.seen[key]
         w, h = img.size
-        if w + GAP > PAGE or h + GAP > PAGE:
+        if w + GAP > self.size or h + GAP > self.size:
             raise SystemExit(f'sprite too large: {w}x{h}')
-        if self.x + w + GAP > PAGE:
+        if self.x + w + GAP > self.size:
             self.x, self.y, self.shelf = 0, self.y + self.shelf, 0
-        if self.y + h + GAP > PAGE:
-            self.pages.append(Image.new('RGBA', (PAGE, PAGE)))
+        if self.y + h + GAP > self.size:
+            self.pages.append(Image.new('RGBA', (self.size, self.size)))
             self.x = self.y = self.shelf = 0
         page = len(self.pages) - 1
         self.pages[page].paste(img, (self.x, self.y))
@@ -510,10 +512,16 @@ def main():
     ui_rects['games-icon'] = packer.add(games)
     ui_names.sort(key=lambda n: n.encode())
 
+    effect_spec = importlib.util.spec_from_file_location('native_effects', ROOT / 'tools/pack-native-effects.py')
+    native_effects = importlib.util.module_from_spec(effect_spec)
+    effect_spec.loader.exec_module(native_effects)
+    effects_folder = SRC / 'effects' if (SRC / 'effects/effects.json').exists() else ROOT / 'build/effects-export'
+    effect_packer = Packer(512)
+    effects = native_effects.collect(effects_folder, effect_packer)
     page_files = []
     first_page = {}
     # Resident groups first; the skin pages come last and load on demand (atlas_page_resident).
-    for group, pk, prefix in (('c', color_packer, 'atlas'), ('s', soft_packer, 'atlass'), ('g', gray_packer, 'atlasg'), ('k', skin_packer, 'atlask')):
+    for group, pk, prefix in (('c', color_packer, 'atlas'), ('s', soft_packer, 'atlass'), ('g', gray_packer, 'atlasg'), ('k', skin_packer, 'atlask'), ('e', effect_packer, 'atlasfx')):
         first_page[group] = len(page_files)
         if not pk.seen:
             continue
@@ -521,7 +529,7 @@ def main():
             if i == len(pk.pages) - 1:
                 # The last page only takes the used height (power of two): saves linear memory.
                 used = pk.y + pk.shelf
-                page = page.crop((0, 0, PAGE, max(8, 1 << (used - 1).bit_length())))
+                page = page.crop((0, 0, pk.size, max(8, 1 << (used - 1).bit_length())))
             name = f'{prefix}{i}'
             save_png(page, GFX / f'{name}.png')
             page_files.append(name)
@@ -535,7 +543,14 @@ def main():
         group, page, x, y, w_, h_ = r
         return (first_page[group] + page, x, y, w_, h_)
     rects = {k: fix(v) for k, v in rects.items()}
+    effects_report = native_effects.write_tables(effects, first_page['e'], GEN)
+    pixel_path = (OUT if OUT else ROOT / 'build') / 'fxpeople.pak'
     swim_rects = [fix(r) for r in swim_rects]
+    effect_people=people+swim
+    effect_rects={**rects,**{len(people)+i:r for i,r in enumerate(swim_rects)}}
+    penguin_pixels = native_effects.collect_penguin_pixels(SRC, GEN)
+    effects_report['pixels'] = native_effects.write_people_pixels(effect_people, effect_rects, page_files, GFX, pixel_path, penguin_pixels)
+    (GEN / 'avatar-effects-receipt.json').write_text(json.dumps(effects_report, indent=2)+'\n')
     ui_rects = {k: fix(v) for k, v in ui_rects.items()}
 
     # --- classic room backgrounds: each in its own power-of-two texture ---
@@ -604,6 +619,7 @@ def main():
     w(f'const int atlas_page_count = {len(page_files)};')
     w(f'/** Pages before this index stay loaded; the rest (character skins) load on demand. */')
     w(f'const int atlas_page_resident = {resident_pages};')
+    w(f"const int atlas_page_effects = {first_page['e']};")
     w('const char *const atlas_page_files[] = {' + ', '.join(c_str(n) for n in page_files) + '};')
     w('')
     w(f'const PeopleSprite people_sprites[{len(people)}] = {{')
@@ -675,7 +691,7 @@ def main():
     # Full catalogue: needed for collisions and seats in any room.
     defs = sorted(catalogue['definitions'].values(), key=lambda d: d['id'])
     # Jukeboxes and Trax machines (server catalogue::music_machine): the room playlist, source/music.c.
-    music = [d['id'] for d in defs if d.get('sprite', '').split('*')[0] in ('sound_machine', 'sound_machine_pro', 'ads_idol_trax', 'jukebox', 'jukebox_ptv')]
+    music = [d['id'] for d in defs if d.get('sprite', '').split('*')[0] in ('sound_machine', 'sound_machine_pro', 'ads_idol_trax', 'jukebox', 'jukebox_ptv', 'summer_blaster', 'jukebox_big')]
     w(f'const u16 music_machines[{max(1, len(music))}] = {{{", ".join(map(str, music)) or "0"}}};')
     w(f'const int music_machine_count = {len(music)};')
     # Walkable furniture the room owner switches (server room.rs use_item): dance floors, disco balls.
@@ -684,6 +700,7 @@ def main():
     w(f'const int floor_switch_count = {len(switches)};')
     w(f'const FurniDef furni_defs[{len(defs)}] = {{')
     for d in defs:
+        assert 0 < d['width'] * d['height'] <= 64, f"Unsupported placement footprint: {d['id']}"
         bits = 0
         for b, flag in enumerate(FLAG_BITS):
             if flag in d['flags']:
@@ -701,7 +718,14 @@ def main():
         casino = next((i + 1 for i, name in enumerate(games) if 'casino_' + name in d['flags']), 0)
         # Chip tokens of the Tweebbo Exchange (CHIP_<value>_token): redeemed for chips, not credits.
         chips = int(d['sprite'].split('_')[1]) if 'redeemable_chips' in d['flags'] else 0
-        w(f"  {{{d['id']}, {d['kind']}, {d['width']}, {d['height']}, {d['seatHeight']}, {d['states']}, {bits}, {rots}, {drink}, {c_str(d['name'])}, {tex}, {ix}, {iy}, {iw}, {ih}, {c_str(drinks)}, {c_str(d.get('description') or '')}, {ip}, {casino}, {chips}, {d.get('wallMin', 0)}, {d.get('wallMax', 0)}}},")
+        action = d.get('interaction') or {}
+        use_flags = int(action.get('rights', False)) | int(action.get('touch', False)) << 1 | int(action.get('stateful', False)) << 2 | int('unique_inventory' in d['flags']) << 3
+        feature = {'note':1,'trophy':2,'moodlight':3,'gift':4,'mannequin':5,'changing':6,'wired':7,'freeze':8,'banzai':9,'clock':11,'pushbox':12,'football_gate':13,'wired_chest':16,'wired_contract':17,'wired_link':18,'wired_label':19}.get(d.get('feature'),0)
+        if d.get('feature') == 'magic_tile':
+            assert d.get('heightHelper') in (1, 2)
+            feature = 14 if d['heightHelper'] == 1 else 15
+        arena_role = {'freezetile':1,'freezetileblock':2,'freezetimer':4,'freezeexit':5,'bb_patch':6,'banzaicounter':8,'banzaipuck':10}.get(d.get('sourceInteraction'),0)
+        w(f"  {{{d['id']}, {d['kind']}, {d['width']}, {d['height']}, {d['seatHeight']}, {d['states']}, {bits}, {rots}, {drink}, {c_str(d['name'])}, {tex}, {ix}, {iy}, {iw}, {ih}, {c_str(drinks)}, {c_str(d.get('description') or '')}, {ip}, {casino}, {chips}, {d.get('wallMin', 0)}, {d.get('wallMax', 0)}, {use_flags}, {action.get('pulseTicks', 0)}, {action.get('serveDelayTicks', 0)}, {action.get('randomStates', 0)}, {feature}, {arena_role}}},")
     w('};')
     w(f'const int furni_def_count = {len(defs)};')
     w('')
@@ -724,7 +748,7 @@ def main():
         c = o['contents'][0]
         total = sum(x['amount'] * (2 if 'teleporter' in catalogue['definitions'].get(str(x['def']), {}).get('flags', []) else 1) for x in o['contents'])
         pages_s = ',' + ','.join(o['pages']) + ','
-        w(f"  {{{o['id']}, {c['def']}, {total}, {1 if o.get('available') else 0}, {o['price']}, {c_str(o.get('name') or '')}, {c_str(o.get('description') or '')}, {c_str(pages_s)}}},")
+        w(f"  {{{o['id']}, {c['def']}, {total}, {1 if o.get('available') else 0}, {1 if o.get('requiresClub') else 0}, {o['price']}, {c_str(o.get('name') or '')}, {c_str(o.get('description') or '')}, {c_str(pages_s)}}},")
     w('};')
     w(f'const int cat_offer_count = {len(offers)};')
     w('')

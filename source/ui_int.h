@@ -27,9 +27,11 @@ typedef enum {
   P_MUSIC,    /* the room playlist (Jukebox / Trax) */
   P_ACTIONS,  /* expressions and dance styles (Me > Actions), as the web's character panel */
   P_FEEDBACK, P_DOORBELL,
-  P_FASTFOOD, P_BATTLE, P_MORE, P_GOPENGUIN,
+  P_FASTFOOD, P_BATTLE, P_MORE, P_GOPENGUIN, P_FURNITURE,
+  P_SERVICE_MENU, P_WIRED_SERVICES, P_WIRED_BOARDS, P_WIRED_CHESTS,
   P_COUNT
 } Panel;
+void furniture_draw(u64 now);
 
 // Panel area (between the header and the icon bar).
 #define HEAD_H 18

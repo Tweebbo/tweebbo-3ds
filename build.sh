@@ -8,6 +8,7 @@
 #   ./build.sh clean
 set -euo pipefail
 cd "$(dirname "$0")"
+export TWEEBBO_WEB="${TWEEBBO_WEB:-$PWD/../Tweebbo-Vercel}"
 IMAGE=${DEVKITARM_IMAGE:-localhost/native-3ds-libctru-fixed:latest}
 BUILD_PROFILE=release
 TARGET=out/tweebbo
@@ -140,6 +141,7 @@ python3 tools/pack-battle.py
 node tools/export/battle.mjs
 python3 tools/pack-game-audio.py
 mkdir -p romfs/gfx romfs/furni
+cp build/fxpeople.pak romfs/fxpeople.pak
 # Remove textures no longer present in the generated manifest.
 for file in romfs/gfx/*.t3x; do [ -e "build/gfx/$(basename "$file" .t3x).png" ] || rm -f "$file"; done
 for file in romfs/furni/*.t3x; do [ -e "build/gfx/furni/$(basename "$file" .t3x).png" ] || rm -f "$file"; done

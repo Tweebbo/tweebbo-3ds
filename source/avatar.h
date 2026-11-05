@@ -43,9 +43,13 @@ char look_gender(u64 look);
  */
 void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, int drink, bool sip,
                  float x, float y, float scale, u8 alpha);
+void avatar_draw_effected(u64 look,int dir,Pose pose,int frame,int expr,int head_dir,int drink,bool sip,
+                         float x,float y,float scale,u8 alpha,u16 effect,u64 effect_tick);
 /** The held item alone (carried, facing right), centred on (cx, cy): bar menu icons. */
 void avatar_draw_held(int drink, float cx, float cy, float scale);
 /** Head only (hair, face and eyes), for lists of people. Same canvas as avatar_draw. */
 void avatar_draw_head(u64 look, int dir, float x, float y, float scale);
+void avatar_draw_mannequin(u64 look,int dir,float x,float y,float scale);
 /** Avatar swimming or floating (pool): normal head plus the swimming body under a water veil. */
 void avatar_draw_swim(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, float x, float y, float scale);
+void avatar_draw_swim_effected(u64 look,int dir,Pose pose,int frame,int expr,int head_dir,float x,float y,float scale,u16 effect);

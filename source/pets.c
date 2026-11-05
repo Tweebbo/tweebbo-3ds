@@ -151,7 +151,7 @@ void pet_draw(const Pet *p, u64 now, float sx, float sy, float zoom) {
     int f = 0;
     if (!strcmp(name, "bd") && (!strcmp(action, "wlk") || !strcmp(action, "jmp") || !strcmp(action, "scr") || !strcmp(action, "pla"))) f = frame;
     else if (!strcmp(act, "eat") || !strcmp(act, "spk")) f = frame % 2;
-    if(kind>=3)f=frame;
+    if(kind>=3 || !strcmp(action,"beg") || !strcmp(action,"bnd") || !strcmp(action,"scr") || !strcmp(action,"wav") || !strcmp(action,"snf") || !strcmp(action,"agr") || !strcmp(action,"puz") || !strcmp(action,"sad") || !strcmp(action,"tng") || !strcmp(action,"crz") || !strcmp(action,"joy") || !strcmp(action,"srp") || !strcmp(action,"eyb") || !strcmp(action,"mis") || !strcmp(action,"rdy"))f=frame;
     char full[48];
     bool flip;
     snprintf(full, sizeof full, "p_%s_%s_%s_%d_%d", act, name, model, dir, f);

@@ -58,7 +58,7 @@ static void animated_furniture_changes(void) {
     if (!d->tex) continue;
     u8 state = 255;
     if (d->flags & DEF_HOLO) state = 1;
-    else if (d->kind == KIND_DICE || d->id == 7) state = 7;
+    else if (d->kind == KIND_DICE || d->id == 7) state = d->use_random ? 8 : 7;
     else if (d->flags & DEF_TELEPORTER) state = 2;
     if (state == 255) continue;
     // Two different moments must give different frames and graphics.

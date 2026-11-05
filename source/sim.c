@@ -1,5 +1,7 @@
 #include "gen/game_rooms.h"
 #include "sim.h"
+#include "world.h"
+#include <stdlib.h>
 #include "assets.h"
 #include "catalog.h"
 #include "path.h"
@@ -33,7 +35,7 @@ typedef struct {
   char reply[64];
 } SEnt;
 
-typedef struct { bool used; u32 id; u16 def; u8 x, y, rot, state; u16 z; } SItem;
+typedef struct { bool used; u32 id; u16 def; u8 x, y, rot, state; u16 z; u8 use_ticks, serve_delay, serve_drink, use_result; u32 serve_guest; } SItem;
 
 static struct {
   const RoomModel *model;
@@ -206,6 +208,7 @@ static void gesture(SEnt *e, int kind) {
 }
 
 static bool beside(const SEnt *e, const SItem *it) {
+  if (abs((int)e->z-(int)it->z)>64) return false;
   int w, h;
   def_size(it->def, it->rot, &w, &h);
   for (int y = it->y; y < it->y + h; y++)
@@ -214,22 +217,29 @@ static bool beside(const SEnt *e, const SItem *it) {
   return false;
 }
 
-static void serve(SEnt *e, SItem *it, u8 drink) {
+static void item_update(const SItem *it) {
+  Writer w; w_begin(&w,S_ITEM_UPDATE);w_item(&w,it);send(&w);
+}
+
+static void deliver_drink(SEnt *e, SItem *it, u8 drink) {
   e->drink = drink; e->drink_ticks = DRINK_TICKS; e->pending_item = 0;
+  e->flags &= ~FLAG_DANCE;
   // Face the dispenser when receiving the drink.
   e->dir = dir_of(it->x - e->x, it->y - e->y);
   e->dirty = true;
   carry(e);
 }
 
-static void request_drink(SEnt *e, u32 id, u8 drink) {
-  if (!id && !drink) { e->drink = 0; e->drink_ticks = 0; e->pending_item = 0; carry(e); return; }
-  SItem *it = item(id);
-  const FurniDef *d = it ? def_get(it->def) : NULL;
-  if (!d || !d->drink) return;
-  drink = d->drink;
-  e->pending_item = 0;
-  if (beside(e, it)) { serve(e, it, drink); return; }
+static void serve(SEnt *e, SItem *it, u8 drink) {
+  const FurniDef *d=def_get(it->def);
+  e->pending_item=0;
+  if(it->serve_guest)return;
+  if(d->use_ticks){it->state=1;it->use_ticks=d->use_ticks;item_update(it);}
+  if(d->use_delay){it->serve_guest=e->id;it->serve_drink=drink;it->serve_delay=d->use_delay;return;}
+  deliver_drink(e,it,drink);
+}
+
+static void approach(SEnt *e,SItem *it,u8 drink) {
   int w, h, n = 0;
   u8 cand[32][3];
   def_size(it->def, it->rot, &w, &h);
@@ -249,9 +259,39 @@ static void request_drink(SEnt *e, u32 id, u8 drink) {
     }
   for (int i = 0; i < n; i++) {
     walk_to(e, cand[i][0], cand[i][1]);
-    if (e->ppos < e->plen) { e->pending_item = id; e->pending_drink = drink; return; }
+    if (e->ppos < e->plen) { e->pending_item = it->id; e->pending_drink = drink; return; }
   }
   if (!e->bot) notice("Leave a free tile beside the dispenser to get a drink.");
+}
+
+static void request_drink(SEnt *e, u32 id, u8 drink) {
+  if (!id && !drink) { e->drink = 0; e->drink_ticks = 0; e->pending_item = 0; carry(e); return; }
+  SItem *it=item(id);const FurniDef *d=it?def_get(it->def):NULL;
+  if(!d || !d->drink)return;
+  int choices[32],count=0;
+  for(const char *p=d->drinks;p && *p && count<32;){choices[count++]=atoi(p);p=strchr(p,',');if(p)p++;}
+  if(!count)return;
+  if(!drink)drink=(u8)choices[rnd_range(0,count)];
+  bool valid=false;for(int i=0;i<count;i++)valid|=choices[i]==drink;
+  if(!valid)return;
+  e->pending_item=0;
+  if(beside(e,it))serve(e,it,drink);else approach(e,it,drink);
+}
+
+static void use_stateful(SEnt *e,SItem *it) {
+  const FurniDef *d=def_get(it->def);
+  if(!(d->use_flags&USE_STATE) || ((d->use_flags&USE_RIGHTS) && !world_can_decorate()))return;
+  if((d->use_flags&USE_TOUCH) && !beside(e,it)){approach(e,it,0);return;}
+  if((d->flags&DEF_GATE) && it->state && occupied(it->x,it->y,0))return;
+  if(d->use_random){
+    if(it->use_ticks)return;
+    if(d->kind==KIND_DICE){it->state=d->use_random;it->use_result=rnd_range(0,d->use_random);it->use_ticks=7;}
+    else{it->state=3*d->use_random+1;it->use_result=rnd_range(1,d->use_random+1);it->use_ticks=1;}
+    item_update(it);return;
+  }
+  it->state=d->use_ticks?1:(it->state+1)%(d->states>1?d->states:2);
+  it->use_ticks=d->use_ticks;
+  item_update(it);
 }
 
 static bool valid_name(const char *n) {
@@ -431,6 +471,24 @@ static void bots_answer(const char *text, u64 now) {
 // ---------------------------------------------------------------- tick
 
 static void tick(u64 now) {
+  for(int i=0;i<SIM_ITEMS;i++){
+    SItem *it=&S.items[i];if(!it->used)continue;
+    if(it->serve_guest && it->serve_delay && --it->serve_delay==0){
+      SEnt *guest=ent(it->serve_guest);
+      if(guest && beside(guest,it))deliver_drink(guest,it,it->serve_drink);
+      it->serve_guest=0;
+    }
+    if(it->use_ticks && --it->use_ticks==0){
+      const FurniDef *d=def_get(it->def);
+      if(d->use_random){
+        if(d->kind==KIND_DICE)it->state=it->use_result;
+        else if(it->state==3*d->use_random+1){it->state=3*d->use_random+2;it->use_ticks=8;}
+        else if(it->state==3*d->use_random+2){it->state=d->use_random+it->use_result;it->use_ticks=1;}
+        else it->state=2*d->use_random+it->use_result;
+      }else it->state=0;
+      it->serve_guest=0;item_update(it);
+    }
+  }
   for (int i = 0; i < SIM_ENTS; i++) {
     SEnt *e = &S.ents[i];
     if (!e->used) continue;
@@ -458,7 +516,7 @@ static void tick(u64 now) {
     if (e->wave_ticks > 0 && --e->wave_ticks == 0) { e->flags &= ~FLAG_WAVE; e->dirty = true; }
     if (e->ppos >= e->plen && e->pending_item) {
       SItem *it = item(e->pending_item);
-      if (it && beside(e, it)) serve(e, it, e->pending_drink);
+      if (it && beside(e, it)) {if(e->pending_drink)serve(e,it,e->pending_drink);else use_stateful(e,it);}
       e->pending_item = 0;
     }
     if (e->drink_ticks > 0 && --e->drink_ticks == 0) { e->drink = 0; carry(e); }
@@ -649,10 +707,7 @@ void sim_receive(const u8 *data, int len) {
         break;
       }
       if (d->drink) { request_drink(e, it->id, 0); break; }
-      if (d->kind == KIND_TOGGLE) {
-        it->state = it->state ? 0 : 1;
-        Writer w; w_begin(&w, S_ITEM_UPDATE); w_item(&w, it); send(&w);
-      }
+      if(d->use_flags&USE_STATE)use_stateful(e,it);
       break;
     }
     case C_DRINK: { u32 id = (u32)r_var(&r); u8 drink = r_u8(&r); if (!r.err) request_drink(e, id, drink); break; }

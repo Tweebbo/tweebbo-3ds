@@ -48,3 +48,4 @@ int http_download(const char *url, HttpSink sink, void *ctx, long *total, char *
 /** Same, resuming at byte `from` (Range): the sink gets the bytes after `from`, `total` is the whole
  *  size, and a body cut short of Content-Length returns 0. Status 206 or 200. */
 int http_download_from(const char *url, long from, HttpSink sink, void *ctx, long *total, char *err, int err_cap);
+int http_download_from_cancel(const char *url,long from,HttpSink sink,void *ctx,long *total,char *err,int err_cap,const ConnCancel *cancel);

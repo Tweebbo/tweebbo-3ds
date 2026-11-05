@@ -18,7 +18,7 @@ static struct {
   int page; /* 0 letters, 1 symbols and accents */
   int fx, fy; /* D-Pad focus */
   int max_chars;
-  char title[64], text[8001];
+  char title[64], text[8193];
   OskDone done;
   void *ctx;
   u64 repeat_at;
@@ -64,7 +64,7 @@ static void finish(bool send) {
   O.active = false;
   OskDone done = O.done;
   void *ctx = O.ctx;
-  char text[8001];
+  char text[8193];
   snprintf(text, sizeof text, "%s", O.text);
   memset(O.text, 0, sizeof O.text);
   // Blank messages are not sent.

@@ -236,7 +236,7 @@ static void net_thread(void *arg) {
       continue;
     }
     Writer w;
-    w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, arrival); w_u8(&w, PLATFORM_3DS); w_str(&w, password); w_u8(&w, NATIVE_STATUS | NATIVE_GAMES | NATIVE_CASINO | NATIVE_SNOW | NATIVE_SNOW2 | NATIVE_ROOMMOD); w_u8(&w, DEVICE_3DS); w_u8(&w, FEATURE_ECONOMY | FEATURE_ACTIVITIES | FEATURE_MUSIC | FEATURE_IGLOO);
+    w_begin(&w, C_HELLO); w_u16(&w, PROTOCOL_VERSION); w_str(&w, token); w_str(&w, arrival); w_u8(&w, PLATFORM_3DS); w_str(&w, password); w_u8(&w, NATIVE_STATUS | NATIVE_GAMES | NATIVE_CASINO | NATIVE_SNOW | NATIVE_SNOW2 | NATIVE_ROOMMOD); w_u8(&w, DEVICE_3DS); w_u8(&w, FEATURE_ECONOMY | FEATURE_ACTIVITIES | FEATURE_MUSIC | FEATURE_IGLOO | FEATURE_PRECISE_HEIGHT | FEATURE_RENDER_STYLE);
     bool alive = ws_send(&ws, w.buf, w.len);
     lock(&N.mu);
     // The arrival ticket is only valid once.
@@ -655,6 +655,13 @@ void send_room_mod(int op, u32 target, int length) { SEND(w_begin(&w, C_ROOM_MOD
 void send_trade(const char *json) { SEND(w_begin(&w, C_TRADE); w_str(&w, json)); }
 void send_activity(const char *json) { SEND(w_begin(&w, C_ACTIVITY); w_str(&w, json)); }
 void send_music(const char *json) { SEND(w_begin(&w, C_MUSIC); w_str(&w, json)); }
+void send_furniture(const char *json) {
+  if(!net_online())return;
+  size_t n=strlen(json);if(n>16384)return;
+  u8 *buffer=malloc(n+4);if(!buffer)return;
+  Writer w;w_begin_into(&w,C_FURNITURE,buffer,(int)n+4);w_str(&w,json);
+  net_send(w.buf,w.len);free(buffer);
+}
 void send_casino(int op, int a, int b, int c) { SEND(w_begin(&w, C_CASINO); w_u8(&w, op); w_u8(&w, a); w_u8(&w, b); w_u8(&w, c)); }
 
 bool net_doorbell(void) { lock(&N.mu); bool value=N.blocked==NET_LOCKED&&N.doorbell; unlock(&N.mu); return value; }

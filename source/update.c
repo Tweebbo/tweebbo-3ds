@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <strings.h>
+#include <stdatomic.h>
 #include "net.h"
 
 #ifdef TWEEBBO_DEBUG
@@ -28,6 +29,11 @@ static struct {
   char phase[96];
   volatile long done;
   char launch[256];
+  char prepared[280];
+  atomic_bool busy,quit,paused,suspended,new_model;
+  atomic_uint hold_until;
+  u64 io_at,speed_at;
+  unsigned io_bytes,speed_bytes,speed;
   Thread thread;
 } U;
 
@@ -48,8 +54,8 @@ static bool sleep_blocked, home_blocked;
 
 UpdateState update_state(void) {
   // Sleep was blocked for the download; give it back on the main thread once it is over.
-  if (sleep_blocked && U.state != UPD_DOWNLOADING) { sleep_blocked = false; aptSetSleepAllowed(true); }
-  if (home_blocked && U.state != UPD_DOWNLOADING) { home_blocked=false; aptSetHomeAllowed(true); }
+  if (sleep_blocked && U.state != UPD_INSTALLING) { sleep_blocked = false; aptSetSleepAllowed(true); }
+  if (home_blocked && U.state != UPD_INSTALLING) { home_blocked=false; aptSetHomeAllowed(true); }
   return U.state;
 }
 const char *update_version(void) { return U.version; }
@@ -77,18 +83,48 @@ const char *update_current(void) {
 }
 const char *update_notes(void) { return U.notes; }
 const char *update_error(void) { return U.error; }
-static volatile bool installing;
 const char *update_status(void) { return U.phase; }
 bool update_full_fallback(void) { return U.full_fallback; }
 bool update_small(void) { const IncrementalOffer *s = U.launch[0] ? &U.small_tdsx : &U.small_cia; long full=U.launch[0]?U.tdsx_size:U.cia_size; return !U.full_fallback && s->bytes && (!full || s->bytes < (unsigned long)full); }
+bool update_has_small(void){const IncrementalOffer *offer=U.launch[0]?&U.small_tdsx:&U.small_cia;long full=U.launch[0]?U.tdsx_size:U.cia_size;return offer->bytes&&(!full||offer->bytes<(unsigned long)full);}
+void update_use_full(bool full){if(!atomic_load(&U.busy)&&(U.state==UPD_AVAILABLE||U.state==UPD_FAILED))U.full_fallback=full;}
 long update_download_bytes(void) { return update_small() ? (long)(U.launch[0]?U.small_tdsx.bytes:U.small_cia.bytes) : U.launch[0]?U.tdsx_size:U.cia_size; }
 long update_full_bytes(void) { return U.launch[0]?U.tdsx_size:U.cia_size; }
 
-/** Downloading fills the bar to 90%; installing from the SD card does the rest. */
 float update_progress(void) {
   float p = U.size > 0 ? (float)U.done / (float)U.size : 0;
   if (p > 1) p = 1;
-  return installing ? 0.9f + 0.1f * p : 0.9f * p;
+  return p < 0 ? 0 : p;
+}
+
+long update_done_bytes(void){return U.done;}
+long update_total_bytes(void){return U.size;}
+unsigned update_speed(void){return atomic_load(&U.paused)?0:U.speed;}
+unsigned update_eta(void){return U.speed&&U.size>U.done?(unsigned)((U.size-U.done)/U.speed):0;}
+bool update_blocks_exit(void){return U.state==UPD_INSTALLING;}
+bool update_paused(void){return atomic_load(&U.paused);}
+void update_pause(bool paused){if(U.state==UPD_DOWNLOADING)atomic_store(&U.paused,paused);}
+void update_activity(unsigned frame_ms,bool loading,bool suspended,bool new_model){
+  atomic_store(&U.suspended,suspended);atomic_store(&U.new_model,new_model);
+  if(loading||frame_ms>(new_model?26u:43u))atomic_store(&U.hold_until,(unsigned)now_ms()+(loading?200u:100u));
+}
+static bool stopped(void *unused){
+  (void)unused;
+  while(!atomic_load(&U.quit)&&U.state!=UPD_INSTALLING&&(atomic_load(&U.paused)||atomic_load(&U.suspended)||(int)((unsigned)now_ms()-atomic_load(&U.hold_until))<0))svcSleepThread(20000000);
+  return atomic_load(&U.quit);
+}
+static void cooperate(unsigned bytes){
+  if(U.state==UPD_INSTALLING)return;
+  U.io_bytes+=bytes;u64 now=now_ms();
+  unsigned rate=atomic_load(&U.new_model)?2u*1024u*1024u:1024u*1024u;
+  u64 target=(u64)U.io_bytes*1000/rate;
+  while(!stopped(NULL)&&now-U.io_at<target){svcSleepThread(2000000);now=now_ms();}
+  if(now-U.io_at>=250){U.io_at=now;U.io_bytes=0;}
+}
+void update_shutdown(void){
+  atomic_store(&U.quit,true);
+  if(U.thread){threadJoin(U.thread,U64_MAX);threadFree(U.thread);U.thread=NULL;}
+  update_state();
 }
 
 /** http(s) form of the configured server (ws→http, wss→https); offline: production. */
@@ -160,9 +196,10 @@ static UpdateState read_manifest(void) {
   int status = 0;
   // GitHub occasionally answers a redirect badly: retry a few times before giving up.
   for (int attempt = 0; attempt < 3 && m.buf && status != 200 && status != 404; attempt++) {
+    if(stopped(NULL))break;
     if (attempt) svcSleepThread(1500000000LL);
     m.len = 0;
-    status = http_download(url, to_memory, &m, &total, err, sizeof err);
+    status = http_download_from_cancel(url,0,to_memory,&m,&total,err,sizeof err,&(ConnCancel){stopped,NULL});
   }
   json_error_t jerr;
   json_t *j = status == 200 && m.buf ? json_loads(m.buf, JSON_REJECT_DUPLICATES, &jerr) : NULL;
@@ -220,17 +257,20 @@ static void check_thread(void *arg) {
   bool quiet = arg != NULL;
   UpdateState st = read_manifest();
   // A background check that fails keeps the previous answer instead of showing an error.
-  if (quiet && st == UPD_FAILED) { U.state = U.version[0] ? UPD_AVAILABLE : UPD_LATEST; return; }
+  if (quiet && st == UPD_FAILED) { U.state = U.version[0] ? UPD_AVAILABLE : UPD_LATEST; atomic_store(&U.busy,false);return; }
   U.state = st;
+  atomic_store(&U.busy,false);
 }
 
 static void start_check(bool quiet) {
-  if (U.state == UPD_CHECKING || U.state == UPD_DOWNLOADING || U.state == UPD_INSTALLED) return;
+  if (atomic_load(&U.busy)||U.state==UPD_READY||U.state==UPD_INSTALLING||U.state==UPD_INSTALLED) return;
   if (U.thread) { threadJoin(U.thread, U64_MAX); threadFree(U.thread); U.thread = NULL; }
   if (!quiet) { U.state = UPD_CHECKING; U.error[0] = 0; }
   s32 prio = 0x30;
   svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+  atomic_store(&U.quit,false);atomic_store(&U.busy,true);
   U.thread = threadCreate(check_thread, quiet ? (void *)1 : NULL, 32 * 1024, prio + 1, -2, false);
+  if(!U.thread){atomic_store(&U.busy,false);snprintf(U.error,sizeof U.error,"Could not start the update check.");U.state=UPD_FAILED;}
 }
 
 void update_check(void) { start_check(false); }
@@ -269,7 +309,12 @@ static bool flush_chunk(Sink *s) {
 
 static bool file_sink(const u8 *data, int len, void *ctx) {
   Sink *s = ctx;
+  if(stopped(NULL))return false;
+  if(len<0||(U.size>0&&(u64)len>(u64)U.size-s->offset-(unsigned)s->fill)){s->write_failed=true;return false;}
   mbedtls_sha256_update_ret(&s->sha, data, (size_t)len);
+  cooperate((unsigned)len);
+  U.speed_bytes+=(unsigned)len;u64 now=now_ms();
+  if(now-U.speed_at>=500){U.speed=(unsigned)((u64)U.speed_bytes*1000/(now-U.speed_at));U.speed_bytes=0;U.speed_at=now;}
   while (len > 0) {
     int take = CHUNK - s->fill < len ? CHUNK - s->fill : len;
     memcpy(s->buf + s->fill, data, (size_t)take);
@@ -309,33 +354,41 @@ static bool download_file(const char *url, const char *path, const char *want, l
   s->write_failed = false;
   FILE *old = fopen(path, "rb");
   if (old) {
+    snprintf(U.phase,sizeof U.phase,"Verifying saved download...");
     size_t n;
-    while ((n = fread(s->buf, 1, CHUNK, old)) > 0) { mbedtls_sha256_update_ret(&s->sha, s->buf, n); s->offset += n; }
-    fclose(old);
+    bool read_ok=true;
+    while ((n = fread(s->buf, 1, CHUNK, old)) > 0) {
+      if(stopped(NULL)||(expect>0&&s->offset+n>(u64)expect)){read_ok=false;break;}
+      mbedtls_sha256_update_ret(&s->sha, s->buf, n);s->offset+=n;U.done=(long)s->offset;cooperate((unsigned)n);
+    }
+    if(ferror(old)||fclose(old))read_ok=false;
+    if(!read_ok){mbedtls_sha256_free(&s->sha);snprintf(err,(size_t)cap,"Could not verify the saved download.");return false;}
     if (s->offset) dbg_log("update: resuming at %llu", (unsigned long long)s->offset);
   }
   U.done = (long)s->offset;
+  snprintf(U.phase,sizeof U.phase,"Downloading in the background...");
   s->file = fopen(path, "ab");
   if (s->file) setvbuf(s->file, NULL, _IONBF, 0);
   bool ok = false;
   if (!s->file) snprintf(err, (size_t)cap, "Could not save the update on the SD card. Is it full or locked?");
   for (int attempt = 0; s->file && attempt < DOWNLOAD_ATTEMPTS; attempt++) {
-    if (attempt) svcSleepThread((attempt < 5 ? attempt * 2 : 10) * 1000000000LL);
+    if(stopped(NULL))break;
+    if(attempt)for(int step=0;step<(attempt<5?attempt*20:100)&&!stopped(NULL);step++)svcSleepThread(100000000);
     // Already complete (a session that ended right before installing): nothing left to fetch.
     if (expect > 0 && (long)s->offset >= expect) { ok = true; break; }
-    long total;
+    long total=0;
     err[0] = 0;
-    int status = http_download_optimized_from(url, (long)s->offset, 2, file_sink, s, &total, err, cap);
-    if (total > 0) U.size = expect = total;
+    int status = http_download_optimized_from_cancel(url, (long)s->offset, 2, file_sink, s, &total, err, cap,&(ConnCancel){stopped,NULL});
+    if(total>0&&expect>0&&total!=expect){s->write_failed=true;snprintf(err,(size_t)cap,"The update size differs from the release.");}
+    else if(total>0)U.size=expect=total;
     bool flushed = flush_chunk(s);
     if (fflush(s->file)) s->write_failed = true;
     dbg_log("update: attempt %d status %d, %llu bytes, err '%s'", attempt, status, (unsigned long long)s->offset, err);
     if (!flushed || s->write_failed) { snprintf(err, (size_t)cap, "Could not save the update on the SD card. Is it full?"); break; }
-    if (status == 200 || status == 206) { ok = true; break; }
-    if (status == 416) { ok = true; break; }  // nothing after our offset: the checksum decides
+    if ((status == 200 || status == 206 || status==416)&&expect>0&&s->offset==(u64)expect) { ok = true; break; }
     if (status == 403 || status == 404 || status == 410) break;  // gone: re-read the list instead
   }
-  if (s->file) { fclose(s->file); s->file = NULL; }
+  if (s->file) { if(fclose(s->file))ok=false;s->file = NULL; }
   u8 digest[32];
   mbedtls_sha256_finish_ret(&s->sha, digest);
   mbedtls_sha256_free(&s->sha);
@@ -363,17 +416,19 @@ static void forget_file(const char *path) {
 }
 
 /** Installs the verified CIA file through AM, the way FBI does (128 KB blocks). */
-static Result install_cia(const char *path, u8 *buf) {
+static Result install_cia(const char *path, u8 *buf,const char *want) {
   FILE *f = fopen(path, "rb");
   if (!f) return -1;
   Handle h = 0;
   Result r = AM_StartCiaInstall(MEDIATYPE_SD, &h);
   dbg_log("update: AM start 0x%08lX", (unsigned long)r);
   u64 offset = 0;
+  mbedtls_sha256_context digest;mbedtls_sha256_init(&digest);mbedtls_sha256_starts_ret(&digest,0);
   U.done = 0;
   while (R_SUCCEEDED(r)) {
     size_t n = fread(buf, 1, CHUNK, f);
     if (!n) { if(ferror(f))r=-1; break; }
+    if(mbedtls_sha256_update_ret(&digest,buf,n)){r=-1;break;}
     u32 written = 0;
     r = FSFILE_Write(h, &written, offset, buf, (u32)n, 0);
     if (R_SUCCEEDED(r) && written != n) r = -1;
@@ -382,8 +437,11 @@ static Result install_cia(const char *path, u8 *buf) {
     U.done = (long)offset;
   }
   if(R_SUCCEEDED(r)&&U.size>0&&offset!=(u64)U.size)r=-1;
+  u8 hash[32]={0};char hex[65];if(mbedtls_sha256_finish_ret(&digest,hash))r=-1;mbedtls_sha256_free(&digest);
+  for(int i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",hash[i]);if(strcasecmp(hex,want))r=-1;
   fclose(f);
   if (h) {
+    snprintf(U.phase,sizeof U.phase,"Finishing installation. Keep the console open...");
     Result fr = R_SUCCEEDED(r) ? AM_FinishCiaInstall(h) : AM_CancelCIAInstall(h);
     dbg_log("update: AM %s 0x%08lX", R_SUCCEEDED(r) ? "finish" : "cancel", (unsigned long)fr);
     if (R_SUCCEEDED(r)) r = fr;
@@ -391,7 +449,7 @@ static Result install_cia(const char *path, u8 *buf) {
   return r;
 }
 
-static void rebuild_progress(unsigned done, void *unused) { (void)unused; U.done=(long)done; }
+static void rebuild_progress(unsigned done, void *unused) { (void)unused;unsigned previous=(unsigned)U.done;U.done=(long)done;cooperate(done>=previous?done-previous:0); }
 
 static bool replace_prepared(const char *from,const char *to) {
   if(!rename(from,to))return true;
@@ -411,7 +469,7 @@ static bool prepare_small(const char *path,const IncrementalOffer *offer,bool ho
   snprintf(U.phase,sizeof U.phase,"Preparing from installed files...");
   char title[17];snprintf(title,sizeof title,"%016llX",(unsigned long long)TITLE_ID);
   IncrementalTarget target={title,APP_VERSION,U.version,homebrew?U.tdsx_sha:U.sha,(unsigned)U.size,homebrew};
-  IncrementalHooks hooks={NULL,rebuild_progress,NULL};
+  IncrementalHooks hooks={stopped,rebuild_progress,NULL};
   IncrementalResult result=incremental_apply(patch,building,"romfs:/",offer,&target,&hooks,error,(size_t)cap);
   if(result!=INCREMENTAL_OK){
     if(result!=INCREMENTAL_IO_ERROR&&result!=INCREMENTAL_CANCELLED){
@@ -443,13 +501,13 @@ static bool package_identity(const char *path,bool homebrew) {
   fclose(f);return ok;
 }
 
-static void install_thread(void *arg) {
+static void prepare_thread(void *arg) {
   (void)arg;
   UpdateState fresh=read_manifest();
-  if(fresh!=UPD_AVAILABLE){U.state=fresh==UPD_LATEST?UPD_LATEST:UPD_FAILED;return;}
+  if(fresh!=UPD_AVAILABLE){U.state=fresh==UPD_LATEST?UPD_LATEST:UPD_FAILED;atomic_store(&U.busy,false);return;}
   bool homebrew=U.launch[0]!=0,ok=false;
   char error[160]="",path[280];Sink sink={0};sink.buf=malloc(CHUNK);
-  if(!sink.buf){snprintf(U.error,sizeof U.error,"Not enough memory to update.");U.state=UPD_FAILED;return;}
+  if(!sink.buf){snprintf(U.error,sizeof U.error,"Not enough memory to update.");U.state=UPD_FAILED;atomic_store(&U.busy,false);return;}
   if(homebrew)snprintf(path,sizeof path,"%s.new",U.launch);
   else{mkdir("sdmc:/3ds",0777);mkdir(DATA_DIR,0777);snprintf(path,sizeof path,"%s",CIA_PART);}
   const char *want=homebrew?U.tdsx_sha:U.sha;long full=homebrew?U.tdsx_size:U.cia_size;
@@ -469,43 +527,78 @@ static void install_thread(void *arg) {
     }
   }
   if(ok&&!package_identity(path,homebrew)){ok=false;snprintf(error,sizeof error,"The update is not a compatible Tweebbo package. Your current app is kept.");}
-  if(ok&&homebrew){
-    snprintf(U.phase,sizeof U.phase,"Saving the verified app...");
-    ok=replace_prepared(path,U.launch);
-    if(ok)forget_file(path);else snprintf(error,sizeof error,"Could not replace the app. Your previous .3dsx is kept.");
-  }else if(ok){
-    installing=true;snprintf(U.phase,sizeof U.phase,"Installing the verified update...");
-    Result result=amInit();
-    if(R_SUCCEEDED(result)){result=install_cia(path,sink.buf);if(R_FAILED(result)){svcSleepThread(2000000000LL);result=install_cia(path,sink.buf);}amExit();}
-    ok=R_SUCCEEDED(result);
-    if(ok)forget_file(path);
-    else{
-      mkdir("sdmc:/cias",0777);char cia[96];snprintf(cia,sizeof cia,"sdmc:/cias/tweebbo-%s.cia",U.version);remove(cia);
-      if(!rename(path,cia)){forget_file(path);snprintf(error,sizeof error,"The console refused the install (0x%08lX). Verified update: SD:/cias/tweebbo-%s.cia. Retry with FBI.",(unsigned long)result,U.version);}
-      else snprintf(error,sizeof error,"The console refused the install (0x%08lX).",(unsigned long)result);
-    }
-    installing=false;
+  if(ok){
+    snprintf(U.prepared,sizeof U.prepared,"%s",path);
+    if(homebrew&&U.tdsx_size<=0)U.tdsx_size=U.size;
   }
-  if(ok){char patch[288];snprintf(patch,sizeof patch,DATA_DIR "/update-%s.tupd",homebrew?"3dsx":"cia");forget_file(patch);}
   free(sink.buf);
-  dbg_log("update %s: %s %s",U.version,ok?"installed":"failed",ok?"":error);
+  dbg_log("update %s: %s %s",U.version,ok?"prepared":"failed",ok?"":error);
   if(!ok)snprintf(U.error,sizeof U.error,"%s",error[0]?error:"Download failed. Choose Update again to resume.");
-  U.state=ok?UPD_INSTALLED:UPD_FAILED;
+  U.state=ok?UPD_READY:UPD_FAILED;
+  if(ok)snprintf(U.phase,sizeof U.phase,"Update ready. Keep playing or install when convenient.");
+  atomic_store(&U.busy,false);
 }
 
 void update_start(void) {
-  if (U.state != UPD_AVAILABLE && U.state != UPD_FAILED) return;
+  if (atomic_load(&U.busy)||(U.state != UPD_AVAILABLE && U.state != UPD_FAILED)) return;
   if (U.thread) { threadJoin(U.thread, U64_MAX); threadFree(U.thread); U.thread = NULL; }
   U.done = 0;
   U.error[0] = 0;
   snprintf(U.phase,sizeof U.phase,"Preparing the update...");
   U.state = UPD_DOWNLOADING;
-  // Closing the lid would put the console to sleep and cut the Wi-Fi mid-download.
-  if (!sleep_blocked && aptIsSleepAllowed()) { aptSetSleepAllowed(false); sleep_blocked = true; }
-  if (!home_blocked) { aptSetHomeAllowed(false); home_blocked=true; }
+  atomic_store(&U.quit,false);atomic_store(&U.paused,false);atomic_store(&U.busy,true);
+  U.io_at=U.speed_at=now_ms();U.io_bytes=U.speed_bytes=U.speed=0;
   s32 prio = 0x30;
   svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
-  U.thread = threadCreate(install_thread, NULL, 48 * 1024, prio + 1, -2, false);
+  U.thread = threadCreate(prepare_thread, NULL, 48 * 1024, prio + 1, -2, false);
+  if(!U.thread){atomic_store(&U.busy,false);snprintf(U.error,sizeof U.error,"Could not start update preparation.");U.state=UPD_FAILED;}
+}
+
+static bool verify_prepared(const char *path,const char *want,u8 *buffer){
+  FILE *file=fopen(path,"rb");if(!file)return false;
+  bool ok=!fseek(file,0,SEEK_END)&&ftell(file)==U.size&&!fseek(file,0,SEEK_SET);
+  mbedtls_sha256_context digest;mbedtls_sha256_init(&digest);ok=ok&&!mbedtls_sha256_starts_ret(&digest,0);
+  U.done=0;size_t bytes;
+  while(ok&&(bytes=fread(buffer,1,CHUNK,file))){ok=!mbedtls_sha256_update_ret(&digest,buffer,bytes);U.done+=(long)bytes;}
+  u8 hash[32]={0};char hex[65];if(ferror(file)||fclose(file))ok=false;
+  if(ok)ok=!mbedtls_sha256_finish_ret(&digest,hash);mbedtls_sha256_free(&digest);
+  for(int i=0;i<32;i++)snprintf(hex+i*2,3,"%02x",hash[i]);return ok&&!strcasecmp(hex,want);
+}
+
+static void commit_thread(void *unused){
+  (void)unused;bool homebrew=U.launch[0]!=0,ok=false;char error[160]="";
+  u8 *buffer=malloc(CHUNK);const char *want=homebrew?U.tdsx_sha:U.sha;
+  U.size=homebrew?U.tdsx_size:U.cia_size;U.done=0;
+  if(!buffer)snprintf(error,sizeof error,"Not enough memory to install the update.");
+  else if(!package_identity(U.prepared,homebrew)||!verify_prepared(U.prepared,want,buffer))snprintf(error,sizeof error,"The prepared update is incompatible or damaged. Your current app is kept.");
+  else if(homebrew){
+    snprintf(U.phase,sizeof U.phase,"Verifying prepared update...");
+    snprintf(U.phase,sizeof U.phase,"Saving the verified app...");ok=replace_prepared(U.prepared,U.launch);
+    if(!ok)snprintf(error,sizeof error,"The prepared update could not be installed. Your previous app is kept.");
+  }else{
+    snprintf(U.phase,sizeof U.phase,"Installing and verifying the update...");
+    Result result=amInit();
+    if(R_SUCCEEDED(result)){result=install_cia(U.prepared,buffer,want);amExit();}
+    ok=R_SUCCEEDED(result);
+    if(!ok)snprintf(error,sizeof error,"The install failed (0x%08lX). The saved update is kept for retry.",(unsigned long)result);
+  }
+  free(buffer);
+  if(ok){forget_file(U.prepared);char patch[288];snprintf(patch,sizeof patch,DATA_DIR "/update-%s.tupd",homebrew?"3dsx":"cia");forget_file(patch);}
+  else snprintf(U.error,sizeof U.error,"%s",error);
+  U.state=ok?UPD_INSTALLED:UPD_FAILED;atomic_store(&U.busy,false);
+}
+
+void update_install(void){
+  if(atomic_load(&U.busy)||U.state!=UPD_READY)return;
+  if(U.thread){threadJoin(U.thread,U64_MAX);threadFree(U.thread);U.thread=NULL;}
+  U.state=UPD_INSTALLING;U.done=0;atomic_store(&U.busy,true);
+  atomic_store(&U.paused,false);
+  snprintf(U.phase,sizeof U.phase,"Verifying prepared update...");
+  if(!sleep_blocked&&aptIsSleepAllowed()){aptSetSleepAllowed(false);sleep_blocked=true;}
+  if(!home_blocked){aptSetHomeAllowed(false);home_blocked=true;}
+  s32 priority=0x30;svcGetThreadPriority(&priority,CUR_THREAD_HANDLE);
+  U.thread=threadCreate(commit_thread,NULL,48*1024,priority+1,-2,false);
+  if(!U.thread){atomic_store(&U.busy,false);snprintf(U.error,sizeof U.error,"Could not start update installation.");U.state=UPD_READY;update_state();}
 }
 
 bool update_restart(void) {

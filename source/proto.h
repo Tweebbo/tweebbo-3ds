@@ -8,7 +8,7 @@ enum { NATIVE_STATUS = 2, NATIVE_GAMES = 4, NATIVE_CASINO = 8, NATIVE_SNOW = 16,
 /* Feature byte after the device byte. 1.0.8: VIP Dash with credits, furniture trading and
    Tweebbo Club badges (chips stay PC-only). */
 /* 1.0.11: the Lido activities (booths, diving tower, Wobble Squabble) on the ACTIVITY channel. */
-enum { FEATURE_ECONOMY = 1, FEATURE_ACTIVITIES = 2, FEATURE_MUSIC = 4, FEATURE_IGLOO = 8 };
+enum { FEATURE_ECONOMY = 1, FEATURE_ACTIVITIES = 2, FEATURE_MUSIC = 4, FEATURE_IGLOO = 8, FEATURE_PRECISE_HEIGHT = 16, FEATURE_RENDER_STYLE = 32 };
 
 enum {
   C_HELLO = 1, C_WALK, C_CHAT, C_GESTURE, C_SET_NAME, C_BUY, C_PLACE, C_PICKUP,
@@ -17,15 +17,19 @@ enum {
 /* Room rights (JSON) and being asked to leave a room (server room/moderation.rs). */
 enum { S_ROOM_RIGHTS = 136, S_KICKED = 137, S_AFK = 145 };
 enum { C_ACTIVE = 25 };
-enum { C_TYPING = 27, S_TYPING = 148 };
+enum { C_EFFECT = 26, C_TYPING = 27, S_TYPING = 148 };
+enum { C_FURNITURE = 28, S_FURNITURE = 149 };
+enum { S_ROOM_PRECISE = 151, S_ENTITY_ADD_PRECISE, S_DELTAS_PRECISE, S_ITEM_ADD_PRECISE, S_ITEM_UPDATE_PRECISE, S_SLIDE_PRECISE };
 /* Native device of a player: var count, then {var entity id, u8 device}. Added for cross-play
    (3DS, Nintendo Switch, PlayStation Vita); older servers never send it. */
 enum { S_DEVICE = 140 };
-/** Expressions and dance styles (4.. in GESTURE); 147 (avatar effects) is not drawn here. */
+/** Expressions and dance styles (4.. in GESTURE); avatar effects use packet 147. */
 enum { S_ACTION = 146 };
+enum { S_EFFECT = 147 };
 enum { GESTURE_KISS = 4, GESTURE_LAUGH, GESTURE_SLEEP, GESTURE_THUMB, GESTURE_SIGN, GESTURE_STOP, GESTURE_DANCE_STYLE };
 /* Lido activity state (JSON, server room/activities.rs), for FEATURE_ACTIVITIES clients. */
 enum { S_ACTIVITY = 141, S_MUSIC = 142 };
+enum { S_MOVE_STYLE=157, S_STYLED_CHAT=158 };
 /* Chips balance (PC-only currency, ignored here) and a furniture trade (JSON, server room/trade.rs). */
 enum { S_CHIPS = 138, S_TRADE = 139 };
 enum { DEVICE_BROWSER = 0, DEVICE_3DS = 1, DEVICE_SWITCH = 2, DEVICE_VITA = 3 };

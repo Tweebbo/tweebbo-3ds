@@ -11,7 +11,7 @@ convert_texture() {
     *) target=romfs/gfx/$name.t3x
        case "$name" in
          atlasg*|font*) format=la8;;
-         atlass*|atlask*) ;;
+         atlass*|atlask*|atlasfx*) ;;
          atlas*|scene_*) format=rgba5551;;
          room_*) grep -qx "$name" build/gfx/soft-alpha.txt || format=rgba5551;;
        esac ;;

@@ -6,6 +6,8 @@
 #define BOT_H 240
 
 void ui_room_changed(void);
+void ui_select_ent(u32 eid);
+void ui_wired_chest_event(void);
 void ui_chat(u32 eid, const char *text);
 /** The player ignores the speaker (Friends Console). */
 bool ui_chat_blocked(u32 eid);
@@ -36,3 +38,7 @@ void trade_invite(u32 eid);
 void shop_top(u64 now);
 /** Top screen of the wardrobe: the large preview. */
 void look_top(u64 now);
+
+void ui_chat_styled(u32 eid,const char *text,u8 flags);
+
+bool ui_wired_visual_focus(bool user,u32 id);

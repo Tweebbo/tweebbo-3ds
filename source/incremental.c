@@ -71,11 +71,13 @@ bool incremental_verify(const char *path, const char *sha256, unsigned bytes, co
     Digest d = {0};
     bool started = digest_start(&d);
     ok = ok && started;
+    unsigned done=0;
     while (ok) {
         if (cancelled(hooks)) { ok = false; break; }
         size_t n = fread(buffer, 1, sizeof buffer, f);
         if (!n) { ok = !ferror(f); break; }
         ok = digest_add(&d, buffer, n);
+        if(ok){done+=(unsigned)n;progress(hooks,done);}
     }
     if (ok) ok = digest_end(&d, result) && !memcmp(result, expected, 32);
     digest_free(&d);

@@ -2,7 +2,25 @@ SRC := ../source
 CFLAGS := -std=gnu11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wno-format-truncation -I$(SRC)
 OBJS := $(SRC)/proto.c $(SRC)/path.c $(SRC)/sim.c $(SRC)/world.c $(SRC)/catalog.c $(SRC)/gen/assets.c
 
-all: host_test door_test anim_test protocol_test power lookup-cache
+all: host_test door_test anim_test protocol_test power lookup-cache furniture-use furniture-features furniture-transport
+
+effects-pixels: effects-pixels-test.c $(SRC)/avatar_effects.c $(SRC)/gen/avatar_effect_data.c $(SRC)/gen/assets.c
+	cc $(CFLAGS) -Istubs -include stdbool.h -o effects-pixels-test effects-pixels-test.c $(SRC)/gen/avatar_effect_data.c $(SRC)/gen/assets.c -lm
+	./effects-pixels-test ../build > ../../tests-effect-pixels.json
+
+furniture-transport: furniture-transport-test.c $(SRC)/net.c $(SRC)/proto.c
+	cc $(CFLAGS) -pthread -ffunction-sections -fdata-sections -o furniture-transport-test furniture-transport-test.c $(SRC)/proto.c -Wl,--gc-sections -lm
+	./furniture-transport-test
+.PHONY: furniture-transport
+
+furniture-features: furniture-feature-test.c $(SRC)/furniture.c $(SRC)/furniture.h
+	podman run --rm -v $(CURDIR)/../..:/work:z -w /work localhost/tweebbo-switch-host bash -c 'cc -std=gnu11 -O1 -g -Wall -Wextra -ffunction-sections -fdata-sections -I3ds/source 3ds/tests/furniture-feature-test.c 3ds/source/furniture.c -Wl,--gc-sections -ljansson -o /tmp/furniture-feature-test && /tmp/furniture-feature-test'
+.PHONY: furniture-features
+
+furniture-use: furniture-use-test.c $(SRC)/sim.c $(SRC)/world.c $(SRC)/catalog.c $(SRC)/gen/assets.c
+	cc $(CFLAGS) -o furniture-use-test furniture-use-test.c $(SRC)/proto.c $(SRC)/path.c $(SRC)/world.c $(SRC)/catalog.c $(SRC)/gen/assets.c -lm
+	./furniture-use-test
+.PHONY: furniture-use
 
 power: power_test http_idle_test
 
@@ -66,8 +84,8 @@ tls:
 .PHONY: tls
 
 # Avatar animations (real compositor, stubbed gfx)
-anim_test: anim_test.c $(SRC)/avatar.c $(SRC)/gen/assets.c
-	cc $(CFLAGS) -Istubs -include stdbool.h -o $@ anim_test.c $(SRC)/avatar.c $(SRC)/gen/assets.c -lm
+anim_test: anim_test.c $(SRC)/avatar.c $(SRC)/avatar_effects.c $(SRC)/gen/avatar_effect_data.c $(SRC)/gen/assets.c
+	cc $(CFLAGS) -Istubs -include stdbool.h -o $@ anim_test.c $(SRC)/avatar.c $(SRC)/avatar_effects.c $(SRC)/gen/avatar_effect_data.c $(SRC)/gen/assets.c -lm
 	./anim_test
 
 # The same online test over real TLS (wss://) inside ubuntu:24.04: make online-tls SERVER=wss://tweebbo.lol
@@ -87,7 +105,7 @@ update:
 .PHONY: update
 
 protocol_test: protocol_test.c $(SRC)/world.c $(SRC)/proto.c $(SRC)/catalog.c $(SRC)/gen/assets.c
-	cc $(CFLAGS) -o $@ $^ -lm
+	cc $(CFLAGS) -DMOTION_ALLOCATION_AUDIT -o $@ $^ -Wl,--wrap=malloc -lm
 	./protocol_test
 
 transport_test: transport_test.c $(NET_OBJS)
@@ -106,3 +124,7 @@ recovery: room-recovery
 
 input-latency: input-latency.c $(NET_OBJS)
 	cc $(CFLAGS) -DNO_TLS -DTWEEBBO_DEBUG -pthread -o $@ $^ -lm
+
+wired-visuals: wired-visuals-test.c $(SRC)/wired_visuals.c $(SRC)/wired_visuals.h
+	podman run --rm -v $(CURDIR)/../..:/work:z -w /work localhost/tweebbo-switch-host bash -c 'cc -std=gnu11 -O1 -g -Wall -Wextra -DWIRED_VISUAL_TEST -ffunction-sections -fdata-sections -Iswitch/source 3ds/tests/wired-visuals-test.c switch/source/wired_visuals.c -Wl,--gc-sections -ljansson -lm -o /tmp/wired-visuals-test && /tmp/wired-visuals-test'
+.PHONY: wired-visuals

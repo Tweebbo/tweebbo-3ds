@@ -27,6 +27,7 @@
 struct Conn {
   int fd;
   bool tls;
+  ConnCancel cancel;
 #ifndef NO_TLS
   mbedtls_ssl_context ssl;
 #endif
@@ -199,8 +200,11 @@ static int bio_recv(void *ctx, unsigned char *buf, size_t len) {
 }
 #endif
 
-static Conn *open_socket(const Endpoint *ep, int timeout_ms, char *err, int err_cap, bool download) {
+bool conn_cancelled(const ConnCancel *cancel) { return cancel && cancel->requested && cancel->requested(cancel->user); }
+
+static Conn *open_socket(const Endpoint *ep, int timeout_ms, char *err, int err_cap, bool download,const ConnCancel *cancel) {
   err[0] = 0;
+  if(conn_cancelled(cancel)){snprintf(err,(size_t)err_cap,"Download stopped.");return NULL;}
   char port[8];
   snprintf(port, sizeof port, "%d", ep->port);
   struct addrinfo hints = {.ai_family = AF_INET, .ai_socktype = SOCK_STREAM}, *res = NULL;
@@ -256,6 +260,7 @@ static Conn *open_socket(const Endpoint *ep, int timeout_ms, char *err, int err_
   if (!c) { close(fd); snprintf(err, (size_t)err_cap, "Not enough memory for the connection."); return NULL; }
   c->fd = fd;
   c->tls = ep->tls;
+  if(cancel)c->cancel=*cancel;
   if (!c->tls) return c;
 #ifdef NO_TLS
   snprintf(err, (size_t)err_cap, "Secure connections are not available.");
@@ -271,6 +276,7 @@ static Conn *open_socket(const Endpoint *ep, int timeout_ms, char *err, int err_
   mbedtls_ssl_set_bio(&c->ssl, c, bio_send, bio_recv, NULL);
   int spent = 0;
   for (;;) {
+    if(conn_cancelled(&c->cancel)){snprintf(err,(size_t)err_cap,"Download stopped.");conn_close(c);return NULL;}
     r = mbedtls_ssl_handshake(&c->ssl);
     if (!r) break;
     if ((r != MBEDTLS_ERR_SSL_WANT_READ && r != MBEDTLS_ERR_SSL_WANT_WRITE) || spent > timeout_ms) {
@@ -290,12 +296,14 @@ static Conn *open_socket(const Endpoint *ep, int timeout_ms, char *err, int err_
 }
 
 Conn *conn_open(const Endpoint *ep, int timeout_ms, char *err, int err_cap) {
-  return open_socket(ep, timeout_ms, err, err_cap, false);
+  return open_socket(ep, timeout_ms, err, err_cap, false,NULL);
 }
 
 Conn *conn_open_download(const Endpoint *ep, int timeout_ms, char *err, int err_cap) {
-  return open_socket(ep, timeout_ms, err, err_cap, true);
+  return open_socket(ep, timeout_ms, err, err_cap, true,NULL);
 }
+
+Conn *conn_open_cancel(const Endpoint *ep,int timeout_ms,char *err,int err_cap,bool download,const ConnCancel *cancel){return open_socket(ep,timeout_ms,err,err_cap,download,cancel);}
 
 void conn_close(Conn *c) {
   if (!c) return;
@@ -313,6 +321,7 @@ bool conn_write(Conn *c, const void *data, int len, int timeout_ms) {
   const u8 *p = data;
   int spent = 0;
   while (len > 0) {
+    if(conn_cancelled(&c->cancel))return false;
     int n;
 #ifndef NO_TLS
     if (c->tls) {
@@ -338,6 +347,7 @@ bool conn_write(Conn *c, const void *data, int len, int timeout_ms) {
 }
 
 int conn_read(Conn *c, void *buf, int cap, int timeout_ms) {
+  if(conn_cancelled(&c->cancel))return -1;
 #ifndef NO_TLS
   if (c->tls && mbedtls_ssl_get_bytes_avail(&c->ssl) == 0 && !wait_fd(c->fd, POLLIN, timeout_ms)) return 0;
   if (c->tls) {

@@ -272,7 +272,7 @@ static bool split_url(const char *url, Endpoint *ep, char *path, int cap) {
   return true;
 }
 
-int http_download_from(const char *url, long from, HttpSink sink, void *ctx, long *total, char *err, int err_cap) {
+int http_download_from_cancel(const char *url, long from, HttpSink sink, void *ctx, long *total, char *err, int err_cap,const ConnCancel *cancel) {
   // Signed redirect URLs (GitHub release assets) are close to 1 KB.
   char current[2048], next[2048], path[2048], req[2600];
   *total = -1;
@@ -283,7 +283,7 @@ int http_download_from(const char *url, long from, HttpSink sink, void *ctx, lon
   for (int hop = 0; hop < 6; hop++) {
     Endpoint ep;
     if (!split_url(current, &ep, path, sizeof path)) { snprintf(err, (size_t)err_cap, "Invalid address."); return 0; }
-    Conn *c = conn_open_download(&ep, 20000, err, err_cap);
+    Conn *c = conn_open_cancel(&ep, 20000, err, err_cap,true,cancel);
     if (!c) return 0;
     // HTTP/1.0: no chunked encoding, the body arrives as-is until the connection closes.
     char range[48] = "";
@@ -373,3 +373,5 @@ int http_download_from(const char *url, long from, HttpSink sink, void *ctx, lon
 int http_download(const char *url, HttpSink sink, void *ctx, long *total, char *err, int err_cap) {
   return http_download_from(url, 0, sink, ctx, total, err, err_cap);
 }
+
+int http_download_from(const char *url,long from,HttpSink sink,void *ctx,long *total,char *err,int err_cap){return http_download_from_cancel(url,from,sink,ctx,total,err,err_cap,NULL);}

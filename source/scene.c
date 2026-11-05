@@ -1,4 +1,7 @@
+#include "wired_visuals.h"
+#include "ui.h"
 #include "scene.h"
+#include "furniture.h"
 #include "language.h"
 #include "igloo.h"
 #include "avatar.h"
@@ -31,7 +34,8 @@
 
 typedef struct {
   bool used;
-  char name[24], text[104];
+  char name[NAME_CAP], text[104];
+  s8 width;u8 flags;
   u32 color;
   float wx, mouth_wy, y;
   int row;
@@ -91,7 +95,7 @@ void scene_toggle_overview(void) {
 }
 
 void scene_mark_destination(int x, int y, u64 now) {
-  if (!world_tile(x, y)) { V.dest_until = 0; return; }
+  if (!world_walkable_tile(x, y)) { V.dest_until = 0; return; }
   V.dest_x = x; V.dest_y = y; V.dest_until = now + 15000;
 }
 
@@ -158,10 +162,12 @@ static void camera(u64 now) {
     // While building, the camera follows the ghost furniture.
     float sx, sy;
     iso(G.x + .5f, G.y + .5f, &sx, &sy);
+    float height=G.z+G.z_fine/100.f;
+    float top=V.by0-fmaxf(0,height-world_floor_height(G.x,G.y));
     tx = lw * .5f - sx;
-    ty = lh * .6f - sy;
+    ty = lh * .6f - sy + height;
     if (V.bx1 - V.bx0 >= lw) tx = fminf(-V.bx0, fmaxf(lw - V.bx1, tx)); else tx = lw / 2 - (V.bx0 + V.bx1) / 2;
-    if (V.by1 - V.by0 >= lh) ty = fminf(-V.by0, fmaxf(lh - V.by1, ty)); else ty = lh / 2 - (V.by0 + V.by1) / 2;
+    if (V.by1 - top >= lh) ty = fminf(-top, fmaxf(lh - V.by1, ty)); else ty = lh / 2 - (top + V.by1) / 2;
   } else if (!V.overview && pool_camera(&tx, &ty, now)) {
     // Wobble Squabble players see the whole pole; a landing jumper sees the pool.
     tx = lw * .5f - tx;
@@ -175,13 +181,14 @@ static void camera(u64 now) {
     float px, py, sx, sy;
     ent_pos(me, now, &px, &py);
     iso(px, py, &sx, &sy);
+    float height=ent_height(me,now),top=V.by0-fmaxf(0,height-world_floor_height(me->x,me->y));
     tx = lw * .5f - sx;
-    ty = lh * .68f - sy + ent_height(me, now);
+    ty = lh * .68f - sy + height;
     // No extra black when the room is larger than the screen.
     if (V.bx1 - V.bx0 >= lw) tx = fminf(-V.bx0, fmaxf(lw - V.bx1, tx));
     else tx = lw / 2 - (V.bx0 + V.bx1) / 2;
-    if (V.by1 - V.by0 >= lh) ty = fminf(-V.by0, fmaxf(lh - V.by1, ty));
-    else ty = lh / 2 - (V.by0 + V.by1) / 2;
+    if (V.by1 - top >= lh) ty = fminf(-top, fmaxf(lh - V.by1, ty));
+    else ty = lh / 2 - (top + V.by1) / 2;
   }
   if (!V.snapped) { V.cam_x = tx; V.cam_y = ty; V.snapped = true; }
   V.cam_x += (tx - V.cam_x) * .12f;
@@ -298,7 +305,7 @@ static int by_depth(const void *a, const void *b) {
   return x->seq - y->seq;
 }
 
-static void draw_item_part(const Item *it, const FurniPart *p, u64 now) {
+static void draw_item_part_body(const Item *it, const FurniPart *p, u64 now) {
   float sx, sy, x, y, z;
   item_pos(it, now, &x, &y, &z);
   const FurniDef *d = def_get(it->def);
@@ -311,11 +318,25 @@ static void draw_item_part(const Item *it, const FurniPart *p, u64 now) {
     z += world_floor_height(it->x, it->y);
   }
   iso(x, y, &sx, &sy);
+  u64 outfit=0;bool dressed=d&&d->feature==F_MANNEQUIN&&furniture_item_look(it->id,&outfit);
   bool add = p->flags & PART_ADD;
   u8 alpha = it->id == 0 && G.on ? (u8)(p->alpha * 7 / 10) : p->alpha;
   if (add) gfx_additive(true);
-  gfx_furni(it->def, p, scr_x(sx + p->ox), scr_y(sy + p->oy - z), V.zoom, C2D_Color32(255, 255, 255, alpha));
+  if(!dressed||p->h<=64)gfx_furni(it->def, p, scr_x(sx + p->ox), scr_y(sy + p->oy - z), V.zoom, rgba(furniture_item_color(it->id),alpha));
   if (add) gfx_additive(false);
+  if(dressed){
+    const FurniVariant *variant=variant_frame(it->def,it->rot,it->state,furni_frame(it->def,it->state,item_animation_time(it,now)));
+    if(variant&&variant->count&&p==&variant->parts[variant->count-1])avatar_draw_mannequin(outfit,it->rot*2,scr_x(sx-ANCHOR_X),scr_y(sy+HALF_H-10-ANCHOR_Y-z),V.zoom);
+  }
+  const char *clock=furniture_clock_text(it->id);
+  if(clock){
+    const FurniVariant *variant=variant_frame(it->def,it->rot,it->state,furni_frame(it->def,it->state,item_animation_time(it,now)));
+    if(variant&&variant->count&&p==&variant->parts[variant->count-1]){
+      float top=0;for(int i=0;i<variant->count;i++)if(variant->parts[i].oy<top)top=variant->parts[i].oy;
+      float cx=scr_x(sx),cy=scr_y(sy+top-z)-19,w=text_width(clock,11)+10;
+      fill_rect(cx-w/2,cy,w,17,rgba(0x233238,255));text_draw(clock,cx,cy+2,11,rgba(0xfff8e5,255),1);
+    }
+  }
 }
 
 // The owner snapshot (founders on show and character skins) is JSON; it is parsed into these
@@ -371,7 +392,7 @@ static void founder_diamond(float x, float y, float width, u8 alpha) {
 
 u64 scene_look(u32 eid) { Ent *e = world_ent(eid); return e ? appearance(e) : 0; }
 
-static void draw_ent(const Ent *e, u64 now) {
+static void draw_ent_body(const Ent *e, u64 now) {
   float px, py, sx, sy;
   ent_pos(e, now, &px, &py);
   iso(px, py, &sx, &sy);
@@ -383,11 +404,17 @@ static void draw_ent(const Ent *e, u64 now) {
   if (swim) {
     bool talking = now < e->talk_until && (now / 140) % 2 == 0;
     bool blink = (now + e->id * 1777) % 5200 < 130;
-    avatar_draw_swim(appearance(e), body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0),
-                     head_dir(e, now, moving), scr_x(roundf(sx) - SWIM_ANCHOR_X), scr_y(roundf(sy + HALF_H) - p.anchor_y - p.lift), V.zoom);
+    float ex=scr_x(roundf(sx)+p.dx),ey=scr_y(roundf(sy+HALF_H)+p.dy-p.lift);
+    if(e->effect)avatar_effect_layers(e->effect,body_dir(e,moving),now/80,moving,ex,ey,V.zoom,true);
+    avatar_draw_swim_effected(appearance(e), body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0),
+                     head_dir(e, now, moving), scr_x(roundf(sx) - SWIM_ANCHOR_X), scr_y(roundf(sy + HALF_H) - p.anchor_y - p.lift), V.zoom,e->effect);
+    if(e->effect)avatar_effect_layers(e->effect,body_dir(e,moving),now/80,moving,ex,ey,V.zoom,false);
     return;
   }
-  if (p.pose != POSE_LAY)
+  bool fx=e->effect!=0;
+  float effect_x=scr_x(roundf(sx)+p.dx),effect_y=scr_y(roundf(sy+HALF_H)+p.dy-p.lift);
+  bool effect_shadow=fx&&p.pose!=POSE_LAY&&p.pose!=POSE_SIT&&avatar_effect_shadow(e->effect,body_dir(e,moving),effect_x,effect_y,V.zoom);
+  if (p.pose != POSE_LAY&&!effect_shadow)
     C2D_DrawEllipseSolid(scr_x(roundf(sx) - 14), scr_y(roundf(sy + HALF_H - h) - 7), 0.5f, 28 * V.zoom, 14 * V.zoom,
                          C2D_Color32(0, 0, 0, 64));
   static u32 arrival_id[MAX_ENTS];
@@ -413,15 +440,19 @@ static void draw_ent(const Ent *e, u64 now) {
   int upper = (p.pose == POSE_SIT || p.pose == POSE_FLOOR)
     ? avatar_seated_expr(expression_on(e, now) ? e->action : 0, (e->flags & FLAG_WAVE) != 0) : 0;
   if (upper) p.frame = (int)(now / (e->action == 5 ? 160 : 220)) & 3;
-  avatar_draw(appearance(e), body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0) | upper,
+  if(fx)avatar_effect_layers(e->effect,body_dir(e,moving),now/80,moving,effect_x,effect_y,V.zoom,true);
+  if(fx)avatar_draw_effected(appearance(e),body_dir(e,moving),p.pose,p.frame,(talking?EXPR_TALK:0)|(blink?EXPR_BLINK:0)|upper,
+              head_dir(e,now,moving),drink,sip,scr_x(roundf(sx)+p.dx-ANCHOR_X),scr_y(roundf(sy+HALF_H)+p.dy-p.anchor_y-p.lift),V.zoom,255,e->effect,now/80);
+  else avatar_draw(appearance(e), body_dir(e, moving), p.pose, p.frame, (talking ? EXPR_TALK : 0) | (blink ? EXPR_BLINK : 0) | upper,
               head_dir(e, now, moving), drink, sip,
               scr_x(roundf(sx) + p.dx - ANCHOR_X), scr_y(roundf(sy + HALF_H) + p.dy - p.anchor_y - p.lift), V.zoom, 255);
+  if(fx)avatar_effect_layers(e->effect,body_dir(e,moving),now/80,moving,effect_x,effect_y,V.zoom,false);
 }
 
-static void tile_cursor(int x, int y, u32 color) {
+static void tile_cursor(int x, int y, float height, u32 color) {
   float sx, sy;
   iso(x, y, &sx, &sy);
-  float cx = scr_x(sx), top = scr_y(sy), z = V.zoom;
+  float cx = scr_x(sx), top = scr_y(sy-height), z = V.zoom;
   float l = cx - HALF_W * z, r = cx + HALF_W * z, mid = top + HALF_H * z, bot = top + TH * z;
   C2D_DrawLine(cx, top, color, r, mid, color, 1, 0.5f);
   C2D_DrawLine(r, mid, color, cx, bot, color, 1, 0.5f);
@@ -495,6 +526,25 @@ static void fallback_floor(void) {
     }
 }
 
+static void draw_ent(const Ent *e,u64 now){
+  if(!wired_visuals_alpha(true,e->id,now))return;
+  int highlight=0,strength=0;u32 rgb=0;wired_visuals_highlight(true,e->id,now,&highlight,&rgb,&strength);
+  gfx_highlight(highlight,rgb,strength);
+  gfx_modulate(0xffffff|((u32)wired_visuals_alpha(true,e->id,now)<<24));
+  draw_ent_body(e,now);gfx_highlight(0,0,0);gfx_modulate(0xffffffff);
+  float x,y,sx,sy;ent_pos(e,now,&x,&y);iso(x,y,&sx,&sy);PoseInfo p=pose_of(e,now,ent_moving(e,now));
+  wired_visuals_draw(true,e->id,scr_x(sx+p.dx),scr_y(sy+HALF_H+p.dy-p.anchor_y-p.lift),V.zoom,ui_wired_visual_focus(true,e->id),now);
+}
+static void draw_item_part(const Item *it,const FurniPart *p,u64 now){
+  if(!wired_visuals_alpha(false,it->id,now))return;
+  int highlight=0,strength=0;u32 rgb=0;wired_visuals_highlight(false,it->id,now,&highlight,&rgb,&strength);
+  gfx_highlight(highlight,rgb,strength);
+  gfx_modulate(0xffffff|((u32)wired_visuals_alpha(false,it->id,now)<<24));
+  draw_item_part_body(it,p,now);gfx_highlight(0,0,0);gfx_modulate(0xffffffff);
+  const FurniVariant *v=variant_frame(it->def,it->rot,it->state,furni_frame(it->def,it->state,item_animation_time(it,now)));
+  if(v&&v->count&&p==&v->parts[v->count-1]){float x,y,z,sx,sy,top=0;item_pos(it,now,&x,&y,&z);iso(x,y,&sx,&sy);for(int i=0;i<v->count;i++)if(v->parts[i].oy<top)top=v->parts[i].oy;wired_visuals_draw(false,it->id,scr_x(sx),scr_y(sy+top-z),V.zoom,ui_wired_visual_focus(false,it->id),now);}
+}
+
 static void draw_bubbles(u64 now) {
   float dt = V.last_frame ? fminf(100, (float)(now - V.last_frame)) : 0;
   bool any = false;
@@ -516,11 +566,13 @@ static void draw_bubbles(u64 now) {
       float hy = scr_y(b->mouth_wy);
       C2D_DrawCircleSolid(cx, hy + (b->y - hy) * t, 0.5f, 3.5f, rgba(b->color, 255));
     }
-    char name[32], text[112];
-    snprintf(name, sizeof name, "%s: ", b->name);
+    char name[NAME_CAP+3], text[112];
+    snprintf(name, sizeof name, "%s%s", b->name,b->name[0]?": ":"");
     snprintf(text, sizeof text, "%s", b->text);
+    float limit=b->width==0?180:b->width==1?280:b->width==2?400:TOP_W-12;
+    text_fit(name,BUBBLE_TEXT,fminf(TOP_W-12,limit)*.55f);
     float nw = text_width(name, BUBBLE_TEXT) + 1;
-    text_fit(text, BUBBLE_TEXT, TOP_W - 30 - nw);
+    text_fit(text, BUBBLE_TEXT, fminf(TOP_W-12,limit) - 18 - nw);
     float w = nw + text_width(text, BUBBLE_TEXT) + 18;
     float left = roundf(fmaxf(2, fminf(TOP_W - w - 2, cx - w / 2)));
     float top = roundf(b->y - BUBBLE_H);
@@ -531,10 +583,11 @@ static void draw_bubbles(u64 now) {
     text_draw(name, left + 9, ty, BUBBLE_TEXT, C2D_Color32(0, 0, 0, 255), 0);
     text_draw(name, left + 9.6f, ty, BUBBLE_TEXT, C2D_Color32(0, 0, 0, 255), 0);
     text_draw(text, left + 9 + nw, ty, BUBBLE_TEXT, C2D_Color32(0, 0, 0, 255), 0);
+    if(b->flags&1)text_draw(text, left + 9.6f + nw, ty, BUBBLE_TEXT, C2D_Color32(0, 0, 0, 255), 0);
   }
 }
 
-static void bubble_add(u32 eid, const char *text, u64 now) {
+static void bubble_add(u32 eid, const char *text, u64 now,s8 width,u8 flags) {
   Ent *e = world_ent(eid);
   if (!e) return;
   float px, py, wx, wy;
@@ -557,7 +610,7 @@ static void bubble_add(u32 eid, const char *text, u64 now) {
   Bubble *b = &V.chat[slot];
   memset(b, 0, sizeof *b);
   b->used = true;
-  snprintf(b->name, sizeof b->name, "%s", e->name);
+  snprintf(b->name, sizeof b->name, "%s", flags&2?"":e->name);b->width=width;b->flags=flags;
   snprintf(b->text, sizeof b->text, "%s", text);
   b->color = c;
   PoseInfo p=pose_of(e,now,ent_moving(e,now));
@@ -569,12 +622,14 @@ static void bubble_add(u32 eid, const char *text, u64 now) {
 }
 
 /** Long messages become several bubbles (one per line that fits), so nothing is cut off. */
-void scene_chat(u32 eid, const char *text, u64 now) {
+void scene_chat_styled(u32 eid, const char *text, u64 now,s8 width,u8 flags) {
   Ent *e = world_ent(eid);
   if (!e) return;
-  char prefix[32];
-  snprintf(prefix, sizeof prefix, "%s: ", e->name);
-  float room = TOP_W - 30 - (text_width(prefix, BUBBLE_TEXT) + 1);
+  char prefix[NAME_CAP+3];
+  snprintf(prefix, sizeof prefix, "%s%s", flags&2?"":e->name,flags&2?"":": ");
+  float limit=width==0?180:width==1?280:width==2?400:TOP_W-12;
+  text_fit(prefix,BUBBLE_TEXT,fminf(TOP_W-12,limit)*.55f);
+  float room = fmaxf(20,fminf(TOP_W-12,limit)-18-(text_width(prefix, BUBBLE_TEXT)+1));
   const char *p = text;
   while (*p == ' ') p++;
   for (int chunks = 0; *p && chunks < BUBBLE_MAX; chunks++) {
@@ -593,7 +648,7 @@ void scene_chat(u32 eid, const char *text, u64 now) {
     // Break at the last space when the line is full and a word would be split.
     if (*q && cut > 0) { used = cut; q = p + cut; }
     line[used] = 0;
-    bubble_add(eid, line, now);
+    bubble_add(eid, line, now,width,flags);
     p = q;
     while (*p == ' ') p++;
   }
@@ -628,10 +683,13 @@ void scene_draw(u64 now) {
   } else if (V.bg) gfx_room_draw(V.bg, scr_x(V.bg->x), scr_y(V.bg->y), V.zoom);
   else fallback_floor();
 
+  if(furniture_light_background()&&furniture_light_alpha())fill_rect(0,0,TOP_W,TOP_H,rgba(furniture_light_color(),furniture_light_alpha()));
   Ent *me = world_ent(W.me);
   if (now < V.dest_until) {
     if (me && me->x == V.dest_x && me->y == V.dest_y && !ent_moving(me, now) && V.dest_until > now + 500) V.dest_until = now + 500;
-    tile_cursor(V.dest_x, V.dest_y, C2D_Color32(255, 255, 255, 240));
+    const Item *surface=world_item_at(V.dest_x,V.dest_y);
+    float height=surface&&def_height_helper(def_get(surface->def))==2?item_z(surface):world_floor_height(V.dest_x,V.dest_y);
+    tile_cursor(V.dest_x, V.dest_y, height, C2D_Color32(255, 255, 255, 240));
   }
 
   static Drawable list[4096];
@@ -639,7 +697,7 @@ void scene_draw(u64 now) {
   for (int i = 0; i < MAX_ITEMS && n < COUNT(list); i++) {
     const Item *it = &W.items[i];
     if (!it->used || (G.on && it->id == G.ignore)) continue;
-    const FurniVariant *v = variant_frame(it->def, it->rot, it->state, furni_frame(it->def, it->state, now));
+    const FurniVariant *v = variant_frame(it->def, it->rot, it->state, furni_frame(it->def, it->state, item_animation_time(it,now)));
     if (!v) continue;
     for (int k = 0; k < v->count && n < COUNT(list); k++) {
       const FurniPart *p = &v->parts[k];
@@ -659,7 +717,7 @@ void scene_draw(u64 now) {
       if (left >= TOP_W || top >= TOP_H || left + p->w * V.zoom <= 0 || top + p->h * V.zoom <= 0) continue;
       bool shadow = p->flags & PART_SHADOW;
       // Shadows are only cast from the floor or whole stacks.
-      if (shadow && it->z % 32) continue;
+      if (shadow && (it->z_fine || it->z % 32)) continue;
       list[n] = (Drawable){shadow ? -10000 : ix + iy + p->depth + iz / 1024.0f, n, it, p, NULL, NULL, NULL};
       n++;
     }
@@ -691,8 +749,8 @@ void scene_draw(u64 now) {
     def_size(G.def, (u8)G.rot, &gw, &gh);
     if (!G.wall)
       for (int y = 0; y < gh; y++)
-        for (int x = 0; x < gw; x++) tile_cursor(G.x + x, G.y + y, G.ok ? C2D_Color32(0x7b, 0xd3, 0x89, 255) : C2D_Color32(0xff, 0x6b, 0x6b, 255));
-    ghost_item = (Item){.used = true, .id = 0, .def = G.def, .x = (u8)G.x, .y = (u8)G.y, .rot = (u8)G.rot, .z = (u16)G.z};
+        for (int x = 0; x < gw; x++) tile_cursor(G.x + x, G.y + y, G.z+G.z_fine/100.f, G.ok ? C2D_Color32(0x7b, 0xd3, 0x89, 255) : C2D_Color32(0xff, 0x6b, 0x6b, 255));
+    ghost_item = (Item){.used = true, .id = 0, .def = G.def, .x = (u8)G.x, .y = (u8)G.y, .rot = (u8)G.rot, .z = (u16)G.z,.z_fine=G.z_fine};
     const FurniVariant *v = variant_get(G.def, def_rotation(G.def, (u8)G.rot), 0);
     for (int k = 0; v && k < v->count && n < COUNT(list); k++) {
       const FurniPart *p = &v->parts[k];
@@ -725,13 +783,14 @@ void scene_draw(u64 now) {
     } else if (list[i].layer) gfx_scene_sprite(list[i].layer, scr_x(list[i].layer->x), scr_y(list[i].layer->y), V.zoom, list[i].layer->alpha);
     else draw_item_part(list[i].item, list[i].part, now);
   }
+  if(!furniture_light_background()&&furniture_light_alpha())fill_rect(0,0,TOP_W,TOP_H,rgba(furniture_light_color(),furniture_light_alpha()));
   // Wobble Squabble on the pole, the countdown, the diver and the splashes.
   pool_draw_room(now);
 
   // Paint typing after every badge so a nearby player's marker cannot hide the dots.
   for(int pass=0;pass<2;pass++) for (int i = 0; i < MAX_ENTS; i++) {
     const Ent *e = &W.ents[i];
-    if (!e->used) continue;
+    if (!e->used||!wired_visuals_alpha(true,e->id,now)) continue;
     float px, py, sx, sy;
     ent_pos(e, now, &px, &py);
     iso(px, py, &sx, &sy);
@@ -786,6 +845,7 @@ void scene_draw(u64 now) {
       C2D_DrawTriangle(ax - 6, ay - 12, fill, ax + 6, ay - 12, fill, ax, ay - 3, fill, 0.5f);
     }
   }
+  wired_visuals_draw_labels(0, 0, TOP_W, TOP_H);
   draw_bubbles(now);
   draw_prompt();
   V.last_frame = now;
@@ -816,3 +876,5 @@ static void draw_prompt(void) {
 
 void scene_to_screen(float wx, float wy, float *x, float *y) { *x = scr_x(wx); *y = scr_y(wy); }
 float scene_zoom(void) { return V.zoom; }
+
+void scene_chat(u32 eid,const char *text,u64 now){scene_chat_styled(eid,text,now,-1,0);}

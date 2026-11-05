@@ -35,6 +35,9 @@ int main(void) {
   e->fx = 1; assert(world_animation_active(5100));
   assert(!world_animation_active(5500));
   e->fx=2; e->fz=0; assert(world_animation_active(5100));
+  e->z_fine=32;e->fz=ent_z(e);assert(!world_animation_active(5100));
+  e->fz=256.64f;assert(world_animation_active(5100));assert(!world_animation_active(5500));
+  e->z_fine=0;
   e->fz=256;
   const unsigned flags[] = {FLAG_WAVE, FLAG_DANCE, FLAG_ROLL};
   for (unsigned i=0; i<sizeof flags/sizeof *flags; i++) {
@@ -42,6 +45,10 @@ int main(void) {
   }
   e->flags=FLAG_SIT; assert(!world_animation_active(6000));
   e->flags=FLAG_LAY; assert(!world_animation_active(6000));
+  e->effect=12;assert(world_animation_active(6000));
+  e->effect=72;assert(world_animation_active(6000));
+  e->effect=65535;assert(!world_animation_active(6000));
+  e->effect=0;assert(!world_animation_active(6000));
   e->talk_until=6100; assert(world_animation_active(6000)); e->talk_until=0;
   e->typing_until=6100; assert(world_animation_active(6000)); e->typing_until=0;
   e->drink_until=6100; assert(world_animation_active(6000)); e->drink_until=0;
@@ -51,5 +58,6 @@ int main(void) {
   e->used=false; assert(!world_animation_active(6100));
   W.items[0]=(Item){.used=true,.id=1,.x=3,.fx=2,.slide_at=6000};
   assert(world_animation_active(6100));assert(!world_animation_active(6500));
+  W.items[0].slide_ms=2000;assert(world_animation_active(7500));assert(!world_animation_active(8000));
   puts("PASS: 360 quiet ticks produce 180 frames; active ticks all draw; immediate input, suspend, slow frames and room activity covered.");
 }

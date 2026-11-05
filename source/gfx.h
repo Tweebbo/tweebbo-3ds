@@ -2,11 +2,15 @@
 #pragma once
 #include <citro2d.h>
 #include "assets.h"
+#include "avatar_effects.h"
+bool gfx_avatar_effect(u64 key,u16 effect,const AvatarFxDraw *parts,unsigned count,bool mirrored,float x,float y,float scale,u8 alpha);
 bool gfx_battle_load(int arena);
 void gfx_battle_free(void);
 void gfx_battle_blend(int mode);
 void gfx_battle_sprite(unsigned id,float x,float y,float kx,float ky,u32 color,float left,float top,float right,float bottom);
 
+void gfx_modulate(u32 color);
+void gfx_highlight(int kind,u32 rgb,int strength);
 bool gfx_init(void);
 void gfx_exit(void);
 /** Region of an atlas page drawn at (x, y). `flip` mirrors horizontally in place. */

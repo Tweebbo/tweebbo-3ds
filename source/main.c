@@ -1,4 +1,11 @@
+#include "wired_clicks.h"
+#include "wired_feedback.h"
+#include "wired_visuals.h"
 #include "fastfood.h"
+#include "furniture.h"
+#include "wired_services.h"
+#include "wired_boards.h"
+#include "wired_chests.h"
 #include "battle.h"
 // Tweebbo for Nintendo 3DS: online client for tweebbo.lol (or another server) with
 // an offline simulation as a fallback. Top screen: the room. Bottom screen: the interface.
@@ -13,6 +20,7 @@
 #include "gfx.h"
 #include "language.h"
 #include "net.h"
+#include "proto.h"
 #include "scene.h"
 #include "showcase.h"
 #include "sim.h"
@@ -24,6 +32,8 @@
 #include "bar.h"
 #include "music.h"
 #include "frame_pacing.h"
+#include "power_profile.h"
+#include "power_settings.h"
 
 #define PROFILE DATA_DIR "/profile.txt"
 
@@ -34,6 +44,7 @@ u64 now_ms(void) { return osGetTime(); }
 int rnd_range(int lo, int hi) { return hi <= lo ? lo : lo + (int)((u32)rand() % (u32)(hi - lo)); }
 
 void on_room(void) { u64 now = now_ms(); pool_room_changed(); music_room_changed(); scene_room_changed(now); ui_room_changed(); }
+void on_styled_chat(u32 eid,const char *text,s8 width,u8 flags){if(ui_chat_blocked(eid))return;scene_chat_styled(eid,text,now_ms(),width,flags);ui_chat_styled(eid,text,flags);}
 void on_chat(u32 eid, const char *text) {
   if (ui_chat_blocked(eid)) return;
   scene_chat(eid, text, now_ms());
@@ -48,6 +59,7 @@ void on_casino(const char *json) { casino_receive(json, now_ms()); }
 void on_trade(const char *json) { trade_receive(json, now_ms()); }
 void on_activity(const char *json) { battle_receive(json,now_ms());if (!bar_receive(json, now_ms())) pool_receive(json, now_ms()); }
 void on_music(const char *json) { music_receive(json, now_ms()); }
+void on_furniture(const char *json) {char feedback[192];if(wired_feedback_receive(json,feedback,sizeof feedback)){ui_toast(feedback,now_ms());return;}if(wired_clicks_receive(json)){u32 user=wired_clicks_menu_user();if(user)ui_select_ent(user);return;}if(wired_visuals_receive(json))return; if(wired_chests_receive(json)){ui_wired_chest_event();return;}if(!wired_boards_receive(json)&&!wired_services_receive(json))furniture_receive(json); }
 void on_snow(const u8 *data, int len) { snow_receive(data,len); }
 void on_social_changed(void) { ui_social_changed(); }
 void on_name_changed(u32 eid) { ui_name_changed(eid); }
@@ -157,11 +169,32 @@ static void on_exception(ERRF_ExceptionInfo *info, CpuRegisters *regs) {
   svcExitProcess();
 }
 
+static aptHookCookie update_hook;
+static bool update_new_model;
+static bool battery_saver;
+static PowerProfile power_profile;
+bool tw_power_saver(void){return battery_saver;}
+bool tw_power_clock_ok(void){return power_profile.clock_result>=0;}
+bool tw_power_set_saver(bool enabled){
+  battery_saver=enabled;store_save("battery-saver",enabled?"1":"0");
+  char saved[8];return store_load("battery-saver",saved,sizeof saved)&&!strcmp(saved,enabled?"1":"0");
+}
+static void power_tick(u64 now,bool active){
+  PowerTarget target=power_profile_target(&power_profile,now,update_new_model,battery_saver,active,update_blocks_exit());
+  power_profile_apply(&power_profile,target,update_new_model);
+}
+static void update_lifecycle(APT_HookType type,void *unused){
+  (void)unused;
+  if(type==APTHOOK_ONSLEEP||type==APTHOOK_ONSUSPEND)update_activity(0,false,true,update_new_model);
+  else if(type==APTHOOK_ONWAKEUP||type==APTHOOK_ONRESTORE){power_profile.applied=false;update_activity(0,false,false,update_new_model&&!battery_saver);}
+}
+
 int main(int argc, char **argv) {
   update_set_launch_path(argc > 0 ? argv[0] : NULL);
   threadOnException(on_exception, exception_stack + sizeof exception_stack, WRITE_DATA_TO_HANDLER_STACK);
   gfxInitDefault();
   romfsInit();
+  APT_CheckNew3DS(&update_new_model);aptHook(&update_hook,update_lifecycle,NULL);
   srand((unsigned)osGetTime());
   C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
   C2D_Init(8192);
@@ -179,8 +212,8 @@ int main(int argc, char **argv) {
     romfsExit(); gfxExit();
     return 1;
   }
-  // On New 3DS, 804 MHz gives the avatar compositor plenty of headroom.
-  osSetSpeedupEnable(true);
+  char saved_power[8];battery_saver=store_load("battery-saver",saved_power,sizeof saved_power)&&!strcmp(saved_power,"1");
+  power_tick(now_ms(),true);
   dbg_log("after gfx_init: linear free %lu KB", (unsigned long)(linearSpaceFree() / 1024));
 #ifdef TWEEBBO_DEBUG
   dbg_log("TWEEBBO_LOCAL_DEBUG: build %s, updates from the LAN download page", update_current());
@@ -198,6 +231,7 @@ int main(int argc, char **argv) {
   while (aptMainLoop()) {
     hidScanInput();
     u64 now = now_ms();
+    update_activity((unsigned)C3D_GetProcessingTime(),false,false,update_new_model&&(power_profile.current.cpu&1u));
     if (!ui_input(hidKeysDown(), hidKeysHeld(), now)) break;
 #ifndef TWEEBBO_SHOWCASE
     // Once inside the hotel, check for a newer version, then again every 15 minutes: the offer
@@ -220,6 +254,40 @@ int main(int argc, char **argv) {
         (us == UPD_LATEST || us == UPD_AVAILABLE || us == UPD_FAILED)) { last_check = now_ms(); update_check_quiet(); }
 #endif
     net_update(now);
+#ifdef TWEEBBO_DEBUG
+    // An opt-in SD fixture exercises real effect requests in the private emulator build.
+    static u64 effect_probe_at;
+    static int effect_probe_previous=-1;
+    static unsigned furniture_probe_previous;
+    static unsigned height_probe_previous;
+    if(!net_online())effect_probe_previous=-1;
+    if(net_online()&&now>=effect_probe_at){
+      effect_probe_at=now+1000;char value[32],*end;
+      if(store_load("effect-probe",value,sizeof value)){
+        long effect=strtol(value,&end,10);
+        if(end!=value&&!*end&&effect>=0&&effect<=72&&effect!=effect_probe_previous){
+          Writer probe;w_begin(&probe,C_EFFECT);w_u16(&probe,(u16)effect);net_send(probe.buf,probe.len);effect_probe_previous=(int)effect;
+          dbg_log("Effect fixture requested %ld",effect);
+        }
+      }
+      if(store_load("furniture-probe",value,sizeof value)){
+        unsigned serial,item;char extra;
+        if(sscanf(value,"%u:%u%c",&serial,&item,&extra)==2&&serial&&item&&serial!=furniture_probe_previous){
+          furniture_open(item);furniture_probe_previous=serial;dbg_log("Furniture fixture requested %u (%u)",serial,item);
+        }
+      }
+      if(store_load("height-probe",value,sizeof value)){
+        unsigned serial,x,y,height;char extra;
+        if(sscanf(value,"%u:%u:%u:%u%c",&serial,&x,&y,&height,&extra)==4&&serial&&serial!=height_probe_previous){
+          const Ent *me=world_ent(W.me);
+          if(me)dbg_log("Height fixture state %u (%u,%u;%u)",serial,(unsigned)me->x,(unsigned)me->y,(unsigned)me->z*100u+me->z_fine);
+          if(me&&me->x==x&&me->y==y&&(unsigned)me->z*100u+me->z_fine==height&&!ent_moving(me,now)&&!(me->flags&(FLAG_SIT|FLAG_LAY))){
+            height_probe_previous=serial;dbg_log("Height fixture reached %u (%u,%u;%u)",serial,x,y,height);
+          }
+        }
+      }
+    }
+#endif
 #ifdef TWEEBBO_SHOWCASE
     showcase_update(now);
 #endif
@@ -230,6 +298,7 @@ int main(int argc, char **argv) {
     tw_language_update();
     bool active = hidKeysHeld() || hidKeysDown() || hidKeysUp() ||
       ui_animation_active(now) || scene_animation_active(now) || fastfood_active() || battle_active();
+    power_tick(now,active);
     if (!frame_pacing_draw(&pacing, now, active)) {
       C3D_FrameSync();
       continue;
@@ -273,9 +342,12 @@ int main(int argc, char **argv) {
               (unsigned long)(linearSpaceFree() / 1024), (unsigned long)(bytes / 1024), (unsigned long)(budget / 1024),
               (unsigned long)loads, (unsigned long)evictions);
       cpu_sum = gpu_sum = worst = 0; frames = 0; since = now;
+      dbg_log("power: saver=%u cap=%u cpu_flags=%u clock_result=%ld",battery_saver,power_profile.current.fps,power_profile.current.cpu,(long)power_profile.clock_result);
     }
   }
 
+  update_shutdown();
+  aptUnhook(&update_hook);
   music_exit();
   net_stop();
   fastfood_close();

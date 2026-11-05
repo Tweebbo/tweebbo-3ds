@@ -10,7 +10,8 @@ typedef struct { u8 page; u16 x, y, w, h; s16 ox, oy; float depth; u8 alpha; u8 
 enum { PART_SHADOW = 1, PART_ADD = 2 };
 typedef struct { u16 def; u8 rot, state; u16 frame, count; const FurniPart *parts; } FurniVariant;
 /** `tex`: has its own texture in romfs:/furni/d<id>.t3x; `icon_*`: catalogue icon inside it. */
-typedef struct { u16 id; u8 kind, w, h; u16 seat; u8 states, flags, rotations, drink; const char *name; u8 tex; u16 icon_x, icon_y, icon_w, icon_h; const char *drinks, *desc; u8 icon_page, casino; u32 chips; u8 wall_min, wall_max; } FurniDef;
+typedef struct { u16 id; u8 kind, w, h; u16 seat; u8 states, flags, rotations, drink; const char *name; u8 tex; u16 icon_x, icon_y, icon_w, icon_h; const char *drinks, *desc; u8 icon_page, casino; u32 chips; u8 wall_min, wall_max; u8 use_flags, use_ticks, use_delay, use_random, feature, arena_role; } FurniDef;
+enum { USE_RIGHTS=1, USE_TOUCH=2, USE_STATE=4, USE_UNIQUE=8 };
 typedef struct { u16 def; u8 page; u32 bytes; } FurniTexture;
 extern const FurniTexture furni_textures[];
 extern const int furni_texture_count;
@@ -23,7 +24,7 @@ typedef struct { const char *name; u8 breeds, color_count; u32 colors[40]; } Pet
  *  `headline`: the page's classic headline graphic (packed only in the HD profile). */
 typedef struct { const char *id, *name, *layout, *body, *icon, *group, *headline; } CatPage;
 /** `pages`: comma-separated page ids with commas at both ends (",3,5,"). */
-typedef struct { u16 id, def; u16 amount; u8 available; u32 price; const char *name, *desc, *pages; } CatOffer;
+typedef struct { u16 id, def; u16 amount; u8 available, requires_club; u32 price; const char *name, *desc, *pages; } CatOffer;
 enum { DEF_SIT = 1, DEF_LAY = 2, DEF_STACK = 4, DEF_TELEPORTER = 8, DEF_GATE = 16, DEF_SOLID = 32, DEF_REDEEM = 64, DEF_HOLO = 128 };
 enum { KIND_BLOCK, KIND_SIT, KIND_FLOOR, KIND_TOGGLE, KIND_DICE, KIND_WALL };
 typedef struct { const char *label, *parts; char sex; const char *layers; } WardrobeEntry;
@@ -60,6 +61,7 @@ extern const int public_blocked_count;
 extern const int atlas_page_count;
 /** Pages from this index on (character skins) are loaded on demand by gfx.c. */
 extern const int atlas_page_resident;
+extern const int atlas_page_effects;
 /** Name of each page (atlasN in RGBA8, atlasgN in LA8). */
 extern const char *const atlas_page_files[];
 extern const PeopleSprite people_sprites[];

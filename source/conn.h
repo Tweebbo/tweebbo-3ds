@@ -13,6 +13,9 @@ typedef struct {
 bool endpoint_parse(const char *url, Endpoint *out);
 
 typedef struct Conn Conn;
+typedef struct { bool (*requested)(void *user); void *user; } ConnCancel;
+bool conn_cancelled(const ConnCancel *cancel);
+Conn *conn_open_cancel(const Endpoint *ep,int timeout_ms,char *err,int err_cap,bool download,const ConnCancel *cancel);
 
 /** Initializes sockets (TLS is set up on the first secure connection). `err` explains a failure. */
 bool conn_global_init(char *err, int err_cap);

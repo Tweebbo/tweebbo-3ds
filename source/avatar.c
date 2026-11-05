@@ -52,6 +52,10 @@ static int part_index(const char *code) {
   for (int i = 0; i < PARTS; i++) if (!strncmp(code, PART[i], strlen(PART[i])) && (code[strlen(PART[i])] == ':' || !code[strlen(PART[i])])) return i;
   return -1;
 }
+static int effect_group(int part){
+  switch(part){case BD:case LG:case SH:case CH:case CC:case CP:case WA:case CA:return 0;
+    case LH:case LS:case LC:return 1;case RH:case RS:case RC:case RI:return 2;default:return -1;}
+}
 
 /** Applies "hr:001 hd:002 …" from a wardrobe entry. */
 static void apply(char models[PARTS][8], const WardrobeEntry *e) {
@@ -107,32 +111,58 @@ static u32 abgr(u32 rgb, u8 alpha) {
   return (u32)alpha << 24 | (rgb & 0xff) << 16 | (rgb & 0xff00) | (rgb >> 16 & 0xff);
 }
 
-static bool head_only;
+static int head_only;
+static AvatarFxDraw *effect_capture;
+static unsigned effect_capture_count;
+static void capture_effect_part(const PeopleSprite *sprite,int x,int y,u32 color,u8 factor,u32 overlay,bool swimming){
+  if(!sprite||!effect_capture||effect_capture_count>=64)return;
+  unsigned index=swimming?(unsigned)people_sprite_count+(unsigned)(sprite-swim_sprites):(unsigned)(sprite-people_sprites);
+  effect_capture[effect_capture_count++]=(AvatarFxDraw){index,x,y,color,factor,overlay};
+}
+static const AvatarFxBody *effect_body;
+static u16 effect_body_id,effect_appearance;
+void avatar_draw_effected(u64 look,int dir,Pose pose,int frame,int expr,int head_dir,int drink,bool sip,
+                         float x,float y,float scale,u8 alpha,u16 effect,u64 effect_tick){
+  const AvatarFxFrame *f=avatar_effect_frame(effect,dir,effect_tick,pose==POSE_WALK);
+  const AvatarFxAnimation *a=avatar_effect(effect);
+  if(pose==POSE_LAY||pose==POSE_SWIM||pose==POSE_FLOAT)f=NULL;
+  effect_body_id=f?f->body:0;effect_body=effect_body_id<avatar_fx_body_count?&avatar_fx_bodies[effect_body_id]:NULL;
+  effect_appearance=a&&a->transform?effect:0;
+  avatar_draw(look,dir,pose,frame,expr,head_dir,drink,sip,x+(f?f->dx:0)*scale,y+(f?f->dy:0)*scale,scale,alpha);
+  effect_body=NULL;effect_body_id=effect_appearance=0;
+}
 
 void avatar_draw_head(u64 look, int dir, float x, float y, float scale) {
   head_only = true;
   avatar_draw(look, dir, POSE_STD, 0, 0, dir, 0, false, x, y, scale, 255);
   head_only = false;
 }
+void avatar_draw_mannequin(u64 look,int dir,float x,float y,float scale){
+  const u64 clothes=(0x7ffull<<8)|(0x3ffull<<22)|(0xfull<<38);
+  head_only=2;
+  avatar_draw(look&clothes,dir,POSE_STD,0,0,dir,0,false,x,y,scale,255);
+  head_only=0;
+}
 
 // Composition cache: resolving part names (snprintf + search) for every avatar on every
 // frame is costly on Old 3DS/2DS. The resolved part list is kept per state combination.
 typedef struct { const PeopleSprite *s; s16 px, py; u32 color; } AvatarOp;
-typedef struct { u64 look; s16 dir, pose, frame, expr, head, drink, sip, head_only; u32 used; u8 n; AvatarOp ops[64]; } AvatarEntry;
+typedef struct { u64 look; s16 dir, pose, frame, expr, head, drink, sip, head_only; u32 used; u8 n; AvatarOp ops[64]; u16 effect_body;u64 generation; } AvatarEntry;
 #define AV_CACHE 256
 static AvatarEntry av_cache[AV_CACHE];
 static u16 av_hint[1024];
 static u32 av_clock;
+static u64 av_generation;
 static AvatarOp *rec_ops;
 static int rec_n;
 
 static bool avatar_match(const AvatarEntry *c, u64 look, int dir, Pose pose, int frame, int expr, int head, int drink, bool sip) {
   return c->used && c->look == look && c->dir == dir && c->pose == (s16)pose && c->frame == frame && c->expr == expr &&
-    c->head == head && c->drink == drink && c->sip == sip && c->head_only == head_only;
+    c->head == head && c->drink == drink && c->sip == sip && c->head_only == head_only && c->effect_body==effect_body_id;
 }
 static unsigned avatar_bucket(u64 look, int dir, Pose pose, int frame, int expr, int head, int drink, bool sip) {
   u32 h = (u32)look ^ (u32)(look >> 32);
-  const int fields[] = {dir, pose, frame, expr, head, drink, sip, head_only};
+  const int fields[] = {dir, pose, frame, expr, head, drink, sip, head_only, effect_body_id};
   for (unsigned i = 0; i < sizeof fields / sizeof *fields; i++) h = (h ^ (u32)fields[i]) * 16777619u;
   return (h ^ (h >> 16)) & 1023;
 }
@@ -171,6 +201,8 @@ void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir
     int f = tick % character_skin_frames[skin-1][p][d];
     char name[32];snprintf(name, sizeof name, "k_%d_%d_%d_%d", skin, p, d, f);
     const PeopleSprite *s = find_sprite(name);
+    if(effect_capture){capture_effect_part(s,(int)x+(s?s->rx:0),(int)y+(s?s->ry:0),0xffffff,1,0,false);return;}
+    if(s&&effect_appearance){AvatarFxDraw part={(unsigned)(s-people_sprites),s->rx,s->ry,0xffffff};if(gfx_avatar_effect(0x8000000000000000ull|(u64)(s-people_sprites),effect_appearance,&part,1,false,x,y,scale,alpha))return;}
     if (s) gfx_sprite(s->page,s->x,s->y,s->w,s->h,x+s->rx*scale,y+s->ry*scale,scale,false,abgr(0xffffff,alpha));
     return;
   }
@@ -188,6 +220,7 @@ void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir
   if (!e) {
     e = victim;
     *e = (AvatarEntry){look, (s16)dir, (s16)pose, (s16)frame, (s16)expr, (s16)head_dir, (s16)drink, sip, head_only, 0, 0, {{0}}};
+    e->effect_body=effect_body_id;e->generation=++av_generation;
     rec_ops = e->ops;
     rec_n = 0;
     avatar_compose(look, dir, pose, frame, expr, head_dir, drink, sip);
@@ -198,6 +231,8 @@ void avatar_draw(u64 look, int dir, Pose pose, int frame, int expr, int head_dir
   bool lay = pose == POSE_LAY;
   int direction = lay ? (dir == 0 ? 4 : 2) : dir & 7;
   bool mirrored = direction >= 4 && direction <= 6;
+  if(effect_capture){for(unsigned i=0;i<e->n;i++)capture_effect_part(e->ops[i].s,(int)x+e->ops[i].px,(int)y+e->ops[i].py,e->ops[i].color,1,0,false);return;}
+  if(effect_appearance){AvatarFxDraw parts[64];for(unsigned i=0;i<e->n;i++)parts[i]=(AvatarFxDraw){(unsigned)(e->ops[i].s-people_sprites),e->ops[i].px,e->ops[i].py,e->ops[i].color};if(gfx_avatar_effect(e->generation,effect_appearance,parts,e->n,mirrored,x,y,scale,alpha))return;}
   for (int i = 0; i < e->n; i++) {
     const AvatarOp *o = &e->ops[i];
     gfx_sprite(o->s->page, o->s->x, o->s->y, o->s->w, o->s->h, x + o->px * scale, y + o->py * scale, scale, mirrored,
@@ -275,6 +310,7 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
   u32 colors[PARTS];
   for (int i = 0; i < PARTS; i++) colors[i] = 0xffffff;
   colors[BD] = colors[HD] = colors[FC] = colors[LH] = colors[RH] = SKIN[L.skin];
+  if(head_only==2)colors[BD]=colors[HD]=colors[LH]=colors[RH]=0xe5e5df;
   colors[HR] = HAIR[L.hair_color];
   colors[CH] = colors[LS] = colors[RS] = SHIRT[L.shirt_color];
   if (undershirt) colors[CH] = 0xececec;
@@ -322,10 +358,14 @@ static void avatar_compose(u64 look, int dir, Pose pose, int frame, int expr, in
   for (int k = 0; k < n; k++) {
     int part = order[k];
     bool head = part == HD || part == FC || part == EY || part == HR || part == HRB || part == HA || part == HE || part == EA || part == FA;
-    if (head_only && !head) continue;
+    if (head_only==1 && !head) continue;
+    if (head_only==2 && head && part!=HD) continue;
+    if(effect_body&&(effect_body->hide&(1u<<part)))continue;
     int d = FLIP[head && !lay ? head_dir & 7 : direction];
     const char *action = lay ? "lay" : seated ? "sit" : pose == POSE_WALK ? "wlk" : "std";
     int f = (!strcmp(action, "wlk") && !head && part != CH) ? frame & 3 : 0;
+    int group=effect_group(part);
+    if(effect_body&&group>=0&&(pose==POSE_STD||pose==POSE_WALK)&&effect_body->action[group]){static const char *actions[]={"","std","sit","crr","drk"};action=actions[effect_body->action[group]];f=effect_body->frame[group];}
     int off_x = 0, off_y = 0;
     if (upper == POSE_WAVE && (part == LH || part == LS || part == LC)) { action = "wav"; f = frame & 1; }
     // Expressions, as avatar.ts: the right hand to the lips and out (kiss), smiling eyes with the
@@ -379,7 +419,33 @@ static const PeopleSprite *find_swim(const char *name) {
   return NULL;
 }
 
-void avatar_draw_swim(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, float x, float y, float scale) {
+typedef struct {u64 generation;u32 used;unsigned count;AvatarFxDraw parts[64];} SwimEffectEntry;
+static SwimEffectEntry swim_effect_cache[64];
+static u32 swim_effect_clock;
+static u64 swim_effect_key(const AvatarFxDraw *parts,unsigned count){
+  SwimEffectEntry *oldest=&swim_effect_cache[0];
+  for(unsigned i=0;i<COUNT(swim_effect_cache);i++){
+    SwimEffectEntry *entry=&swim_effect_cache[i];bool match=entry->used&&entry->count==count;
+    for(unsigned j=0;match&&j<count;j++){
+      const AvatarFxDraw *a=&entry->parts[j],*b=&parts[j];
+      match=a->sprite==b->sprite&&a->x==b->x&&a->y==b->y&&a->color==b->color&&a->scale==b->scale&&a->overlay==b->overlay;
+    }
+    if(match){entry->used=++swim_effect_clock;return entry->generation;}
+    if(entry->used<oldest->used)oldest=entry;
+  }
+  oldest->generation=++av_generation;oldest->used=++swim_effect_clock;oldest->count=count;
+  memcpy(oldest->parts,parts,count*sizeof *parts);return oldest->generation;
+}
+static void avatar_swim_impl(u64 look,int dir,Pose pose,int frame,int expr,int head_dir,float x,float y,float scale,u16 effect,bool collect);
+void avatar_draw_swim(u64 look,int dir,Pose pose,int frame,int expr,int head_dir,float x,float y,float scale){
+  avatar_draw_swim_effected(look,dir,pose,frame,expr,head_dir,x,y,scale,0);
+}
+void avatar_draw_swim_effected(u64 look, int dir, Pose pose, int frame, int expr, int head_dir, float x, float y, float scale,u16 effect) {
+  const AvatarFxAnimation *animation=avatar_effect(effect);
+  avatar_swim_impl(look,dir,pose,frame,expr,head_dir,x,y,scale,animation&&animation->transform?effect:0,true);
+}
+static void avatar_swim_impl(u64 look,int dir,Pose pose,int frame,int expr,int head_dir,float x,float y,float scale,u16 effect,bool collect){
+  AvatarFxDraw parts[64];effect_capture_count=0;
   look = resolved_look(look);
   Look L = look_decode(look);
   int direction = dir & 7;
@@ -405,7 +471,8 @@ void avatar_draw_swim(u64 look, int dir, Pose pose, int frame, int expr, int hea
       if (!drew_head) {
         float bob = pose == POSE_FLOAT && frame > 1 ? 2 : 0;
         head_only = true;
-        avatar_draw(look, dir, POSE_STD, frame, expr, head_dir, 0, false, x + 48 * scale, y + bob * scale, scale, 255);
+        if(collect){effect_capture=parts;avatar_draw(look,dir,POSE_STD,frame,expr,head_dir,0,false,48,bob,1,255);effect_capture=NULL;}
+        else avatar_draw(look, dir, POSE_STD, frame, expr, head_dir, 0, false, x + 48 * scale, y + bob * scale, scale, 255);
         head_only = false;
         drew_head = true;
       }
@@ -431,9 +498,12 @@ void avatar_draw_swim(u64 look, int dir, Pose pose, int frame, int expr, int hea
     float factor = head ? 1 : 2, bob = pose == POSE_FLOAT && frame > 1 ? 2 : 0;
     float px = 48 - s->rx * factor, py = ANCHOR_Y - 2 - s->ry * factor + bob, w = s->w * factor;
     if (mirrored) px = W_ - px - w;
+    if(collect){effect_capture=parts;capture_effect_part(s,(int)px,(int)py,color,(u8)factor,head?0:0x99009c9c,!head);effect_capture=NULL;continue;}
     float dx = x + px * scale, dy = y + py * scale;
     gfx_sprite_xy(s->page, s->x, s->y, s->w, s->h, dx, dy, factor * scale, factor * scale, mirrored, abgr(color, 255));
     // Teal water veil at 60 % over the body (source-atop on the web).
     if (!head) gfx_sprite_solid(s->page, s->x, s->y, s->w, s->h, dx, dy, factor * scale, factor * scale, mirrored, abgr(0x009c9c, 153));
   }
+  if(collect&&!gfx_avatar_effect(swim_effect_key(parts,effect_capture_count),effect,parts,effect_capture_count,mirrored,x,y,scale,255))
+    avatar_swim_impl(look,dir,pose,frame,expr,head_dir,x,y,scale,0,false);
 }

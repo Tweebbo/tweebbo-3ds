@@ -1,5 +1,41 @@
 # Incremental updates and Old 3DS work
 
+## Current local updater preparation
+
+The 2026-11-05 candidate separates preparation from installation. Choose
+**Prepare / resume**, then **Keep playing**. Downloads, saved-download checks and
+patch reconstruction run in the existing lower-priority worker. The progress
+window distinguishes phases and shows byte totals, transfer speed and an
+estimated remaining download time. **Pause** retains progress. Help > **Update
+progress** reopens the panel; the room remains playable while preparation runs.
+
+The offer includes **Use full download** and **Use smaller update** when a
+compatible recipe exists. A smaller network download can require more SD work;
+the player can choose either method before preparation rather than waiting for a
+patch failure. Both methods keep SHA-256, length and package-identity checks.
+
+Preparation ends at **Update ready**. It never replaces the running application
+automatically. **Install now** rechecks the staged file with the same 128 KiB
+worker buffer and then commits it. CIA installation protects HOME/sleep until AM
+finishes; reopening activates the new executable. Closing during preparation
+joins the worker before network/RomFS teardown and retains resumable files.
+Sleep suspends preparation. Socket/header/TLS reads observe cancellation;
+platform DNS or a blocking initial connection still depends on the system timeout.
+
+Frame processing pressure yields preparation work. Initial work ceilings are
+1 MiB/s on Old models and 2 MiB/s on New models; these are cooperative work budgets,
+not promised Wi-Fi or SD speeds. No graphics quality, texture allocation budget,
+console clock policy or update-buffer size was increased. The existing two
+256 KiB download ranges remain bounded.
+
+`python3 tests/update-background.py` exercises the production worker with real
+files, SHA and threads plus mocked AM/transport: preparation without replacement,
+manual full-download choice, legacy manifests, pause, cancellation, cross-process
+resume, staged corruption rejected before AM and installer faults. Incremental
+reader and real HTTP range/fault tests remain relevant. Emulator evidence is in
+`../../review/modernization-20261105/`; physical-device installation, radio/SD
+throughput and battery measurements remain separate. This candidate is local.
+
 Available starting with 1.3.6. Clients through 1.3.5 need one complete bridge update
 before they can use small downloads for subsequent releases. Updates are optional;
 players can choose Later and keep playing on their existing version.

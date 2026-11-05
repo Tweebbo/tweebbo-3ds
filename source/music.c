@@ -4,6 +4,7 @@
 // original samples on two-second slots (SoundMachine Component Class).
 #include "music.h"
 #include "gen/classic_music.h"
+#include "official_music.h"
 #include "ui_int.h"
 #include "assets.h"
 #include "gfx.h"
@@ -29,7 +30,7 @@
 #define MUSIC_RESERVE (4u * 1024 * 1024)
 
 typedef struct { u16 sample, start; } Clip;
-typedef struct { char provider[12], id[24], title[80]; int duration, slots; u8 clip_n[4]; Clip clips[4][MAX_CLIPS]; } Track;
+typedef struct { char provider[12], id[24], title[80]; u32 disc; int duration, slots; u8 clip_n[4]; Clip clips[4][MAX_CLIPS]; } Track;
 typedef struct { u32 id; char title[80]; } SavedSong;
 typedef struct { s8 *data; u32 n; volatile u8 state; } Sample;  /* 0 none, 1 queued, 2 ready, 3 failed */
 enum { S_NONE, S_QUEUED, S_READY, S_FAILED };
@@ -38,10 +39,12 @@ static struct {
   bool known, playing, listening;
   s64 offset, started, position;
   u64 revision;
+  u32 inventory_revision;
   u32 machine, active;          /* item whose queue is shown, item playing (0 none) */
-  int index, track_n, song_n;
+  int index, track_n, song_n, disc_n;
   Track tracks[MAX_TRACKS];
   SavedSong songs[MAX_SONGS];
+  MusicDiscGroup discs[MUSIC_DISC_GROUPS];
   ListState list;
   /* Playback: which clip each channel plays, for the track and revision being heard. */
   int clip_on[4];
@@ -66,13 +69,15 @@ bool music_machine(u16 def) {
 
 // ---------------------------------------------------------------- samples
 
-typedef struct { u8 *buf; int len, cap; } Grow;
+typedef struct { u8 *buf; int len, cap, limit; } Grow;
 static bool to_grow(const u8 *data, int len, void *ctx) {
   Grow *g = ctx;
-  if (g->len + len > 512 * 1024) return false;
+  int limit=g->limit?g->limit:512*1024;
+  if(len<0||g->len<0||len>limit-g->len)return false;
   if (g->len + len > g->cap) {
     int cap = g->cap ? g->cap * 2 : 65536;
     while (cap < g->len + len) cap *= 2;
+    if(cap>limit)cap=limit;
     u8 *p = realloc(g->buf, (size_t)cap);
     if (!p) return false;
     g->buf = p; g->cap = cap;
@@ -98,13 +103,14 @@ static void load_sample(int id) {
   bool classic = id >= CLASSIC_BASE;
   if (classic) snprintf(path, sizeof path, CACHE_DIR "/classic_%d.pcm", id - CLASSIC_BASE);
   else snprintf(path, sizeof path, CACHE_DIR "/%d.pcm", id);
-  Grow g = {0};
+  Grow g = {.limit=id==OFFICIAL_MUSIC_SAMPLE?OFFICIAL_MUSIC_BYTES:512*1024};
   FILE *f = fopen(path, "rb");
   if (f) {
     u8 chunk[4096]; size_t n;
     while ((n = fread(chunk, 1, sizeof chunk, f)) > 0 && to_grow(chunk, (int)n, &g)) {}
     fclose(f);
   }
+  if(id==OFFICIAL_MUSIC_SAMPLE&&g.len!=OFFICIAL_MUSIC_BYTES)g.len=0;
   if (!g.len) {
     long total = 0;
     if (base_url(url, sizeof url - 32)) {
@@ -112,7 +118,7 @@ static void load_sample(int id) {
       if (classic) snprintf(url + strlen(url), sizeof url - strlen(url), "classic_%d.pcm", id - CLASSIC_BASE);
       else snprintf(url + strlen(url), sizeof url - strlen(url), "%d.pcm", id);
       int status = http_download(url, to_grow, &g, &total, err, sizeof err);
-      if (status != 200 || (total > 0 && total != g.len)) g.len = 0;
+      if (status != 200 || (total > 0 && total != g.len)||(id==OFFICIAL_MUSIC_SAMPLE&&g.len!=OFFICIAL_MUSIC_BYTES)) g.len = 0;
       if (g.len) {
         mkdir("sdmc:/3ds", 0777); mkdir("sdmc:/3ds/Tweebbo", 0777); mkdir(CACHE_DIR, 0777);
         FILE *out = fopen(path, "wb");
@@ -166,6 +172,7 @@ static void read_track(json_t *v, Track *t) {
   utf8_copy(t->id, sizeof t->id, json_string_value(json_object_get(v, "id")));
   utf8_copy(t->title, sizeof t->title, json_string_value(json_object_get(v, "title")));
   t->duration = num(v, "duration");
+  t->disc=(u32)json_integer_value(json_object_get(v,"disc"));
   json_t *song = json_object_get(v, "song");
   t->slots = num(song, "slots");
   size_t c; json_t *channel;
@@ -209,6 +216,8 @@ void music_receive(const char *text, u64 now) {
     M.songs[M.song_n].id = (u32)strtoul(k, NULL, 10);
     utf8_copy(M.songs[M.song_n++].title, sizeof M.songs[0].title, json_string_value(json_object_get(v, "title")));
   }
+  json_t *discs=json_object_get(j,"owned_discs");if(!json_is_array(discs))discs=json_object_get(st,"owned_discs");
+  M.disc_n=official_music_groups(discs,M.discs);
   json_decref(j);
 }
 
@@ -269,7 +278,7 @@ void music_room_changed(void) {
   release_samples(NULL);
   M.known = M.playing = false;
   M.active = M.machine = 0;
-  M.track_n = M.song_n = 0;
+  M.track_n = M.song_n = M.disc_n = 0;
   M.heard_key = 0;
 }
 
@@ -281,7 +290,7 @@ static const Track *playing_track(void) {
 const char *music_now_playing(void) {
   const Track *t = playing_track();
   if (!t) return "";
-  bool trax = !strcmp(t->provider, "trax");
+  bool trax = !strcmp(t->provider, "trax")||official_music_sample(t->provider,t->id);
   bool classic = !strcmp(t->provider, "classic");
   snprintf(M.line, sizeof M.line, classic ? TR("Now playing: %s (classic)") : trax ? TR("Now playing: %s") : TR("Now playing: %s (on PC)"), t->title);
   return M.line;
@@ -315,15 +324,16 @@ static bool dsp_ready(void) {
 }
 
 void music_poll(u64 now) {
+  if(M.known&&M.machine&&M.inventory_revision!=W.inv_rev){M.inventory_revision=W.inv_rev;send_music("{\"op\":\"sync\"}");}
   const Track *t = playing_track();
-  bool classic = t && !strcmp(t->provider, "classic");
+  bool classic = t && (!strcmp(t->provider, "classic")||official_music_sample(t->provider,t->id));
   if (!t || (!classic && strcmp(t->provider, "trax")) || !M.listening) { if (M.heard_key) { silence(); release_samples(NULL); M.heard_key = 0; } return; }
   u64 key = M.revision * 64 + (u64)M.index;
   if (key != M.heard_key) { silence(); release_samples(classic ? NULL : t); M.heard_key = key; }
   s64 elapsed = M.position + ((s64)now + M.offset - M.started);
   if (elapsed < 0) elapsed = 0;
   if (classic) {
-    int id = CLASSIC_BASE + atoi(t->id);
+    int id = official_music_sample(t->provider,t->id);if(!id)id=CLASSIC_BASE+atoi(t->id);
     want(id);
     if (!dsp_ready()) return;
     Sample *s = id < MAX_SAMPLE ? &samples[id] : NULL;
@@ -419,7 +429,7 @@ void music_draw(u64 now) {
   if (!M.known) { send_music("{\"op\":\"sync\"}"); M.known = true; }
   const Track *t = playing_track();
   if (t) {
-    bool trax = !strcmp(t->provider, "trax");
+    bool trax = !strcmp(t->provider, "trax")||official_music_sample(t->provider,t->id);
     sk_text(t->title, x, y, 11, SK_TEXT, 0, IN_W - 12);
     sk_text(trax ? (M.listening ? TR("Trax · playing here") : TR("Trax · muted on this console"))
                  : !strcmp(t->provider, "classic") ? (M.listening ? TR("Kepler Classic · playing here") : TR("Kepler Classic · muted on this console"))
@@ -440,7 +450,8 @@ void music_draw(u64 now) {
   if (!t && M.track_n && (sk_button(x + 96, by, 92, TR("Play (X)"), true) || K.x)) { char e[16]; snprintf(e, sizeof e, "\"index\":%d", M.index < M.track_n ? M.index : 0); command("play", e); }
   // The queue, the room's saved Trax songs, then the original cartridge loops.
   int song_base = M.track_n + (M.song_n ? M.song_n + 1 : 0);
-  int rows = song_base + CLASSIC_TRACK_COUNT + 1;
+  int classic_base=song_base+(M.disc_n?M.disc_n+1:0);
+  int rows = classic_base + CLASSIC_TRACK_COUNT + 1;
   const float row = 22;
   if (K.dn && M.list.focus < rows - 1) M.list.focus++;
   if (K.up && M.list.focus > 0) M.list.focus--;
@@ -453,19 +464,28 @@ void music_draw(u64 now) {
     if (i < M.track_n) {
       const Track *q = &M.tracks[i];
       char title[96]; snprintf(title, sizeof title, "%s%s", (M.active == M.machine && i == M.index && M.playing) ? "> " : "", q->title);
-      sk_text(title, IN_X + 8, ry + 5, 9.5f, SK_TEXT, 0, IN_W - 100);
+      sk_text(title, IN_X + 8, ry + 5, 9.5f, SK_TEXT, 0, IN_W - (q->disc?146:100));
       sk_text(q->provider, IN_X + IN_W - 92, ry + 6, 8.5f, SK_DIM, 0, 40);
-      if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, TR("Play"), true) || (focus && K.a)) { char e[16]; snprintf(e, sizeof e, "\"index\":%d", i); command("play", e); }
+      if (sk_go(IN_X + IN_W - (q->disc?92:46), ry + 2, 38, 17, TR("Play"), true) || (focus && K.a)) { char e[16]; snprintf(e, sizeof e, "\"index\":%d", i); command("play", e); }
+      const Item *machine=world_item(M.machine);
+      if(q->disc&&sk_go(IN_X+IN_W-46,ry+2,38,17,TR("Remove"),machine&&machine->owner==W.guest_id)){char extra[24];snprintf(extra,sizeof extra,"\"index\":%d",i);command("remove",extra);}
     } else if (i == M.track_n && M.song_n) {
       sk_text(TR("Room songs (Trax)"), IN_X + 8, ry + 5, 9.5f, SK_DIM, 0, IN_W - 20);
     } else if (i < song_base) {
       const SavedSong *s = &M.songs[i - M.track_n - 1];
       sk_text(s->title, IN_X + 8, ry + 5, 9.5f, SK_TEXT, 0, IN_W - 60);
       if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, TR("Add"), true) || (focus && K.a)) { char e[24]; snprintf(e, sizeof e, "\"song\":%u", (unsigned)s->id); command("add_song", e); }
-    } else if (i == song_base) {
+    } else if(i==song_base&&M.disc_n){
+      sk_text(TR("Owned music discs"),IN_X+8,ry+5,9.5f,SK_DIM,0,IN_W-20);
+    } else if(i<classic_base){
+      const MusicDiscGroup *disc=&M.discs[i-song_base-1];char title[110];snprintf(title,sizeof title,"%s (x%u)",disc->title,(unsigned)disc->count);
+      sk_text(title,IN_X+8,ry+5,9.5f,SK_TEXT,0,IN_W-60);
+      const Item *machine=world_item(M.machine);bool own=machine&&machine->owner==W.guest_id;
+      if(sk_go(IN_X+IN_W-46,ry+2,38,17,TR("Add"),own)||(focus&&K.a&&own)){char extra[32];snprintf(extra,sizeof extra,"\"disc\":%u",(unsigned)disc->item);command("add_disc",extra);}
+    } else if (i == classic_base) {
       sk_text(TR("Kepler Classic music"), IN_X + 8, ry + 5, 9.5f, SK_DIM, 0, IN_W - 20);
     } else {
-      const ClassicTrack *c = &classic_tracks[i - song_base - 1];
+      const ClassicTrack *c = &classic_tracks[i - classic_base - 1];
       sk_text(c->name, IN_X + 8, ry + 5, 9.5f, SK_TEXT, 0, IN_W - 60);
       if (sk_go(IN_X + IN_W - 46, ry + 2, 38, 17, TR("Add"), true) || (focus && K.a)) { char e[24]; snprintf(e, sizeof e, "\"set\":%u", (unsigned)c->id); command("add_classic", e); }
     }
